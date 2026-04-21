@@ -199,15 +199,15 @@ class Setup(commands.Cog):
             # LƯU CONFIG LÊN MONGODB ATLAS
             # (upsert + merge default đã xử lý trong config_manager)
             # ===============================
-            config["category_id"]      = str(category.id)
-            config["text_channel_id"]  = str(text_channel.id)
-            config["voice_channel_id"] = str(voice_channel.id)
-            config["alive_role_id"]    = str(alive_role.id)
-            config["dead_role_id"]     = str(dead_role.id)
+            config["category_id"]      = category.id
+            config["text_channel_id"]  = text_channel.id
+            config["voice_channel_id"] = voice_channel.id
+            config["alive_role_id"]    = alive_role.id
+            config["dead_role_id"]     = dead_role.id
 
             config.setdefault("max_players", 65)
             config.setdefault("min_players_to_start", 5)
-            config.setdefault("countdown_minutes", 3)
+            config.setdefault("countdown_time", 200)
 
             save_guild_config(guild_id, config, guild.name)
 

@@ -75,8 +75,12 @@ except ImportError:
 
 # ── Detect môi trường Hugging Face ───────────────────────────────
 _IS_HUGGING_FACE = bool(os.environ.get("SPACE_ID"))
+_IS_RENDER       = bool(os.environ.get("RENDER"))       # Render.com tự set biến này
+
 if _IS_HUGGING_FACE:
     print(f"[Env] Đang chạy trên Hugging Face Space: {os.environ.get('SPACE_ID')}")
+elif _IS_RENDER:
+    print("[Env] Đang chạy trên Render.com.")
 else:
     print("[Env] Đang chạy môi trường local/khác.")
 
@@ -366,7 +370,7 @@ async def _flush_lobby(gs, guild_id=None):
             if guild_id:
                 try:
                     raw_cfg  = get_cached_config(str(guild_id))
-                    tc       = bot.get_channel(raw_cfg.get("text_channel_id", 0))
+                    tc       = bot.get_channel(int(raw_cfg.get("text_channel_id", 0) or 0))
                     if tc:
                         new_msg = await tc.send(embed=build_embed(gs, guild_id=guild_id))
                         gs["lobby_message"] = new_msg
@@ -935,7 +939,7 @@ async def clear_command(interaction: discord.Interaction):
     if not text_channel_id:
         return await interaction.response.send_message("⚠️ Server chưa setup.", ephemeral=True)
 
-    channel = bot.get_channel(text_channel_id)
+    channel = bot.get_channel(int(text_channel_id))
     if not channel:
         return await interaction.response.send_message("⚠️ Không thể truy cập kênh.", ephemeral=True)
 
@@ -1047,7 +1051,7 @@ async def on_ready():
         tc_id = cfg.get("text_channel_id")
         if not tc_id:
             continue
-        text_channel = bot.get_channel(tc_id)
+        text_channel = bot.get_channel(int(tc_id))
         if not text_channel:
             continue
         try:
@@ -1267,12 +1271,33 @@ try:
         st.json(game_stats)
 
 except ImportError:
-    # Không chạy trong Streamlit — chế độ standalone
-    print("[Main] Streamlit không có — chạy standalone.")
-    start_bot_once()
-    if _BOT_THREAD:
+    # Không chạy trong Streamlit
+    # Nếu là Render.com → chạy uvicorn (FastAPI) + bot thread song song
+    if _IS_RENDER and _fastapi_app is not None:
+        import uvicorn
+        _RENDER_PORT = int(os.environ.get("PORT", "10000"))
+        print(f"[Main] Render.com detected — khởi động uvicorn trên port {_RENDER_PORT}.")
+        start_bot_once()
+
+        _uvicorn_config = uvicorn.Config(
+            _fastapi_app,
+            host="0.0.0.0",
+            port=_RENDER_PORT,
+            log_level="warning",
+        )
+        _uvicorn_server = uvicorn.Server(_uvicorn_config)
         try:
-            _BOT_THREAD.join()
+            _uvicorn_server.run()   # blocks — bot thread chạy daemon song song
         except KeyboardInterrupt:
             print("[Main] Nhận Ctrl+C — đang tắt...")
             _shutting_down = True
+    else:
+        # Local / môi trường khác
+        print("[Main] Streamlit không có — chạy standalone.")
+        start_bot_once()
+        if _BOT_THREAD:
+            try:
+                _BOT_THREAD.join()
+            except KeyboardInterrupt:
+                print("[Main] Nhận Ctrl+C — đang tắt...")
+                _shutting_down = True

@@ -2,6 +2,7 @@ streamlit
 discord.py
 aiohttp
 ujson
-pymongo
+pymongo[srv]
 dnspython
 uvicorn[standard]
+fastapi
