@@ -14,3 +14,5 @@ fastapi>=0.110.0
 # Database
 pymongo[srv]>=4.6.0
 dnspython>=2.4.0
+
+streamlit
