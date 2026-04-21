@@ -4,17 +4,4 @@ aiohttp
 ujson
 pymongo
 dnspython
-
-5.9.0
-
-# Dashboard
-streamlit>=1.30.0
-
-# API (optional /ping endpoint)
-fastapi>=0.110.0
-
-# Database
-pymongo[srv]>=4.6.0
-dnspython>=2.4.0
-
-streamlit
+python==3.14
