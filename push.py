@@ -24,7 +24,7 @@ if result.returncode != 0:
 # ── git push với retry ────────────────────────────────────────────────────────
 for attempt in range(1, MAX_RETRIES + 1):
     print(f"🚀 Push lần {attempt}/{MAX_RETRIES}  (commit #{count})...")
-    result = subprocess.run(["git", "push", "origin", "main"])
+    result = subprocess.run(["git", "push", "origin", "master"])
 
     if result.returncode == 0:
         # Lưu số tiếp theo chỉ khi push thành công
