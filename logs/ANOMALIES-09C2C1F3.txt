@@ -1,0 +1,15 @@
+[12:57:20.075][INFO] GameEngine ANOMALIES-09C2C1F3 initialized | 5 players
+[12:57:20.076][INFO] Game starting...
+[12:57:20.076][INFO] 📊 **Gợi ý (5 người):** 2-3 Civilian, 1-2 Anomaly, 1 Unknown (Serial Killer)
+[12:57:20.451][INFO] Dead Chat created: #💀︱dead-chat
+[12:57:38.511][INFO] === NIGHT 1 ===
+[12:57:49.561][ERROR] FATAL: 'bool' object is not callable
+Traceback (most recent call last):
+  File "/storage/emulated/0/werewolf_bot/game.py", line 1175, in start
+    await self.phase_night()
+  File "/storage/emulated/0/werewolf_bot/game.py", line 1254, in phase_night
+    await self.voice_ctrl.set_mute(alive_members, True)
+  File "/storage/emulated/0/werewolf_bot/game.py", line 462, in set_mute
+    self.logger.debug(f"Voice: {action} {len(in_voice)} members in voice")
+TypeError: 'bool' object is not callable
+
