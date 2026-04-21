@@ -45,30 +45,33 @@ class Setup(commands.Cog):
     @app_commands.guild_only()
     async def setup_command(self, interaction: discord.Interaction):
 
-        guild = interaction.guild
+        guild    = interaction.guild
         guild_id = str(guild.id)
+
+        # ── BƯỚC 0: Kiểm tra quyền (nhanh, dùng config đã load) ──
         config = load_guild_config(guild_id)
         if not _check_perm(interaction, config):
             return await interaction.response.send_message(
                 "❌ Bạn không có quyền sử dụng lệnh này.", ephemeral=True
             )
 
-        # Gửi DM hướng dẫn update cho owner bot
-        await greet_owner_on_setup(interaction)
+        # ── BƯỚC 1: Defer NGAY LẬP TỨC trước mọi thao tác chậm ──
+        # Discord interaction hết hạn sau 3 giây — defer() gia hạn lên 15 phút.
+        # Mọi thứ sau đây dùng followup.send() thay vì response.send_message().
+        await interaction.response.defer(ephemeral=True)
 
         print(f"[SETUP] Bắt đầu setup cho server: {guild.name} ({guild.id})")
 
         try:
-            config = load_guild_config(guild_id)
-
-            # Nếu đã setup trước đó
+            # ── Kiểm tra đã setup chưa (sau defer → dùng followup) ─
             if config.get("text_channel_id"):
-                return await interaction.response.send_message(
+                return await interaction.followup.send(
                     "⚠️ Server này đã được setup rồi!",
                     ephemeral=True
                 )
 
-            await interaction.response.defer(ephemeral=True)
+            # ── Gửi DM owner (sau defer, không lo timeout) ─────────
+            await greet_owner_on_setup(interaction)
 
             # ===============================
             # TẠO CATEGORY + CHANNEL
@@ -89,7 +92,6 @@ class Setup(commands.Cog):
 
             # ===============================
             # TẠO ROLE ALIVE-❤️‍🩹
-            # Quyền giống như role "Thành Viên" mặc định của Discord
             # ===============================
             alive_role = await guild.create_role(
                 name="Alive-❤️‍🩹",
@@ -132,10 +134,6 @@ class Setup(commands.Cog):
 
             # ================================================================
             # TEXT CHANNEL PERMISSIONS
-            # ────────────────────────────────────────────────────────────────
-            # • @everyone       : chỉ xem, không gửi tin
-            # • Tất cả server roles : có thể gửi tin (send_messages=True)
-            # • Alive / Dead    : "/" — không override, kế thừa từ role
             # ================================================================
             await text_channel.set_permissions(
                 guild.default_role,
@@ -163,10 +161,6 @@ class Setup(commands.Cog):
 
             # ================================================================
             # VOICE CHANNEL PERMISSIONS
-            # ────────────────────────────────────────────────────────────────
-            # • @everyone       : kết nối được, KHÔNG nói, KHÔNG chat
-            # • Tất cả server roles : nói được (speak=True), không chat voice
-            # • Alive / Dead    : "/" — không override, kế thừa từ role
             # ================================================================
             await voice_channel.set_permissions(
                 guild.default_role,
@@ -197,7 +191,6 @@ class Setup(commands.Cog):
 
             # ===============================
             # LƯU CONFIG LÊN MONGODB ATLAS
-            # (upsert + merge default đã xử lý trong config_manager)
             # ===============================
             config["category_id"]      = category.id
             config["text_channel_id"]  = text_channel.id
@@ -214,7 +207,7 @@ class Setup(commands.Cog):
             print("[SETUP] Đã lưu config lên MongoDB ✔")
 
             # ===============================
-            # GỌI INIT_GUILD TỪ bot.py
+            # GỌI INIT_GUILD TỪ app.py
             # ===============================
             import sys
             bot_module = sys.modules.get("__main__")
@@ -223,7 +216,7 @@ class Setup(commands.Cog):
                 await bot_module.init_guild(guild_id, text_channel)
                 print("[SETUP] init_guild chạy thành công ✔")
             else:
-                print("[SETUP] Không tìm thấy init_guild trong bot.py")
+                print("[SETUP] Không tìm thấy init_guild trong app.py")
 
             # ===============================
             # THÔNG BÁO HOÀN TẤT
@@ -258,13 +251,7 @@ class Setup(commands.Cog):
                     ephemeral=True
                 )
             except Exception:
-                try:
-                    await interaction.response.send_message(
-                        f"❌ Setup thất bại:\n```{error_msg}```",
-                        ephemeral=True
-                    )
-                except Exception:
-                    pass
+                pass
 
 
 async def setup(bot: commands.Bot):
