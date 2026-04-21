@@ -1503,7 +1503,14 @@ class GameEngine:
                 self.logger.dump_to_file()
             # Thông báo lỗi ra kênh
             try:
-                await self.log(f"❌ Lỗi nghiêm trọng — Trận bị huỷ tự động:\n```{tb[-600:]}```")
+                err_msg = await self.text_channel.send(
+                    embed=discord.Embed(
+                        title="❌ TRẬN BỊ HUỶ — LỖI HỆ THỐNG",
+                        description=f"```{tb[-500:]}```",
+                        color=0xe74c3c
+                    )
+                )
+                await self._purge_text_channel(keep_id=err_msg.id, reason="Lỗi Hệ Thống")
             except Exception:
                 pass
             # Dọn dẹp Discord: xóa kênh, gỡ roles, unmute — chỉ khi chưa ended
@@ -2145,6 +2152,38 @@ class GameEngine:
 
     check_win = _check_win   # backward compat
 
+    async def _purge_text_channel(self, keep_id: int = None, reason: str = "Tự Động Dọn Dẹp"):
+        """Xóa tất cả tin nhắn trong text_channel, giữ lại keep_id. Thông báo sau 15s."""
+        if not self.text_channel:
+            return
+        try:
+            def check(msg):
+                return keep_id is None or msg.id != keep_id
+
+            deleted = []
+            try:
+                deleted = await self.text_channel.purge(limit=300, check=check, bulk=True)
+            except discord.Forbidden:
+                async for msg in self.text_channel.history(limit=300):
+                    if keep_id and msg.id == keep_id:
+                        continue
+                    try:
+                        await msg.delete()
+                        deleted.append(msg)
+                        await asyncio.sleep(0.4)
+                    except Exception:
+                        pass
+
+            count      = len(deleted)
+            guild_name = self.guild.name if self.guild else "Server"
+            if count > 0:
+                await self.text_channel.send(
+                    f"🧹 **[ {guild_name} ]** : Đã Xóa **{count}** Tin Nhắn ( {reason} )",
+                    delete_after=15
+                )
+        except Exception as e:
+            self.logger.warn(f"[purge_text_channel] {e}")
+
     async def end_game(self, winner: str):
         self.ended  = True
         self.winner = winner
@@ -2170,7 +2209,10 @@ class GameEngine:
             lines.append(f"{member.display_name} — **{role_name}** [{team_name}] ({status})")
 
         embed.add_field(name="📋 Danh sách vai trò", value="\n".join(lines) or "—", inline=False)
-        await self.text_channel.send(embed=embed)
+        result_msg = await self.text_channel.send(embed=embed)
+
+        # Xóa tất cả tin nhắn game, giữ bảng kết quả
+        await self._purge_text_channel(keep_id=result_msg.id, reason="Kết Thúc Trận")
 
         await self._cleanup_temp_channels()
         await self.dead_chat_mgr.delete()

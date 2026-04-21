@@ -293,7 +293,7 @@ def build_embed(gs, guild_id=None):
     countdown_max = cfg_countdown(cfg)
 
     state          = gs["state"]
-    countdown_time = gs["countdown_time"]
+    countdown_time = max(0, gs["countdown_time"])  # không hiện số âm
     current_page   = gs["current_page"]
     players        = gs["players_join_order"]
     total_pages    = max(1, (len(players) - 1) // 11 + 1)
@@ -383,6 +383,67 @@ async def _flush_lobby(gs, guild_id=None):
 
 
 # ==============================
+# PURGE CHANNEL
+# ==============================
+
+_PURGE_INTERVAL = 30   # giây
+
+async def _purge_channel(guild_id: str, reason: str = "Tự Động Dọn Dẹp"):
+    """
+    Xóa tất cả tin nhắn trong text channel trừ lobby embed.
+    Gửi thông báo, tự xóa sau 15 giây.
+    """
+    try:
+        gid     = str(guild_id)
+        raw_cfg = get_cached_config(gid)
+        tc_id   = raw_cfg.get("text_channel_id")
+        if not tc_id:
+            return
+        channel = bot.get_channel(int(tc_id))
+        if not channel:
+            return
+
+        gs        = get_guild_state(gid)
+        lobby_msg = gs.get("lobby_message")
+        lobby_id  = lobby_msg.id if lobby_msg else None
+
+        deleted = []
+        try:
+            deleted = await channel.purge(
+                limit=200,
+                check=lambda m: (lobby_id is None or m.id != lobby_id),
+                bulk=True
+            )
+        except discord.Forbidden:
+            async for msg in channel.history(limit=200):
+                if lobby_id and msg.id == lobby_id:
+                    continue
+                try:
+                    await msg.delete()
+                    deleted.append(msg)
+                    await asyncio.sleep(0.4)
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[purge_channel] [{guild_id}] purge lỗi: {e}")
+            return
+
+        count = len(deleted)
+        if count == 0:
+            return
+
+        guild_obj  = channel.guild
+        guild_name = guild_obj.name if guild_obj else gid
+        await channel.send(
+            f"🧹 **[ {guild_name} ]** : Đã Xóa **{count}** Tin Nhắn ( {reason} )",
+            delete_after=15
+        )
+
+    except Exception as e:
+        print(f"[purge_channel] [{guild_id}] Lỗi: {e}")
+
+
+# ==============================
 # ROLE LOADER
 # ==============================
 
@@ -468,7 +529,8 @@ def _reset_lobby(gs: dict, guild_id: str = None):
     gs["is_active"]          = False
     if guild_id:
         cfg = get_cached_config(str(guild_id))
-        gs["countdown_time"] = cfg_countdown(cfg)
+        cdt = cfg_countdown(cfg)
+        gs["countdown_time"] = max(10, cdt)  # tối thiểu 10s, không bao giờ âm
         invalidate_config_cache(str(guild_id))
         try:
             _cfg = load_guild_config(str(guild_id))
@@ -496,8 +558,19 @@ async def launch_game(guild_id: str, gs: dict):
         return
 
     if get_guild_status(gid) == "ingame":
-        print(f"[launch_game] [{gid}] ⚠️ status=ingame trong file — bỏ qua.")
-        return
+        # Nếu không có engine đang chạy → status cũ bị kẹt, tự động dọn
+        if gid not in active_games:
+            print(f"[launch_game] [{gid}] status=ingame nhưng không có engine — tự reset.")
+            try:
+                _cfg = load_guild_config(gid)
+                _cfg.pop("status", None)
+                save_guild_config(gid, _cfg)
+            except Exception:
+                pass
+            clear_active_players(gid)
+        else:
+            print(f"[launch_game] [{gid}] ⚠️ status=ingame + engine đang chạy — bỏ qua.")
+            return
 
     raw_config   = get_cached_config(gid)
     text_channel = bot.get_channel(raw_config.get("text_channel_id", 0))
@@ -513,6 +586,7 @@ async def launch_game(guild_id: str, gs: dict):
 
     if len(members) < min_p:
         await text_channel.send(f"⚠️ Không đủ {min_p} người. Quay về sảnh chờ.")
+        gs["is_active"] = False   # unlock trước khi reset
         _reset_lobby(gs, guild_id=gid)
         await update_lobby(gs, guild_id=gid)
         return
@@ -665,12 +739,15 @@ async def init_guild(guild_id: str, text_channel):
 
 
 async def _lobby_loop(guild_id: str):
-    gid = str(guild_id)
+    gid           = str(guild_id)
+    purge_counter = 0
+
     while True:
         try:
             gs = get_guild_state(gid)
 
             if gs.get("is_active") or gs["state"] == GameState.IN_GAME:
+                purge_counter = 0   # reset khi vào game
                 await asyncio.sleep(1)
                 continue
 
@@ -679,9 +756,21 @@ async def _lobby_loop(guild_id: str):
                 await update_lobby(gs, guild_id=gid)
 
                 if gs["countdown_time"] <= 0 and not gs.get("is_active"):
+                    # Chặn loop ngay — đặt is_active trước khi fire task
+                    gs["is_active"] = True
+                    gs["state"]     = GameState.IN_GAME
+                    gs["countdown_time"] = 0
                     asyncio.create_task(launch_game(gid, gs))
+                    purge_counter = 0
+                    continue   # không chạy _flush_lobby lần này
 
             await _flush_lobby(gs, guild_id=gid)
+
+            # ── Auto purge mỗi 30 giây khi chờ ──────────────────
+            purge_counter += 1
+            if purge_counter >= _PURGE_INTERVAL:
+                purge_counter = 0
+                asyncio.create_task(_purge_channel(gid, reason="Tự Động Dọn Dẹp"))
 
         except Exception as e:
             print(f"[lobby_loop] [{gid}] Lỗi: {e}")
@@ -1054,6 +1143,7 @@ async def on_ready():
         try:
             await init_guild(guild_id, text_channel)
             print(f"  [Bot] Guild {guild_id} khởi tạo OK.")
+            asyncio.create_task(_purge_channel(guild_id, reason="Khởi Động Lại"))
         except Exception as e:
             print(f"  [Bot] Guild {guild_id} lỗi: {e}")
 
