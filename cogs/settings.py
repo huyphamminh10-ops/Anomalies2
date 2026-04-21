@@ -262,18 +262,11 @@ class SettingsView(View):
         self.lock     = lock
         self.idx      = idx
         self.message: discord.Message | None = None
-        # Cache config — tránh MongoDB call mỗi lần chuyển trang.
-        # Chỉ reload (_reload_config) sau khi user thực sự lưu setting.
-        self._cfg: dict = load_guild_config(guild_id)
         self._refresh()
 
-    def _reload_config(self):
-        """Gọi sau khi lưu setting để sync cache với DB."""
-        self._cfg = load_guild_config(self.guild_id)
-
     def _settings(self) -> list[dict]:
-        # Dùng cache — không query MongoDB mỗi lần render
-        return _get_settings_list(self._cfg, self.bot)
+        config = load_guild_config(self.guild_id)
+        return _get_settings_list(config, self.bot)
 
     def _refresh(self):
         self.clear_items()
@@ -382,7 +375,6 @@ class SettingsView(View):
                     config["mute_dead"] = False
                 save_guild_config(self.guild_id, config)
                 _invalidate(self.guild_id)
-            self._reload_config()   # sync cache sau khi lưu
             new_label = "✅ Bật" if not current else "❌ Tắt"
             extra_desc = ""
             if setting["toggle_key"] == "no_remove_roles" and not current:
@@ -876,7 +868,6 @@ class _BaseModal(Modal):
     async def _refresh_parent(self, interaction: discord.Interaction):
         if self.parent_view and self.parent_view.message:
             try:
-                self.parent_view._reload_config()  # sync cache sau khi modal lưu
                 self.parent_view._refresh()
                 await self.parent_view.message.edit(
                     embed=self.parent_view._build_embed(),

@@ -13,12 +13,12 @@ class TheBioMimic(BaseRole):
     """
 
     dm_message = (
-        "🧬 **THE BIO MIMIC – KẺ MÔ PHỎNG SINH HỌC**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🧬 **KẺ MÔ PHỎNG SINH HỌC**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🔗 Đầu game, bạn chọn 1 Survivor để liên kết cộng sinh.\n\n"
         "💀 Nếu người cộng sinh bị giết trước → bạn nhận 1 lần miễn nhiễm sát thương ban đêm.\n"
         "🚪 Nếu bạn bị Cách Ly/trục xuất → người cộng sinh bị loại theo.\n\n"
-        "👥 Bạn biết danh tính toàn bộ đồng đội Anomalies.\n"
+        "👥 Bạn biết danh tính toàn bộ đồng đội Dị Thể.\n"
         "🎯 Mục tiêu: Ẩn náu trong bóng tối nhờ liên kết sinh học để sống sót."
     )
 
@@ -106,7 +106,7 @@ class TheBioMimic(BaseRole):
             target_role = self.game.roles.get(target_id)
             if not target_role or target_role.team != "Survivors":
                 await interaction.response.send_message(
-                    "Chỉ có thể cộng sinh với Survivors.",
+                    "Chỉ có thể cộng sinh với Người Sống Sót.",
                     ephemeral=True
                 )
                 return

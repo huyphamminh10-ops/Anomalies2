@@ -14,8 +14,8 @@ class TheExecutionerAnomaly(BaseRole):
     )
 
     dm_message = (
-        "⚔️ **THE EXECUTIONER-ANOMALY – KẺ HÀNH QUYẾT**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "⚔️ **DỊ THỂ HÀNH QUYẾT**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm bạn có thể chọn 1 người để hành quyết — xuyên qua mọi lớp bảo vệ.\n\n"
         "📋 Cơ chế:\n"
         "• Mục tiêu bị giết kể cả khi có bảo vệ.\n"
@@ -84,7 +84,7 @@ class TheExecutionerAnomaly(BaseRole):
             p for p in game.get_alive_players()
             if p.id != self.player.id
             and game.roles.get(p.id)
-            and game.roles[p.id].team != "Anomalies"
+            and game.roles[p.id].team != "Dị Thể"
         ]
 
         if not alive_targets:

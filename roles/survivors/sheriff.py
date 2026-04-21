@@ -12,12 +12,12 @@ class Sheriff(BaseRole):
         "• Kết quả trả về tên vai trò cụ thể.\n"
         "• Nếu mục tiêu đang dùng khả năng giả mạo (fake_good), bạn sẽ thấy kết quả không đáng ngờ.\n"
         "• Nếu phát hiện Anomaly, cảnh báo ẩn danh sẽ gửi vào kênh Dị Thể.\n"
-        "• Đây là nguồn thông tin mạnh nhất của Survivors — hãy sử dụng khôn ngoan."
+        "• Đây là nguồn thông tin mạnh nhất của Người Sống Sót — hãy sử dụng khôn ngoan."
     )
 
     dm_message = (
-        "👮 **SHERIFF – CẢNH SÁT TRƯỞNG**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "👮 **THÁM TRƯỞNG**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🌙 Mỗi đêm bạn chọn 1 người để kiểm tra danh tính.\n"
         "Kết quả cho biết chính xác vai trò của họ.\n\n"
         "⚠ Chú ý: Một số Dị Thể có thể dùng khả năng đánh lừa kết quả điều tra.\n"
@@ -69,7 +69,7 @@ class SheriffSelect(discord.ui.Select):
             result = f"Người này là: **{target_role.name}**"
             color  = 0x2ecc71
 
-            # ── Cảnh báo Anomalies nếu kết quả lộ vai Anomaly ──
+            # ── Cảnh báo Dị Thể nếu kết quả lộ vai Anomaly ──
             if getattr(target_role, "team", "") == "Anomalies":
                 if hasattr(self.game, "anomaly_chat_mgr"):
                     await self.game.anomaly_chat_mgr.send(

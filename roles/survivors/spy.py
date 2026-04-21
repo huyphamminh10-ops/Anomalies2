@@ -14,8 +14,8 @@ class Spy(BaseRole):
     )
 
     dm_message = (
-        "👁️ **SPY – ĐIỆP VIÊN**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "👁️ **ĐIỆP VIÊN**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "📡 Mỗi đêm bạn tự động nhận thông tin về mục tiêu mà Dị Thể nhắm vào.\n"
         "🔕 Bạn không biết ai là kẻ giết — chỉ biết ai bị nhắm.\n\n"
         "💡 Hãy chia sẻ thông tin cẩn thận — lộ sớm có thể khiến bạn bị tiêu diệt.\n"
@@ -36,7 +36,7 @@ class Spy(BaseRole):
                     description=(
                         "Hệ thống theo dõi đang hoạt động...\n\n"
                         "🔎 Bạn sẽ tự động nhận được thông tin về mục tiêu của Dị Thể\n"
-                        "sau khi phe Anomalies hoàn tất lựa chọn.\n\n"
+                        "sau khi phe Dị Thể hoàn tất lựa chọn.\n\n"
                         "📡 Đang thu thập tín hiệu..."
                     ),
                     color=0x34495e
@@ -79,7 +79,7 @@ class Spy(BaseRole):
                 description=f"⚠️ Dị Thể đang nhắm vào: **{target.display_name}**",
                 color=0xe74c3c
             )
-            embed.set_footer(text="Bạn không biết kẻ nào trong số Anomalies đang ra tay.")
+            embed.set_footer(text="Bạn không biết kẻ nào trong số Dị Thể đang ra tay.")
             await self.safe_send(embed=embed)
         except Exception:
             pass

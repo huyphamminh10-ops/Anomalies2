@@ -16,8 +16,8 @@ class TheGlitchWorm(BaseRole):
     )
 
     dm_message = (
-        "🪱 **THE GLITCH-WORM – SÂU MÃ ĐỘC**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🪱 **SÂU LỖI**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm bạn chọn 1 người để cài mã độc — nếu họ chết đêm đó, di chúc bị phá hủy hoàn toàn.\n\n"
         "📋 Cơ chế:\n"
         "• Di chúc bị thay thế bằng thông báo: '✖ Dữ liệu đã bị Glitch-Worm phá hủy.'\n"

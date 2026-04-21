@@ -75,8 +75,8 @@ class Retributionist(BaseRole):
     )
 
     dm_message = (
-        "⚡ **RETRIBUTIONIST – KẺ BÁO OÁN**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "⚡ **KẺ BÁO OÁN**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🔄 Một lần duy nhất trong cả game, bạn có thể hồi sinh 1 Survivor đã chết.\n\n"
         "☀️ Hồi sinh ban ngày → bạn bị **lộ diện** trước thị trấn.\n"
         "🌙 Hồi sinh ban đêm → danh tính được giữ bí mật.\n"

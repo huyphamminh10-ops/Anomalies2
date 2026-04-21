@@ -15,12 +15,12 @@ class Investigator(BaseRole):
     )
 
     dm_message = (
-        "🔎 **INVESTIGATOR – THÁM TỬ**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "🔎 **THÁM TỬ**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🌙 Mỗi đêm bạn chọn 1 người để điều tra.\n"
         "Kết quả sẽ cho biết người đó thuộc phe nào:\n"
-        "• 🔴 ĐỎ = Anomalies (Dị Thể)\n"
-        "• 🟢 XANH = Survivors (Người Sống Sót)\n\n"
+        "• 🔴 ĐỎ = Dị Thể (Dị Thể)\n"
+        "• 🟢 XANH = Người Sống Sót (Người Sống Sót)\n\n"
         "⚠ Hãy chia sẻ thông tin khéo léo — tiết lộ thân phận quá sớm có thể nguy hiểm."
     )
 
@@ -64,7 +64,7 @@ class InvestigatorSelect(discord.ui.Select):
         if target_role.team == "Anomalies":
             result = "🔴 **ĐỎ** — Người này thuộc phe **Dị Thể**!"
             color  = 0xe74c3c
-            # ── Cảnh báo Anomalies (không nói tên ai bị điều tra) ──
+            # ── Cảnh báo Dị Thể (không nói tên ai bị điều tra) ──
             if hasattr(self.game, "anomaly_chat_mgr"):
                 await self.game.anomaly_chat_mgr.send(
                     embed=discord.Embed(

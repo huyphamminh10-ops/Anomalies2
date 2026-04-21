@@ -1,5 +1,5 @@
 # ══════════════════════════════════════════════════════════════════
-# roles/event/pro_tester.py — Early Access Event Role
+# roles/event/pro_tester.py — Vai Trò Sự Kiện Đặc Biệt
 # ══════════════════════════════════════════════════════════════════
 
 import discord
@@ -13,44 +13,44 @@ class ProTester(BaseRole):
     max_count   = 2
     min_players = 7
 
-    # ── Theo dõi mục tiêu đã bị Pro Tester khác chọn trong cùng đêm ──
-    # Giúp 2 Pro Tester phối hợp mà không trùng mục tiêu
+    # ── Theo dõi mục tiêu đã bị Người Thử Nghiệm khác chọn trong cùng đêm ──
+    # Giúp 2 Người Thử Nghiệm phối hợp mà không trùng mục tiêu
     _claimed_targets: set = set()
 
     description = (
-        "Pro Tester là người thử nghiệm chuyên nghiệp của tổ chức.\n\n"
-        "• Ngay khi game bắt đầu, bạn biết chính xác ai là Overlord.\n"
-        "• Một lần duy nhất trong game: ép Overlord giết 1 Anomaly đồng đội.\n"
+        "Người Thử Nghiệm là người thử nghiệm chuyên nghiệp của tổ chức.\n\n"
+        "• Ngay khi game bắt đầu, bạn biết chính xác ai là Lãnh Chúa.\n"
+        "• Một lần duy nhất trong game: ép Lãnh Chúa giết 1 Anomaly đồng đội.\n"
         "• Sau khi kỹ năng kích hoạt, bạn sẽ chết ngay lập tức.\n"
-        "• Nếu 2 Pro Tester cùng kích hoạt đêm đó, Overlord bị ép giết 2 Anomaly khác nhau!\n"
-        "• Chỉ dùng được khi Overlord còn sống và có ít nhất 1 Anomaly chưa bị nhắm."
+        "• Nếu 2 Người Thử Nghiệm cùng kích hoạt đêm đó, Lãnh Chúa bị ép giết 2 Anomaly khác nhau!\n"
+        "• Chỉ dùng được khi Lãnh Chúa còn sống và có ít nhất 1 Anomaly chưa bị nhắm."
     )
 
     dm_message = (
-        "🔬 **PRO TESTER – NGƯỜI THỬ NGHIỆM**\n\n"
-        "Bạn thuộc phe **Survivors** — Early Access Event Role.\n\n"
+        "🔬 **NGƯỜI THỬ NGHIỆM**\n\n"
+        "Bạn thuộc phe **Người Sống Sót** — Vai Trò Sự Kiện Đặc Biệt.\n\n"
         "🧪 Bạn có thiết bị theo dõi dị thể đặc biệt.\n"
-        "👑 Ngay khi game bắt đầu, bạn sẽ biết ai là **Overlord**.\n\n"
-        "⚡ **Kỹ năng đặc biệt (1 lần):** Ép Overlord tiêu diệt 1 Anomaly đồng đội.\n"
-        "🤝 Nếu cả 2 Pro Tester cùng kích hoạt — Overlord mất **2 Anomaly** cùng lúc!\n"
+        "👑 Ngay khi game bắt đầu, bạn sẽ biết ai là **Lãnh Chúa**.\n\n"
+        "⚡ **Kỹ năng đặc biệt (1 lần):** Ép Lãnh Chúa tiêu diệt 1 Anomaly đồng đội.\n"
+        "🤝 Nếu cả 2 Người Thử Nghiệm cùng kích hoạt — Lãnh Chúa mất **2 Anomaly** cùng lúc!\n"
         "☠️ Sau khi kích hoạt, bạn sẽ **hi sinh ngay lập tức**.\n\n"
-        "🎯 Mục tiêu: Phe Survivors chiến thắng."
+        "🎯 Mục tiêu: Phe Người Sống Sót chiến thắng."
     )
 
     def __init__(self, player):
         super().__init__(player)
         self.ability_used   = False   # chỉ dùng 1 lần
-        self.overlord_info  = None    # lưu tên Overlord nhận được lúc game start
+        self.overlord_info  = None    # lưu tên Lãnh Chúa nhận được lúc game start
 
     # ══════════════════════════════════════════════════════════════
-    # GAME START — Tiết lộ Overlord + reset lock
+    # GAME START — Tiết lộ Lãnh Chúa + reset lock
     # ══════════════════════════════════════════════════════════════
 
     async def on_game_start(self, game):
         # Reset claimed targets mỗi game mới
         ProTester._claimed_targets = set()
-        # Tìm Overlord
-        overlord_role = game.get_role_by_name("Overlord")
+        # Tìm Lãnh Chúa
+        overlord_role = game.get_role_by_name("Lãnh Chúa")
 
         try:
             if overlord_role:
@@ -59,7 +59,7 @@ class ProTester(BaseRole):
                     title       = "🔬 PRO TESTER — THÔNG TIN BÍ MẬT",
                     description = (
                         f"Thiết bị theo dõi của bạn đã xác định được:\n\n"
-                        f"👑 **Overlord** là: `{self.overlord_info}`\n\n"
+                        f"👑 **Lãnh Chúa** là: `{self.overlord_info}`\n\n"
                         f"Hãy sử dụng thông tin này một cách khôn ngoan.\n"
                         f"Bạn có thể dùng kỹ năng để ép hắn phản bội đồng đội — "
                         f"nhưng cái giá là mạng sống của bạn."
@@ -71,8 +71,8 @@ class ProTester(BaseRole):
                 embed = discord.Embed(
                     title       = "🔬 PRO TESTER — THÔNG TIN BÍ MẬT",
                     description = (
-                        "Thiết bị không phát hiện Overlord trong trận này.\n\n"
-                        "Phe Anomalies không có thủ lĩnh — "
+                        "Thiết bị không phát hiện Lãnh Chúa trong trận này.\n\n"
+                        "Phe Dị Thể không có thủ lĩnh — "
                         "nhưng kỹ năng của bạn vẫn có thể kích hoạt nếu có Anomaly còn sống."
                     ),
                     color = 0x95a5a6
@@ -112,7 +112,7 @@ class ProTester(BaseRole):
                     embed=discord.Embed(
                         title       = "🌙 ĐÊM — PRO TESTER",
                         description = (
-                            f"👑 Overlord: `{self.overlord_info or 'Không xác định'}`\n\n"
+                            f"👑 Lãnh Chúa: `{self.overlord_info or 'Không xác định'}`\n\n"
                             "⚡ Bạn có thể kích hoạt **Giao Thức Kiểm Soát** ngay bây giờ.\n"
                             "☠️ Sau khi kích hoạt, bạn sẽ **hi sinh ngay lập tức**.\n\n"
                             "Bạn có chắc chắn?"
@@ -138,9 +138,9 @@ class ProTester(BaseRole):
 
     async def activate_ability(self, game, target_id: int | None = None):
         """
-        Ép Overlord giết 1 Anomaly.
-        Nếu 2 Pro Tester cùng kích hoạt — mỗi người chọn 1 mục tiêu khác nhau,
-        Overlord bị ép giết 2 Anomaly cùng lúc.
+        Ép Lãnh Chúa giết 1 Anomaly.
+        Nếu 2 Người Thử Nghiệm cùng kích hoạt — mỗi người chọn 1 mục tiêu khác nhau,
+        Lãnh Chúa bị ép giết 2 Anomaly cùng lúc.
         """
         if self.ability_used:
             return False, "Kỹ năng đã được sử dụng rồi."
@@ -151,17 +151,17 @@ class ProTester(BaseRole):
 
         self.ability_used = True
 
-        # Anomaly chưa bị Pro Tester nào nhắm trong đêm nay
+        # Anomaly chưa bị Người Thử Nghiệm nào nhắm trong đêm nay
         anomaly_targets = [
             pid for pid, role in game.roles.items()
             if role.team == "Anomalies"
-            and role.name != "Overlord"
+            and role.name != "Lãnh Chúa"
             and game.is_alive(pid)
             and pid not in ProTester._claimed_targets
         ]
 
         if not anomaly_targets:
-            return False, "Tất cả Anomaly đã bị Pro Tester kia nhắm rồi — không còn mục tiêu."
+            return False, "Tất cả Anomaly đã bị Người Thử Nghiệm kia nhắm rồi — không còn mục tiêu."
 
         # Chọn mục tiêu (ưu tiên chọn cụ thể nếu chưa bị nhắm)
         if target_id and target_id in anomaly_targets:
@@ -170,7 +170,7 @@ class ProTester(BaseRole):
             import random
             victim_id = random.choice(anomaly_targets)
 
-        # Đánh dấu để Pro Tester còn lại không chọn trùng
+        # Đánh dấu để Người Thử Nghiệm còn lại không chọn trùng
         ProTester._claimed_targets.add(victim_id)
 
         victim = game.players.get(victim_id)
@@ -184,9 +184,9 @@ class ProTester(BaseRole):
                     embed=discord.Embed(
                         title       = "⚠️ GIAO THỨC KIỂM SOÁT DỊ THỂ",
                         description = (
-                            "Một **Pro Tester** đã kích hoạt giao thức kiểm soát dị thể!\n\n"
-                            "Overlord đã bị ép tiêu diệt một Anomaly trong phe của mình...\n\n"
-                            "Nhưng cái giá phải trả là mạng sống của Pro Tester."
+                            "Một **Người Thử Nghiệm** đã kích hoạt giao thức kiểm soát dị thể!\n\n"
+                            "Lãnh Chúa đã bị ép tiêu diệt một Anomaly trong phe của mình...\n\n"
+                            "Nhưng cái giá phải trả là mạng sống của Người Thử Nghiệm."
                         ),
                         color = 0xe74c3c
                     )
@@ -194,10 +194,10 @@ class ProTester(BaseRole):
         except Exception:
             pass
 
-        # Ép Overlord giết Anomaly (bypass protection)
-        await game.kill_player(victim_id, reason="Bị Overlord ép giết bởi giao thức Pro Tester", bypass_protection=True)
+        # Ép Lãnh Chúa giết Anomaly (bypass protection)
+        await game.kill_player(victim_id, reason="Bị Lãnh Chúa ép giết bởi giao thức Người Thử Nghiệm", bypass_protection=True)
 
-        # Pro Tester tự hi sinh
+        # Người Thử Nghiệm tự hi sinh
         await game.kill_player(self.player.id, reason="Hi sinh sau khi kích hoạt Giao Thức Kiểm Soát")
 
         return True, victim_name
@@ -207,16 +207,16 @@ class ProTester(BaseRole):
         if self.ability_used:
             return False, "Kỹ năng đã được sử dụng rồi."
 
-        # Overlord có còn sống không
-        overlord_role = game.get_role_by_name("Overlord")
+        # Lãnh Chúa có còn sống không
+        overlord_role = game.get_role_by_name("Lãnh Chúa")
         if not overlord_role or not game.is_alive(overlord_role.player.id):
-            return False, "Overlord đã chết — không thể kiểm soát."
+            return False, "Lãnh Chúa đã chết — không thể kiểm soát."
 
-        # Có Anomaly chưa bị Pro Tester kia nhắm không
+        # Có Anomaly chưa bị Người Thử Nghiệm kia nhắm không
         available = [
             pid for pid, role in game.roles.items()
             if role.team == "Anomalies"
-            and role.name != "Overlord"
+            and role.name != "Lãnh Chúa"
             and game.is_alive(pid)
             and pid not in ProTester._claimed_targets
         ]
@@ -238,11 +238,11 @@ class ProTesterView(discord.ui.View):
         self._build(game)
 
     def _build(self, game):
-        # Lấy Anomaly chưa bị Pro Tester kia nhắm
+        # Lấy Anomaly chưa bị Người Thử Nghiệm kia nhắm
         anomaly_targets = [
             pid for pid, r in game.roles.items()
             if r.team == "Anomalies"
-            and r.name != "Overlord"
+            and r.name != "Lãnh Chúa"
             and game.is_alive(pid)
             and pid not in ProTester._claimed_targets
         ]
@@ -265,7 +265,7 @@ class ProTesterView(discord.ui.View):
             await interaction.response.send_message(
                 embed=discord.Embed(
                     title       = "⚡ KÍCH HOẠT THÀNH CÔNG",
-                    description = f"Overlord đã bị ép giết **{result}**.\nBạn đã hi sinh vì nhiệm vụ.",
+                    description = f"Lãnh Chúa đã bị ép giết **{result}**.\nBạn đã hi sinh vì nhiệm vụ.",
                     color       = 0xe74c3c
                 ),
                 ephemeral=True
@@ -291,7 +291,7 @@ class ProTesterView(discord.ui.View):
 
 
 class ProTesterSelect(discord.ui.Select):
-    """Chọn mục tiêu Anomaly cụ thể để Overlord giết."""
+    """Chọn mục tiêu Anomaly cụ thể để Lãnh Chúa giết."""
     def __init__(self, game, role: ProTester, anomaly_pids: list[int]):
         self.game = game
         self.role = role
@@ -330,7 +330,7 @@ class ProTesterSelect(discord.ui.Select):
             await interaction.response.send_message(
                 embed=discord.Embed(
                     title       = "⚡ KÍCH HOẠT THÀNH CÔNG",
-                    description = f"Overlord đã bị ép giết **{result}**.\nBạn đã hi sinh vì nhiệm vụ.",
+                    description = f"Lãnh Chúa đã bị ép giết **{result}**.\nBạn đã hi sinh vì nhiệm vụ.",
                     color       = 0xe74c3c
                 ),
                 ephemeral=True

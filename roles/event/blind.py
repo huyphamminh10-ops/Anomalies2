@@ -1,7 +1,7 @@
 # ══════════════════════════════════════════════════════════════════
-# roles/event/blind.py — Early Access Event Role
+# roles/event/blind.py — Vai Trò Sự Kiện Đặc Biệt
 # Blind: Dị thể gây mù — làm xáo trộn danh sách mục tiêu của
-# Survivors và Unknown khi họ dùng kỹ năng trong đêm.
+# Người Sống Sót và Unknown khi họ dùng kỹ năng trong đêm.
 # ══════════════════════════════════════════════════════════════════
 
 import discord
@@ -38,7 +38,7 @@ class Blind(BaseRole):
 
     description = (
         "Blind là một dị thể gây ra hiện tượng mù tạm thời.\n\n"
-        "• Kích hoạt khiến toàn bộ Survivors và Unknown mất khả năng nhận diện mục tiêu.\n"
+        "• Kích hoạt khiến toàn bộ Người Sống Sót và Unknown mất khả năng nhận diện mục tiêu.\n"
         "• Khi bị mù, danh sách chọn mục tiêu hiển thị '👁 : ĐÃ BỊ MÙ' thay vì tên thật.\n"
         "• Hiệu ứng kéo dài đến hết đêm đó.\n"
         "• Tối đa 3 lần sử dụng trong cả trận.\n"
@@ -46,13 +46,13 @@ class Blind(BaseRole):
     )
 
     dm_message = (
-        "👁 **BLIND – MÙ**\n\n"
-        "Bạn thuộc phe **Anomalies** — Early Access Event Role.\n\n"
+        "👁 **MÙ QUÁNG**\n\n"
+        "Bạn thuộc phe **Dị Thể** — Vai Trò Sự Kiện Đặc Biệt.\n\n"
         "🌫 Bạn có khả năng gây mù tạm thời cho kẻ thù.\n"
-        "Khi kích hoạt, toàn bộ Survivors và Unknown sẽ không thể nhìn thấy tên mục tiêu thật.\n\n"
+        "Khi kích hoạt, toàn bộ Người Sống Sót và Unknown sẽ không thể nhìn thấy tên mục tiêu thật.\n\n"
         "⚡ **Kỹ năng:** Gây Mù — tối đa **3 lần** trong cả trận.\n"
         "🌙 Hiệu ứng kéo dài đến hết đêm kích hoạt.\n\n"
-        "🎯 Mục tiêu: Phe Anomalies chiến thắng."
+        "🎯 Mục tiêu: Phe Dị Thể chiến thắng."
     )
 
     def __init__(self, player):
@@ -112,7 +112,7 @@ class Blind(BaseRole):
                     title       = "🌙 ĐÊM — BLIND",
                     description = (
                         f"👁 Lượt gây mù còn lại: **{self.blind_remaining_uses}/3**\n\n"
-                        "Kích hoạt để che giấu danh sách mục tiêu của tất cả Survivors và Unknown.\n"
+                        "Kích hoạt để che giấu danh sách mục tiêu của tất cả Người Sống Sót và Unknown.\n"
                         "Họ sẽ không biết mình đang chọn ai đêm nay."
                     ),
                     color       = 0x2c3e50

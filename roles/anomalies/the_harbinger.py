@@ -11,17 +11,17 @@ class TheHarbinger(BaseRole):
     Mỗi đêm đánh dấu một mục tiêu. 
     Khi có đủ 3 người bị đánh dấu còn sống, 
     Harbinger có thể kích hoạt để tiêu diệt cả 3 cùng lúc vào đêm sau. 
-    Đêm kích hoạt đó, phe Anomalies không được chọn mục tiêu khác.
+    Đêm kích hoạt đó, phe Dị Thể không được chọn mục tiêu khác.
     """
 
     dm_message = (
-        "☠️ **THE HARBINGER – SỨ GIẢ TẬN THẾ**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "☠️ **SỨ GIẢ TẬN THẾ**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🔴 Mỗi đêm bạn đánh dấu 1 người.\n"
         "   Khi đủ 3 người bị đánh dấu còn sống → bạn có thể kích hoạt.\n\n"
         "💥 Khi kích hoạt: Tiêu diệt cả 3 mục tiêu cùng lúc vào đêm sau.\n"
-        "   ⚠️ Đêm kích hoạt, phe Anomalies KHÔNG chọn được mục tiêu khác.\n\n"
-        "👥 Bạn biết danh tính toàn bộ đồng đội Anomalies.\n"
+        "   ⚠️ Đêm kích hoạt, phe Dị Thể KHÔNG chọn được mục tiêu khác.\n\n"
+        "👥 Bạn biết danh tính toàn bộ đồng đội Dị Thể.\n"
         "🎯 Mục tiêu: Tích lũy dấu để thực hiện cú diệt hàng loạt."
     )
 

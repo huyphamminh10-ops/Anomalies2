@@ -14,8 +14,8 @@ class Medium(BaseRole):
     )
 
     dm_message = (
-        "🕯️ **MEDIUM – NHÀ NGOẠI CẢM**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "🕯️ **NHÀ NGOẠI CẢM**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "👻 Vào ban đêm bạn có thể mở séance để trò chuyện với người đã chết.\n"
         "📡 Các linh hồn có thể cung cấp manh mối quan trọng.\n\n"
         "🚫 Bạn không tham gia bỏ phiếu cách ly ban ngày.\n"

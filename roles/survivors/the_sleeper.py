@@ -17,8 +17,8 @@ class TheSleeper(BaseRole):
     )
 
     dm_message = (
-        "😴 **THE SLEEPER – KẺ SAY NGỦ**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "😴 **KẺ NGỦ MÊ**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🚫 Bạn không thể thấy và không thể tham gia chat Thị Trấn.\n\n"
         "🌙 Mỗi sáng bạn sẽ nhận được báo cáo chi tiết những gì đã xảy ra đêm qua.\n"
         "⚠ Không bao giờ tiết lộ danh tính thủ phạm.\n\n"

@@ -13,8 +13,8 @@ class ThePaperShredder(BaseRole):
     )
 
     dm_message = (
-        "🗂️ **THE PAPER-SHREDDER – KẺ HỦY HỒ SƠ**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🗂️ **MÁY HỦY TÀI LIỆU**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm bạn chọn 1 người để hủy di chúc nếu họ bị giết.\n\n"
         "📋 Cơ chế:\n"
         "• Nếu mục tiêu chết trong đêm bạn đánh dấu, di chúc của họ bị xóa hoàn toàn.\n"

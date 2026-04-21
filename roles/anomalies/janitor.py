@@ -10,12 +10,12 @@ class Janitor(BaseRole):
     description = "Xóa vai trò của nạn nhân nếu họ chết trong đêm."
 
     dm_message = (
-        "🧹 **JANITOR – LAO CÔNG**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🧹 **LAO CÔNG**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🗑️ Mỗi đêm bạn chọn 1 mục tiêu để dọn dẹp.\n"
         "   Nếu mục tiêu chết đêm đó → vai trò của họ bị **xóa sạch** khỏi thông báo.\n"
         "   Thị trấn sẽ không biết ai vừa chết là vai gì!\n\n"
-        "👥 Bạn biết danh tính toàn bộ đồng đội Anomalies.\n"
+        "👥 Bạn biết danh tính toàn bộ đồng đội Dị Thể.\n"
         "🎯 Mục tiêu: Giúp phe Dị Thể hoạt động trong bóng tối."
     )
 

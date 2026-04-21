@@ -15,8 +15,8 @@ class Vigilante(BaseRole):
     )
 
     dm_message = (
-        "🔫 **VIGILANTE – KẺ TRỪNG PHẠT**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "🔫 **KẺ TRỪNG PHẠT**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "💥 Bạn có 3 viên đạn để trừng phạt kẻ tình nghi bất cứ lúc nào.\n\n"
         "☀️ Bắn ban ngày → bạn bị **lộ diện** trước toàn thị trấn.\n"
         "🌙 Bắn ban đêm → danh tính được giữ bí mật.\n"

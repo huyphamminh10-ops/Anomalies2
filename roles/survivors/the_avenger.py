@@ -12,18 +12,18 @@ class TheAvenger(BaseRole):
     description = (
         "Bạn mang trong mình sự uất hận và sẽ kéo kẻ thù xuống mồ cùng mình tùy theo cách bạn bị tiêu diệt.\n\n"
         "• Bị Trục xuất: Tiêu diệt Mayor và 1 Survivor tùy chọn.\n"
-        "• Bị Anomalies tiêu diệt: Tiêu diệt Overlord và 1 Anomaly tùy chọn.\n"
-        "• Bị Unknown Entities tiêu diệt: Tiêu diệt chính kẻ đã trực tiếp ra tay.\n\n"
+        "• Bị Dị Thể tiêu diệt: Tiêu diệt Lãnh Chúa và 1 Anomaly tùy chọn.\n"
+        "• Bị Thực Thể Ẩn tiêu diệt: Tiêu diệt chính kẻ đã trực tiếp ra tay.\n\n"
         "Khi bạn chết, hệ thống sẽ dừng 30 giây để bạn chọn mục tiêu."
     )
 
     dm_message = (
-        "⚔️ **THE AVENGER – KẺ BÁO THÙ**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "⚔️ **KẺ BÁO THÙ**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "Nếu bạn chết, bạn sẽ kéo kẻ thù xuống cùng mình.\n\n"
         "🔥 Cơ chế trả thù:\n"
         "• Bị Trục xuất: Giết Mayor và 1 Survivor bạn chọn.\n"
-        "• Bị Anomalies giết: Giết Overlord và 1 Anomaly bạn chọn.\n"
+        "• Bị Dị Thể giết: Giết Lãnh Chúa và 1 Anomaly bạn chọn.\n"
         "• Bị Unknown giết: Giết chính kẻ đã ra tay với bạn.\n\n"
         "⏳ Khi bạn chết, trận đấu sẽ tạm dừng 30 giây để bạn chọn mục tiêu."
     )
@@ -100,11 +100,11 @@ class TheAvenger(BaseRole):
     # ==============================
 
     async def _revenge_anomalies(self, game):
-        overlord = game.find_role("Overlord")
+        overlord = game.find_role("Lãnh Chúa")
         # BUG FIX #12: role.alive không được engine update → dùng game.is_alive()
         if overlord and game.is_alive(overlord.player.id):
             await game.kill_player(overlord, reason="revenge", bypass_protection=True)
-            await game.add_log("💀 Overlord đã bị Kẻ Báo Thù tiêu diệt!")
+            await game.add_log("💀 Lãnh Chúa đã bị Kẻ Báo Thù tiêu diệt!")
 
         candidates = [
             p for p in game.players

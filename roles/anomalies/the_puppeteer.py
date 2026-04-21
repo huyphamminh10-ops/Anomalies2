@@ -8,21 +8,21 @@ class ThePuppeteer(BaseRole):
     max_count = 1
 
     description = (
-        "Bạn điều khiển tâm trí Survivors, ép họ bỏ phiếu theo ý muốn của mình vào ban ngày.\n\n"
+        "Bạn điều khiển tâm trí Người Sống Sót, ép họ bỏ phiếu theo ý muốn của mình vào ban ngày.\n\n"
         "• Mỗi đêm chọn 1 Survivor và 1 mục tiêu vote — sáng hôm sau họ bị ép vote đó.\n"
         "• Không thể điều khiển cùng 1 người 2 lần liên tiếp.\n"
         "• Có **3 lượt** sử dụng trong suốt trận."
     )
 
     dm_message = (
-        "🎭 **THE PUPPETEER – KẺ ĐIỀU KHIỂN**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🎭 **KẺ ĐIỀU KHIỂN**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm bạn gắn sợi dây vô hình vào 1 Survivor — sáng hôm sau họ bị ép vote theo lệnh của bạn.\n\n"
         "📋 Cơ chế:\n"
         "• Chọn nạn nhân → chọn người họ sẽ bị ép vote.\n"
         "• Không điều khiển được cùng 1 người 2 đêm liên tiếp.\n"
         "• Bạn có **3 lượt** điều khiển trong cả trận.\n\n"
-        "💡 Hãy dùng để loại bỏ Survivors quan trọng hoặc bảo vệ đồng đội khỏi bị vote."
+        "💡 Hãy dùng để loại bỏ Người Sống Sót quan trọng hoặc bảo vệ đồng đội khỏi bị vote."
     )
 
     def __init__(self, player):

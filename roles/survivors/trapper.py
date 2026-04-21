@@ -17,8 +17,8 @@ class Trapper(BaseRole):
     )
 
     dm_message = (
-        "🪤 **TRAPPER – THỢ ĐẶT BẪY**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "🪤 **THỢ ĐẶT BẪY**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🏠 Nhà bạn luôn có bẫy kích hoạt — tự động phản công khi bị tấn công.\n\n"
         "⚔️ 50% — Kẻ tấn công bị tiêu diệt ngay tại chỗ.\n"
         "👁️ 50% — Kẻ tấn công bị **lộ danh tính** trước thị trấn.\n\n"

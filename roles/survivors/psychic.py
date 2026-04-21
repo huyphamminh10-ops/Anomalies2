@@ -9,15 +9,15 @@ class Psychic(BaseRole):
 
     description = (
         "Mỗi đêm bạn có thể cảm nhận linh hồn của 1 người chơi.\n\n"
-        "• Nếu họ thuộc Anomalies hoặc Unknown Entities: ⚠ Năng lượng xấu.\n"
-        "• Nếu họ thuộc Survivors: ✨ Linh hồn trong sạch.\n"
+        "• Nếu họ thuộc Dị Thể hoặc Thực Thể Ẩn: ⚠ Năng lượng xấu.\n"
+        "• Nếu họ thuộc Người Sống Sót: ✨ Linh hồn trong sạch.\n"
         "• Nếu cảm nhận trúng Anomaly, cảnh báo mơ hồ gửi vào kênh Dị Thể.\n"
         "• Kết quả mang tính trực cảm — không chính xác tuyệt đối như Thám Tử."
     )
 
     dm_message = (
-        "🔮 **PSYCHIC – NHÀ NGOẠI CẢM**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "🔮 **NGƯỜI TIÊN TRI**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🌙 Mỗi đêm bạn dùng năng lực ngoại cảm để đọc linh hồn 1 người.\n"
         "• ⚠ Năng lượng xấu → người này có thể là mối đe dọa.\n"
         "• ✨ Linh hồn trong sạch → người này nhiều khả năng là đồng minh.\n\n"
@@ -65,7 +65,7 @@ class PsychicSelect(discord.ui.Select):
             result = "⚠️ Bạn cảm thấy người này mang **năng lượng tối tăm** và nguy hiểm..."
             color  = 0xe74c3c
 
-            # ── Cảnh báo mơ hồ vào Anomalies chat (chỉ khi là Anomalies) ──
+            # ── Cảnh báo mơ hồ vào Dị Thể chat (chỉ khi là Dị Thể) ──
             if target_role.team == "Anomalies" and hasattr(self.game, "anomaly_chat_mgr"):
                 await self.game.anomaly_chat_mgr.send(
                     embed=discord.Embed(
@@ -74,7 +74,7 @@ class PsychicSelect(discord.ui.Select):
                             "**NGƯỜI TIÊN TRI** đã cảm nhận được năng lượng tối từ "
                             "một thành viên trong phe Dị Thể!\n\n"
                             "⚠️ Kết quả này mang tính mơ hồ nhưng có thể khiến "
-                            "Survivors **nghi ngờ** — hãy cẩn thận lời nói ban ngày."
+                            "Người Sống Sót **nghi ngờ** — hãy cẩn thận lời nói ban ngày."
                         ),
                         color=0x8e44ad
                     )

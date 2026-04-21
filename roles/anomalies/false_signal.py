@@ -7,15 +7,15 @@ class TheFalseSignal(BaseRole):
     team = "Anomalies"
 
     description = (
-        "Bạn giả mạo tín hiệu để đánh lừa kết quả điều tra của Survivors.\n\n"
+        "Bạn giả mạo tín hiệu để đánh lừa kết quả điều tra của Người Sống Sót.\n\n"
         "• Mỗi đêm đánh dấu 1 mục tiêu — nếu ai đó điều tra họ đêm đó, kết quả sẽ hiện 'Survivor - Power Role'.\n"
         "• Không thể đánh dấu cùng 1 người 2 đêm liên tiếp.\n"
         "• Có **3 lượt** sử dụng trong cả trận."
     )
 
     dm_message = (
-        "📡 **THE FALSE-SIGNAL – TÍN HIỆU GIẢ**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "📡 **TÍN HIỆU GIẢ**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm bạn phát tín hiệu giả cho 1 người — nếu Sheriff hoặc Investigator điều tra họ, kết quả bị bóp méo.\n\n"
         "• Kết quả: 'Survivor - Power Role' thay vì thực tế.\n"
         "• Không thể dùng 2 lần liên tiếp trên cùng 1 người.\n"

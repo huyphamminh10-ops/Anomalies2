@@ -22,8 +22,8 @@ class TheTimeWeaver(BaseRole):
     )
 
     dm_message = (
-        "⏳ **THE TIME-WEAVER – KẺ DỆT THỜI GIAN**\n\n"
-        "Bạn thuộc phe **Unknown** — sức mạnh của bạn là thời gian.\n\n"
+        "⏳ **KẺ DỆT THỜI GIAN**\n\n"
+        "Bạn thuộc phe **Thực Thể Ẩn** — sức mạnh của bạn là thời gian.\n\n"
         "🌅 PASSIVE — Nhãn Quan Thời Gian:\n"
         "Mỗi sáng bạn nhận DM biết tên 1 kẻ đã ra tay giết người đêm qua.\n\n"
         "⏪ ACTIVE — Rewind Timeline (1 lần duy nhất):\n"

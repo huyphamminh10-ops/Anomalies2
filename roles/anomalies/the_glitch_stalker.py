@@ -8,18 +8,18 @@ class TheGlitchStalker(BaseRole):
     max_count = 1
 
     description = (
-        "Bạn theo dõi bí mật để khai thác lỗ hổng trong hệ thống của Survivors.\n\n"
+        "Bạn theo dõi bí mật để khai thác lỗ hổng trong hệ thống của Người Sống Sót.\n\n"
         "• Mỗi đêm chọn 1 Survivor để theo dõi và phát hiện vai trò thực của họ.\n"
         "• Không thể theo dõi cùng một người 2 đêm liên tiếp.\n"
         "• Kết quả chỉ gửi riêng cho bạn qua DM."
     )
 
     dm_message = (
-        "👁️ **THE GLITCH-STALKER – KẺ THEO DÕI LỖI**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "👁️ **KẺ RÌNH RẬP**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm bạn chọn 1 Survivor để quét và phát hiện vai trò thực của họ.\n\n"
         "📋 Cơ chế:\n"
-        "• Chỉ nhắm được Survivors — không thể theo dõi Dị Thể khác.\n"
+        "• Chỉ nhắm được Người Sống Sót — không thể theo dõi Dị Thể khác.\n"
         "• Không thể theo dõi cùng 1 người 2 đêm liên tiếp.\n"
         "• Kết quả được lưu vào bộ nhớ để dùng sau.\n\n"
         "💡 Dùng thông tin thu thập được để lên kế hoạch loại bỏ mục tiêu nguy hiểm nhất."
@@ -68,7 +68,7 @@ class TheGlitchStalker(BaseRole):
         if not alive:
             await self.safe_send(
                 embed=discord.Embed(
-                    title="👁️ ĐÊM — THE GLITCH-STALKER",
+                    title="👁️ ĐÊM — KẺ RÌNH RẬP",
                     description="Không còn Survivor nào chưa bị theo dõi gần đây.",
                     color=0xe74c3c
                 )
@@ -79,7 +79,7 @@ class TheGlitchStalker(BaseRole):
 
         await self.safe_send(
             embed=discord.Embed(
-                title="👁️ ĐÊM — THE GLITCH-STALKER",
+                title="👁️ ĐÊM — KẺ RÌNH RẬP",
                 description="Chọn 1 Survivor để theo dõi và phát hiện vai trò thực của họ:",
                 color=0xe74c3c
             ),

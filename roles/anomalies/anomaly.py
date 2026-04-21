@@ -8,23 +8,23 @@ class Anomaly(BaseRole):
     max_count = 10
 
     description = (
-        "Bạn là một Dị Thể — thành viên chiến đấu cốt lõi của phe Anomalies.\n\n"
+        "Bạn là một Dị Thể — thành viên chiến đấu cốt lõi của phe Dị Thể.\n\n"
         "• Mỗi đêm bỏ phiếu cùng phe để chọn 1 mục tiêu tiêu diệt.\n"
-        "• Khi Overlord còn sống: Overlord quyết định mục tiêu cuối cùng.\n"
-        "• Khi Overlord chết: toàn bộ Anomalies còn sống cùng vote — đa số thắng.\n"
-        "• Bạn biết danh tính tất cả đồng đội Anomalies ngay từ đầu trận."
+        "• Khi Lãnh Chúa còn sống: Lãnh Chúa quyết định mục tiêu cuối cùng.\n"
+        "• Khi Lãnh Chúa chết: toàn bộ Dị Thể còn sống cùng vote — đa số thắng.\n"
+        "• Bạn biết danh tính tất cả đồng đội Dị Thể ngay từ đầu trận."
     )
 
     dm_message = (
-        "🔴 **ANOMALY – DỊ THỂ**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🔴 **DỊ THỂ**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "Bạn là chiến binh cốt lõi — sức mạnh nằm ở tập thể.\n\n"
         "📋 Cơ chế:\n"
         "• Mỗi đêm phe bạn cùng bỏ phiếu chọn 1 người để tiêu diệt.\n"
-        "• Khi **Overlord còn sống**: Overlord có quyền quyết định cuối cùng.\n"
-        "• Khi **Overlord chết**: vote đa số trong phe sẽ quyết định mục tiêu.\n\n"
-        "👁️ Bạn biết danh tính toàn bộ đồng đội Anomalies.\n\n"
-        "🏆 Điều kiện thắng: Anomalies chiếm đa số hoặc bằng số Survivors còn lại.\n"
+        "• Khi **Lãnh Chúa còn sống**: Lãnh Chúa có quyền quyết định cuối cùng.\n"
+        "• Khi **Lãnh Chúa chết**: vote đa số trong phe sẽ quyết định mục tiêu.\n\n"
+        "👁️ Bạn biết danh tính toàn bộ đồng đội Dị Thể.\n\n"
+        "🏆 Điều kiện thắng: Dị Thể chiếm đa số hoặc bằng số Người Sống Sót còn lại.\n"
         "💡 Hãy phối hợp với đồng đội — sức mạnh của bạn là tổ chức, không phải cá nhân."
     )
 
@@ -65,16 +65,16 @@ class Anomaly(BaseRole):
     async def send_ui(self, game):
         self.vote_target = None
 
-        overlord     = game.get_role_by_name("Overlord")
-        has_overlord = overlord is not None  # Overlord có trong trận không
+        overlord     = game.get_role_by_name("Lãnh Chúa")
+        has_overlord = overlord is not None  # Lãnh Chúa có trong trận không
 
-        # Nếu Overlord còn sống → Overlord tự quyết, Anomaly không cần vote
+        # Nếu Lãnh Chúa còn sống → Lãnh Chúa tự quyết, Anomaly không cần vote
         if has_overlord and game.overlord_alive and game.is_alive(overlord.player.id):
             try:
                 await self.safe_send(
                     embed=discord.Embed(
                         title="🌙 ĐÊM — CHỜ LỆNH",
-                        description="Overlord đang quyết định mục tiêu đêm nay.\nBạn không cần hành động.",
+                        description="Lãnh Chúa đang quyết định mục tiêu đêm nay.\nBạn không cần hành động.",
                         color=0xe74c3c
                     )
                 )
@@ -82,12 +82,12 @@ class Anomaly(BaseRole):
                 pass
             return
 
-        # Tự vote — Overlord chết hoặc không có Overlord trong trận
+        # Tự vote — Lãnh Chúa chết hoặc không có Lãnh Chúa trong trận
         alive_targets = [
             p for p in game.get_alive_players()
             if p.id != self.player.id
             and game.roles.get(p.id)
-            and game.roles[p.id].team != "Anomalies"
+            and game.roles[p.id].team != "Dị Thể"
         ]
 
         if not alive_targets:
@@ -95,11 +95,11 @@ class Anomaly(BaseRole):
 
         view = self.AnomalyVoteView(game, self, alive_targets)
 
-        # Mô tả khác nhau tùy có Overlord hay không
+        # Mô tả khác nhau tùy có Lãnh Chúa hay không
         if has_overlord:
-            desc = "Overlord đã ngã xuống.\nPhe Anomalies tự quyết định — hãy bỏ phiếu chọn mục tiêu:"
+            desc = "Lãnh Chúa đã ngã xuống.\nPhe Dị Thể tự quyết định — hãy bỏ phiếu chọn mục tiêu:"
         else:
-            desc = "Phe Anomalies tự quyết định — hãy bỏ phiếu chọn mục tiêu:"
+            desc = "Phe Dị Thể tự quyết định — hãy bỏ phiếu chọn mục tiêu:"
 
         try:
             await self.safe_send(
@@ -148,7 +148,7 @@ class Anomaly(BaseRole):
             target_id = int(self.values[0])
             self.role.vote_target = target_id
 
-            # Tổng hợp vote từ tất cả Anomalies và queue kill cho mục tiêu nhiều vote nhất
+            # Tổng hợp vote từ tất cả Dị Thể và queue kill cho mục tiêu nhiều vote nhất
             self._resolve_anomaly_vote(target_id)
 
             target = self.game.players.get(target_id)
@@ -188,6 +188,6 @@ class Anomaly(BaseRole):
                     if not already_queued:
                         self.game.queue_kill(
                             target_id,
-                            reason="Bị Anomalies tiêu diệt trong đêm"
+                            reason="Bị Dị Thể tiêu diệt trong đêm"
                         )
                     break

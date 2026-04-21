@@ -22,7 +22,7 @@ class SerialKiller(BaseRole):
         "• Không thể giết cùng 1 người 2 đêm liên tiếp.\n"
         "• Hành động giết xảy ra ngay trong đêm — không cần chờ resolve.\n\n"
         "🏆 Điều kiện thắng: Chỉ còn mình bạn sống sót.\n"
-        "⚠ Cả Survivors lẫn Anomalies đều là mục tiêu — không có đồng minh."
+        "⚠ Cả Người Sống Sót lẫn Dị Thể đều là mục tiêu — không có đồng minh."
     )
     def __init__(self, player):
         super().__init__(player)

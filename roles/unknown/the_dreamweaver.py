@@ -21,8 +21,8 @@ class TheDreamweaver(BaseRole):
     )
 
     dm_message = (
-        "🌙 **THE DREAMWEAVER – NGƯỜI DỆT GIẤC MƠ**\n\n"
-        "Bạn thuộc phe **Unknown** — không giết, chỉ dệt sợi liên kết.\n\n"
+        "🌙 **KẺ DỆT MỘNG**\n\n"
+        "Bạn thuộc phe **Thực Thể Ẩn** — không giết, chỉ dệt sợi liên kết.\n\n"
         "🌙 Mỗi đêm bạn chọn 2 người để kết nối tâm trí — họ sẽ thấy vai trò của nhau trong giấc mơ.\n\n"
         "📋 Cơ chế:\n"
         "• Cả 2 người trong cặp đều nhận DM biết vai trò của nhau.\n"

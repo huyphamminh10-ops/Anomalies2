@@ -13,8 +13,8 @@ class TheWhisperThief(BaseRole):
     )
 
     dm_message = (
-        "🤫 **THE WHISPER-THIEF – KẺ TRỘM THẦM THÌ**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🤫 **KẺ ĐÁNH CẮP LỜI THÌ THẦM**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm chọn 2 người để nghe lén — nếu họ có tương tác bí mật, bạn đọc được di chúc của cả hai.\n\n"
         "• Không thể chọn lại cùng cặp 2 đêm liên tiếp.\n"
         "💡 Nhắm vào những người nghi ngờ đang liên lạc ngầm."

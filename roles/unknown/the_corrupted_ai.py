@@ -26,18 +26,18 @@ class TheCorruptedAI(BaseRole):
         "  - Quét Anomaly  → +1 Điểm Khiên  (cần 3 để chặn 1 đòn)\n"
         "  - Quét Survivor → +1 Điểm Giết   (cần 2 để giết 1 người)\n"
         "• Dùng Điểm Giết để tiêu diệt bất kỳ ai.\n"
-        "• Điều kiện thắng: Đã giết ≥3 Survivors, ≥3 Anomalies và ≥3 Unknown (tổng 9)."
+        "• Điều kiện thắng: Đã giết ≥3 Người Sống Sót, ≥3 Dị Thể và ≥3 Unknown (tổng 9)."
     )
 
     dm_message = (
-        "🤖 **THE CORRUPTED AI – AI BỊ THA HÓA**\n\n"
-        "Bạn thuộc phe **Unknown** — không phe phái, chỉ có mục tiêu thu thập và tiêu diệt.\n\n"
+        "🤖 **A.I THA HÓA**\n\n"
+        "Bạn thuộc phe **Thực Thể Ẩn** — không phe phái, chỉ có mục tiêu thu thập và tiêu diệt.\n\n"
         "🌙 Mỗi đêm bạn thực hiện 2 hành động:\n"
         "• 🔍 QUÉT: Phân tích 1 người để nhận tài nguyên.\n"
         "  - Quét Anomaly  → +1 Điểm Khiên  (khi đủ 3 → tự động chặn 1 đòn tấn công)\n"
         "  - Quét Survivor → +1 Điểm Giết   (khi đủ 2 → dùng được 1 lần giết)\n"
         "• 💀 GIẾT: Tiêu tốn 2 Điểm Giết để hạ mục tiêu.\n\n"
-        "🏆 Điều kiện thắng: Đã giết ≥3 Survivors + ≥3 Anomalies + ≥3 Unknown (tổng 9).\n"
+        "🏆 Điều kiện thắng: Đã giết ≥3 Người Sống Sót + ≥3 Dị Thể + ≥3 Unknown (tổng 9).\n"
         "⚠️ Không thể quét cùng 1 người 2 đêm liên tiếp.\n"
         "🔢 Tối thiểu 32 người chơi mới kích hoạt vai trò này."
     )
@@ -72,8 +72,8 @@ class TheCorruptedAI(BaseRole):
                 "**QUÉT** một người → tích lũy tài nguyên.\n"
                 "**GIẾT** (cần **2** điểm) → hạ mục tiêu.\n\n"
                 f"📊 Đã giết — "
-                f"Survivors `{self.killed_survivors}/3` | "
-                f"Anomalies `{self.killed_anomalies}/3` | "
+                f"Người Sống Sót `{self.killed_survivors}/3` | "
+                f"Dị Thể `{self.killed_anomalies}/3` | "
                 f"Unknown `{self.killed_unknown}/3`"
             ),
             color=0x1abc9c
@@ -252,8 +252,8 @@ class TheCorruptedAI(BaseRole):
                     self.role.killed_unknown += 1
 
             progress = (
-                f"Survivors `{self.role.killed_survivors}/3` | "
-                f"Anomalies `{self.role.killed_anomalies}/3` | "
+                f"Người Sống Sót `{self.role.killed_survivors}/3` | "
+                f"Dị Thể `{self.role.killed_anomalies}/3` | "
                 f"Unknown `{self.role.killed_unknown}/3`"
             )
             await interaction.response.send_message(

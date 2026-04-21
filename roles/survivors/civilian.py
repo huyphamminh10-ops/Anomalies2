@@ -11,14 +11,14 @@ class Civilian(BaseRole):
         "Bạn là một Dân Thường bình thường của thị trấn.\n\n"
         "• Không có khả năng đặc biệt vào ban đêm.\n"
         "• Nhiệm vụ của bạn là quan sát, suy luận và bỏ phiếu đúng người vào ban ngày.\n"
-        "• Hãy dùng lý trí để bảo vệ Survivors và loại bỏ Anomalies."
+        "• Hãy dùng lý trí để bảo vệ Người Sống Sót và loại bỏ Dị Thể."
     )
 
     dm_message = (
-        "🏘️ **CIVILIAN – DÂN THƯỜNG**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "🏘️ **DÂN THƯỜNG**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "Bạn không có khả năng đặc biệt, nhưng lá phiếu của bạn rất quan trọng.\n\n"
-        "🎯 Mục tiêu: Giúp thị trấn xác định và loại bỏ tất cả Anomalies.\n"
+        "🎯 Mục tiêu: Giúp thị trấn xác định và loại bỏ tất cả Dị Thể.\n"
         "💡 Hãy lắng nghe, quan sát và đưa ra phán đoán chính xác mỗi ngày."
     )
 

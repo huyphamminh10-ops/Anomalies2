@@ -15,8 +15,8 @@ class TheDarkArchitect(BaseRole):
     )
 
     dm_message = (
-        "🌑 **THE DARK-ARCHITECT – KIẾN TRÚC SƯ BÓNG TỐI**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🌑 **KIẾN TRÚC SƯ BÓNG TỐI**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm bạn chọn 3 ngôi nhà để phong tỏa trong bóng tối.\n\n"
         "📋 Cơ chế:\n"
         "• 3 người được chọn sẽ bị khóa — không thể dùng bất kỳ kỹ năng đêm nào.\n"

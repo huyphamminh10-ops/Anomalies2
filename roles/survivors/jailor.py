@@ -131,13 +131,13 @@ class Jailor(BaseRole):
     )
 
     dm_message = (
-        "⚖️ **JAILOR – CAI NGỤC**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "⚖️ **CAI NGỤC**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🌙 Mỗi đêm bạn có thể giam 1 người:\n"
         "  - Người bị giam không thể dùng kỹ năng và không thể bị giết.\n"
         "  - Bạn có thể trò chuyện ẩn danh với tù nhân.\n\n"
         "💥 Bạn có 1 viên đạn để xử tử tù nhân.\n"
-        "⚠️ Nếu xử tử sai người thuộc phe Survivors, bạn sẽ tự mất khả năng hành động.\n"
+        "⚠️ Nếu xử tử sai người thuộc phe Người Sống Sót, bạn sẽ tự mất khả năng hành động.\n"
         "🎯 Mục tiêu: Bảo vệ thị trấn bằng cách vô hiệu hóa kẻ thù đúng lúc."
     )
 

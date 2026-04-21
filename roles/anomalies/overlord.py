@@ -9,18 +9,18 @@ class Overlord(BaseRole):
     rarity = "legendary"
 
     description = (
-        "Bạn là Overlord – thủ lĩnh Dị Thể.\n"
+        "Bạn là Lãnh Chúa – thủ lĩnh Dị Thể.\n"
         "Bạn quyết định mục tiêu giết mỗi đêm.\n"
         "Khi bạn chết, phe sẽ phải vote chung."
     )
 
     dm_message = (
-        "👑 **OVERLORD – LÃNH CHÚA**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "👑 **LÃNH CHÚA**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🎯 Mỗi đêm bạn quyết định mục tiêu tấn công của cả phe Dị Thể.\n"
-        "👥 Bạn biết danh tính toàn bộ đồng đội Anomalies.\n\n"
+        "👥 Bạn biết danh tính toàn bộ đồng đội Dị Thể.\n\n"
         "⚠️ Khi bạn chết, phe Dị Thể mất thủ lĩnh — họ phải bỏ phiếu chung để chọn mục tiêu.\n"
-        "🎯 Mục tiêu: Điều phối phe Anomalies tiêu diệt Survivors trước khi bị lộ."
+        "🎯 Mục tiêu: Điều phối phe Dị Thể tiêu diệt Người Sống Sót trước khi bị lộ."
     )
 
 
@@ -58,7 +58,7 @@ class Overlord(BaseRole):
             p for p in game.get_alive_players()
             if p.id != self.player.id
             and game.roles.get(p.id)
-            and game.roles[p.id].team != "Anomalies"
+            and game.roles[p.id].team != "Dị Thể"
         ]
 
         if not alive_targets:
@@ -76,7 +76,7 @@ class Overlord(BaseRole):
         try:
             await self.safe_send(
                 embed=discord.Embed(
-                    title="👑 ĐÊM — OVERLORD",
+                    title="👑 ĐÊM — LÃNH CHÚA",
                     description=(
                         "Bạn là thủ lĩnh — **quyết định của bạn là mệnh lệnh**.\n\n"
                         f"👥 Đồng đội còn sống:\n{team_info}\n\n"
@@ -127,7 +127,7 @@ class Overlord(BaseRole):
 
             target_id = int(self.values[0])
             self.role.kill_target_id = target_id
-            self.game.queue_kill(target_id, reason="Bị Anomalies tiêu diệt trong đêm")
+            self.game.queue_kill(target_id, reason="Bị Dị Thể tiêu diệt trong đêm")
 
             target = self.game.players.get(target_id)
             for item in self.view.children:

@@ -14,8 +14,8 @@ class MayorAide(BaseRole):
     )
 
     dm_message = (
-        "🤝 **MAYOR AIDE – PHỤ TÁ THỊ TRƯỞNG**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "🤝 **PHỤ TÁ THỊ TRƯỞNG**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🔎 Bạn biết danh tính Thị Trưởng ngay từ đầu trận.\n"
         "📊 Hãy theo dõi trạng thái sống/chết của Thị Trưởng mỗi đêm.\n\n"
         "💡 Phối hợp cùng Thị Trưởng để lãnh đạo thị trấn hiệu quả.\n"

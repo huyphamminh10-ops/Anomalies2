@@ -12,4 +12,3 @@ pinned: false
 
 # Tên Dự Án Của Bạn
 Mô tả ngắn gọn về ứng dụng Hugging Face của bạn ở đây.
-# Anomalies2

@@ -43,7 +43,7 @@ class MadPharmacist(BaseRole):
 
     dm_message = (
         "🧪 **NHÀ DƯỢC HỌC ĐIÊN**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "Bạn có 4 loại thuốc đặc biệt:\n\n"
         "💊 **Hồi Phục Nhanh** `×2` — Bảo vệ mục tiêu khỏi bị giết 1 lần. Có thể dùng cho bản thân.\n\n"
         "💀 **Ngừng Tim** `×1` — Giết mục tiêu ngay lập tức.\n\n"

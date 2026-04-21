@@ -13,8 +13,8 @@ class Mayor:
     )
 
     dm_message = (
-        "🏛️ **MAYOR – THỊ TRƯỞNG**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "🏛️ **THỊ TRƯỞNG**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "👑 Bạn là thủ lĩnh của thị trấn — phiếu bầu có hệ số x3 khi lộ diện.\n\n"
         "🔓 Lộ Diện: Tiết lộ bạn là Thị Trưởng để kích hoạt hiệu ứng phiếu.\n"
         "🔫 Bạn có 3 viên đạn để phản công nếu bị Dị Thể tấn công.\n"

@@ -15,8 +15,8 @@ class TheNeuroParasite(BaseRole):
     )
 
     dm_message = (
-        "🦠 **THE NEURO-PARASITE – KÝ SINH TRÙNG**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "🦠 **KÝ SINH THẦN KINH**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "📖 **Lore:** Một sinh vật gớm ghiếc vô hình, có khả năng xâm nhập vào hệ thần kinh của những kẻ sống sót, từ từ ăn mòn ý lý và biến họ thành những con rối phục tùng phe Dị Thể.\n\n"
         "📋 **Cơ chế Kỹ Năng:**\n"
         "• Mỗi đêm, chọn 1 mục tiêu để ký sinh.\n"
@@ -24,7 +24,7 @@ class TheNeuroParasite(BaseRole):
         "• Vật chủ sẽ bị biến thành Anomaly (hoặc Anomaly Servant) và mất role cũ.\n\n"
         "⚠ **Giới Hạn & Cân Bằng:**\n"
         "• Chỉ có thể ký sinh 1 người cùng lúc.\n"
-        "• Không thể chọn đồng đội Anomalies hoặc những người đã từng bị ký sinh trước đó.\n"
+        "• Không thể chọn đồng đội Dị Thể hoặc những người đã từng bị ký sinh trước đó.\n"
         "• Nếu vật chủ chết, bạn mất liên kết và có thể ký sinh người mới.\n"
         "• Nếu bạn chết, quá trình tha hóa đang diễn ra sẽ lập tức bị hủy bỏ."
     )
@@ -78,13 +78,13 @@ class TheNeuroParasite(BaseRole):
         # - Còn sống
         # - Không phải bản thân
         # - Chưa từng bị ký sinh
-        # - Không thuộc phe Anomalies
+        # - Không thuộc phe Dị Thể
         alive = [
             p for p in game.get_alive_players()
             if p.id != self.player.id
             and p.id not in self.infected_history
             and game.roles.get(p.id)
-            and game.roles[p.id].team != "Anomalies"
+            and game.roles[p.id].team != "Dị Thể"
         ]
 
         if not alive:

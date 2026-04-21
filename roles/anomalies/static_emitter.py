@@ -14,11 +14,11 @@ class TheStaticEmitter(BaseRole):
     )
 
     dm_message = (
-        "📻 **THE STATIC-EMITTER – BỘ PHÁT NHIỄU**\n\n"
-        "Bạn thuộc phe **Anomalies**.\n\n"
+        "📻 **NGUỒN TĨNH ĐIỆN**\n\n"
+        "Bạn thuộc phe **Dị Thể**.\n\n"
         "🌙 Mỗi đêm bạn chọn 1 người để phát nhiễu — tin nhắn hệ thống của họ bị biến dạng.\n\n"
         "• Các nguyên âm bị thay thế bằng ký hiệu đặc biệt.\n"
-        "💡 Phát nhiễu đúng thời điểm để Survivors không thể đọc kết quả điều tra."
+        "💡 Phát nhiễu đúng thời điểm để Người Sống Sót không thể đọc kết quả điều tra."
     )
 
     def __init__(self, player):
@@ -56,7 +56,7 @@ class TheStaticEmitter(BaseRole):
             p for p in game.get_alive_players()
             if p.id != self.player.id
             and game.roles.get(p.id)
-            and game.roles[p.id].team != "Anomalies"
+            and game.roles[p.id].team != "Dị Thể"
         ]
 
         if not alive_targets:

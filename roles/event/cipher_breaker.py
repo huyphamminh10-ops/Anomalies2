@@ -1,6 +1,6 @@
 # ══════════════════════════════════════════════════════════════════
-# roles/event/cipher_breaker.py — Early Access Event Role
-# Cipher Breaker: Kẻ Mã Hóa — Unknown Entities solo win
+# roles/event/cipher_breaker.py — Vai Trò Sự Kiện Đặc Biệt
+# Kẻ Giải Mã: Kẻ Mã Hóa — Thực Thể Ẩn solo win
 #
 # Cơ chế hoạt động:
 #   - on_game_start: wrap game.text_channel bằng CipherChannel
@@ -169,13 +169,13 @@ class CipherBreaker(BaseRole):
         "• **Passive:** Khi còn sống, mọi thông báo bot đều bị nhiễu ký tự.\n"
         "• **Passive:** Chat của người chơi bị nhiễu ~50% ký tự (luôn hoạt động, kể cả khi không dùng kỹ năng).\n"
         "• **Kỹ năng (5 lần):** Phá hủy hoàn toàn mọi thông báo bot thành chuỗi hỗn loạn.\n"
-        "• **Chiến thắng:** 4 Survivors VÀ 4 Anomalies đã chết.\n"
-        "• DM riêng của Cipher Breaker không bị ảnh hưởng."
+        "• **Chiến thắng:** 4 Người Sống Sót VÀ 4 Dị Thể đã chết.\n"
+        "• DM riêng của Kẻ Giải Mã không bị ảnh hưởng."
     )
 
     dm_message = (
-        "💀 **CIPHER BREAKER — KẺ MÃ HÓA**\n\n"
-        "Bạn thuộc phe **Unknown Entities** — không đồng minh, không phe phái.\n\n"
+        "💀 **KẺ GIẢI MÃ**\n\n"
+        "Bạn thuộc phe **Thực Thể Ẩn** — không đồng minh, không phe phái.\n\n"
         "📡 **Passive – Nhiễu Loạn Hệ Thống:**\n"
         "Khi bạn còn sống, mọi thông báo công khai của bot bị nhiễu ký tự ngẫu nhiên.\n"
         "Kể cả thông báo đêm, sáng, bỏ phiếu, di chúc — tất cả.\n\n"
@@ -185,7 +185,7 @@ class CipherBreaker(BaseRole):
         "💣 **Kỹ năng – Phá Hủy Hệ Thống (5 lần):**\n"
         "Kích hoạt ban đêm để biến mọi thông báo bot thành chuỗi ký tự hỗn loạn hoàn toàn.\n\n"
         "🏆 **Chiến thắng khi:**\n"
-        "• **4 Survivors** đã chết **VÀ** **4 Anomalies** đã chết\n"
+        "• **4 Người Sống Sót** đã chết **VÀ** **4 Dị Thể** đã chết\n"
         "• Cả hai phe thiệt hại nặng nề — hệ thống sụp đổ.\n\n"
         "⚠️ DM riêng của bạn sẽ không bị nhiễu."
     )
@@ -222,7 +222,7 @@ class CipherBreaker(BaseRole):
         try:
             await self.safe_send(
                 embed=discord.Embed(
-                    title       = "💀 CIPHER BREAKER — KẺ MÃ HÓA",
+                    title       = "💀 KẺ GIẢI MÃ — MÃ HÓA HỆTHỐNG",
                     description = self.dm_message,
                     color       = 0x2c3e50
                 )
@@ -245,14 +245,14 @@ class CipherBreaker(BaseRole):
         try:
             desc = (
                 f"📊 **Tiến độ thắng:**\n"
-                f"• Survivors đã chết: **{self.survivors_killed}/{WIN_SURVIVORS_DEAD}**\n"
-                f"• Anomalies đã chết: **{self.anomalies_killed}/{WIN_ANOMALIES_DEAD}**\n\n"
+                f"• Người Sống Sót đã chết: **{self.survivors_killed}/{WIN_SURVIVORS_DEAD}**\n"
+                f"• Dị Thể đã chết: **{self.anomalies_killed}/{WIN_ANOMALIES_DEAD}**\n\n"
             )
 
             if self.destroy_uses <= 0:
                 await self.safe_send(
                     embed=discord.Embed(
-                        title       = "🌙 ĐÊM — CIPHER BREAKER",
+                        title       = "🌙 ĐÊM — KẺ GIẢI MÃ",
                         description = desc + "💣 Đã hết lượt phá hủy.\n💤 Passive nhiễu vẫn hoạt động.",
                         color       = 0x2c3e50
                     )
@@ -262,7 +262,7 @@ class CipherBreaker(BaseRole):
             view = CipherBreakerView(game, self)
             await self.safe_send(
                 embed=discord.Embed(
-                    title       = "🌙 ĐÊM — CIPHER BREAKER",
+                    title       = "🌙 ĐÊM — KẺ GIẢI MÃ",
                     description = desc + f"💣 Lượt phá hủy còn lại: **{self.destroy_uses}/5**\n"
                                          "Kích hoạt để biến mọi thông báo thành hỗn loạn hoàn toàn.",
                     color       = 0x2c3e50

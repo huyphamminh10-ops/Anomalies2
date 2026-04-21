@@ -20,8 +20,8 @@ class TheDoomsdayClock(BaseRole):
     )
 
     dm_message = (
-        "⏳ **THE DOOMSDAY CLOCK – ĐỒNG HỒ TẬN THẾ**\n\n"
-        "Bạn thuộc phe **Unknown** — mục tiêu của bạn là thời gian, không phải máu.\n\n"
+        "⏳ **ĐỒNG HỒ TẬN THẾ**\n\n"
+        "Bạn thuộc phe **Thực Thể Ẩn** — mục tiêu của bạn là thời gian, không phải máu.\n\n"
         "🌙 Mỗi đêm bạn có thể kích hoạt Tua Nhanh để rút ngắn thảo luận ban ngày.\n\n"
         "📋 Cơ chế:\n"
         "• Tua Nhanh: Thảo luận ban ngày còn 20 giây thay vì 90 giây.\n"

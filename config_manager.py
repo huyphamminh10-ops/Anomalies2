@@ -42,25 +42,6 @@ def _lobby_states():
 
 # ── Utility ────────────────────────────────────────────────────────
 
-# Các key chứa Discord Snowflake ID — phải luôn là int khi dùng với discord.py
-_ID_FIELDS = {
-    "text_channel_id", "voice_channel_id", "category_id",
-    "dead_role_id", "alive_role_id",
-}
-
-
-def _coerce_ids(cfg: dict) -> dict:
-    """Chuyển các ID field từ string → int (MongoDB lưu dạng gì cũng xử lý được)."""
-    for key in _ID_FIELDS:
-        val = cfg.get(key)
-        if val is not None:
-            try:
-                cfg[key] = int(val)
-            except (ValueError, TypeError):
-                cfg[key] = None
-    return cfg
-
-
 def sanitize_name(name: str) -> str:
     """Giữ lại để tương thích với code cũ, không còn dùng cho đường dẫn."""
     name = name.strip()
@@ -104,7 +85,7 @@ def load_guild_config(guild_id, guild_name=None) -> dict:
         # Merge với default để đảm bảo các key mới luôn có mặt
         cfg = default_config()
         cfg.update(doc)
-        return _coerce_ids(cfg)
+        return cfg
     except PyMongoError:
         return default_config()
 
@@ -137,7 +118,7 @@ def load_all_configs() -> dict:
             doc.pop("guild_name", None)
             cfg = default_config()
             cfg.update(doc)
-            result[str(gid)] = _coerce_ids(cfg)
+            result[str(gid)] = cfg
     except PyMongoError as e:
         print(f"[config_manager] Lỗi load_all_configs: {e}")
     return result

@@ -10,23 +10,23 @@ class ThePsychopath(BaseRole):
     win_type  = "solo"
 
     description = (
-        "Bạn xuất hiện trong danh sách đồng loại của phe Anomalies. "
+        "Bạn xuất hiện trong danh sách đồng loại của phe Dị Thể. "
         "Họ sẽ thấy bạn như đồng đội và bạn có thể đọc được kênh chat bí mật của họ.\n\n"
         "Mục tiêu: Bị Cách ly và Trục xuất bởi Thị Trấn.\n"
         "Điều kiện thắng: Bị loại bằng bỏ phiếu ban ngày và "
-        "KHÔNG có bất kỳ phiếu nào từ phe Anomalies bầu cho bạn."
+        "KHÔNG có bất kỳ phiếu nào từ phe Dị Thể bầu cho bạn."
     )
 
     dm_message = (
-        "🩸 **THE PSYCHOPATH – KẺ THẦN KINH**\n\n"
-        "Bạn thuộc phe **Unknown Entities**.\n\n"
-        "Bạn xuất hiện như một thành viên của Anomalies trong mắt họ.\n"
-        "Bạn có thể đọc được kênh chat bí mật của Anomalies.\n\n"
+        "🩸 **KẺ TÂM THẦN**\n\n"
+        "Bạn thuộc phe **Thực Thể Ẩn**.\n\n"
+        "Bạn xuất hiện như một thành viên của Dị Thể trong mắt họ.\n"
+        "Bạn có thể đọc được kênh chat bí mật của Dị Thể.\n\n"
         "🎯 Mục tiêu:\n"
         "Bị Cách Ly và Trục Xuất vào ban ngày.\n\n"
         "🔥 Điều kiện thắng nghiệt ngã:\n"
         "- Bị loại bằng bỏ phiếu.\n"
-        "- KHÔNG có bất kỳ phiếu nào từ phe Anomalies bầu cho bạn.\n\n"
+        "- KHÔNG có bất kỳ phiếu nào từ phe Dị Thể bầu cho bạn.\n\n"
         "Nếu chỉ 1 Anomaly bỏ phiếu cho bạn → bạn thua ngay lập tức."
     )
 
@@ -58,7 +58,7 @@ class ThePsychopath(BaseRole):
                     title="🩸 ĐÊM — KẺ THẦN KINH",
                     description=(
                         "Bạn không có hành động đặc biệt vào ban đêm.\n\n"
-                        f"👥 Anomalies còn sống: **{anomaly_count}** người\n"
+                        f"👥 Dị Thể còn sống: **{anomaly_count}** người\n"
                         "_(Họ thấy bạn như đồng đội — nhưng đừng để họ bầu cho bạn!)_\n\n"
                         "⚠️ **Mục tiêu của bạn:**\n"
                         "Khiến **Thị Trấn** bầu trục xuất bạn,\n"
@@ -91,7 +91,7 @@ class ThePsychopath(BaseRole):
                         "❌ **KHÔNG có bất kỳ Anomaly nào bầu cho bạn**\n\n"
                         "Nếu ngay cả 1 Anomaly bỏ phiếu cho bạn → **thua ngay lập tức**.\n\n"
                         "💡 Chiến lược: Thuyết phục Thị Trấn rằng bạn đáng ngờ,\n"
-                        "đồng thời thuyết phục Anomalies rằng bạn là đồng đội đáng tin."
+                        "đồng thời thuyết phục Dị Thể rằng bạn là đồng đội đáng tin."
                     ),
                     color=0x8e44ad
                 ),
@@ -109,9 +109,9 @@ class ThePsychopath(BaseRole):
                     title="📖 LUẬT CHƠI — KẺ THẦN KINH",
                     description=(
                         "🔴 **Bạn trông như Anomaly** với tất cả Dị Thể.\n"
-                        "🟢 **Bạn có thể đọc kênh chat bí mật** của Anomalies.\n\n"
+                        "🟢 **Bạn có thể đọc kênh chat bí mật** của Dị Thể.\n\n"
                         "Ban ngày: Hành xử như bị nghi ngờ để bị bỏ phiếu.\n"
-                        "Ban đêm: Quan sát Anomalies nhưng đừng lộ bài."
+                        "Ban đêm: Quan sát Dị Thể nhưng đừng lộ bài."
                     ),
                     color=0x8e44ad
                 ),

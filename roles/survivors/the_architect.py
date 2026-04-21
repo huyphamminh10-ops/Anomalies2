@@ -14,18 +14,18 @@ class TheArchitect(BaseRole):
 
     description = (
         "Bạn có thể gia cố nhà ở để bảo vệ người chơi khỏi bị tấn công vào ban đêm.\n\n"
-        "• Mỗi đêm chọn tối đa 5 người để bảo vệ (chỉ Survivors được bảo vệ).\n"
+        "• Mỗi đêm chọn tối đa 5 người để bảo vệ (chỉ Người Sống Sót được bảo vệ).\n"
         "• Tổng cộng có 2 lượt Gia Cố trong cả trận.\n"
         "• Người được bảo vệ sẽ sống sót qua đòn tấn công không có bypass."
     )
 
     dm_message = (
-        "🏗️ **THE ARCHITECT – KIẾN TRÚC SƯ**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
-        "🌙 Bạn có thể gia cố nhà ở, bảo vệ Survivors khỏi bị giết trong đêm.\n\n"
+        "🏗️ **KIẾN TRÚC SƯ**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
+        "🌙 Bạn có thể gia cố nhà ở, bảo vệ Người Sống Sót khỏi bị giết trong đêm.\n\n"
         "📋 Cơ chế:\n"
         "• Chọn tối đa 5 người mỗi lượt Gia Cố.\n"
-        "• Chỉ có tác dụng với Survivors — Dị Thể không được bảo vệ.\n"
+        "• Chỉ có tác dụng với Người Sống Sót — Dị Thể không được bảo vệ.\n"
         "• Bạn có **2 lượt** dùng trong suốt cả trận.\n\n"
         "💡 Hãy dùng đúng lúc — bảo vệ các vai trò quan trọng khi thị trấn bị đe dọa."
     )
@@ -100,7 +100,7 @@ class TheArchitect(BaseRole):
                     continue
                 target_role = self.game.roles.get(target.id)
 
-                # Chỉ bảo vệ Survivors
+                # Chỉ bảo vệ Người Sống Sót
                 if target_role and target_role.team == "Survivors":
                     self.game.protected.add(target.id)
                     protected_count += 1

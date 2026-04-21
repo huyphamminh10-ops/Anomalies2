@@ -22,15 +22,15 @@ class TheGhostShip(BaseRole):
     )
 
     dm_message = (
-        "🚢 **THE GHOST SHIP – TÀU MA**\n\n"
-        "Bạn thuộc phe **Unknown** — mục tiêu của bạn là bắt cóc, không phải giết.\n\n"
+        "🚢 **CON TÀU MA**\n\n"
+        "Bạn thuộc phe **Thực Thể Ẩn** — mục tiêu của bạn là bắt cóc, không phải giết.\n\n"
         "🌙 Từ Đêm 3 trở đi, mỗi đêm bạn bắt cóc 1 người đưa lên tàu — họ biến mất khỏi thế giới sống.\n\n"
         "📋 Cơ chế:\n"
         "• Người bị bắt cóc bị loại tạm thời — không chết nhưng không còn trong trận.\n"
         "• Không thể bắt cùng 1 người 2 đêm liên tiếp.\n"
         "• Số mục tiêu cần đủ phụ thuộc số người chơi ban đầu.\n\n"
         "🏆 Điều kiện thắng: Bắt đủ số người theo quy định.\n"
-        "💡 Hãy ưu tiên bắt người quan trọng để vô hiệu hóa sức mạnh của Survivors."
+        "💡 Hãy ưu tiên bắt người quan trọng để vô hiệu hóa sức mạnh của Người Sống Sót."
     )
 
     # ================================

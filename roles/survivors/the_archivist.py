@@ -20,8 +20,8 @@ class TheArchivist(BaseRole):
     )
 
     dm_message = (
-        "📚 **THE ARCHIVIST – NGƯỜI LƯU TRỮ**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "📚 **NHÀ LƯU TRỮ**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🌙 Mỗi đêm bạn chọn 1 người đã chết để đọc di chúc bí mật của họ.\n\n"
         "📋 Cơ chế:\n"
         "• Mỗi người chỉ được đọc 1 lần.\n"

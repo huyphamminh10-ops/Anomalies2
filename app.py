@@ -18,6 +18,7 @@ except ImportError:
 import aiohttp
 import discord
 import asyncio
+import certifi
 import os
 import glob
 import sys
@@ -75,12 +76,8 @@ except ImportError:
 
 # ── Detect môi trường Hugging Face ───────────────────────────────
 _IS_HUGGING_FACE = bool(os.environ.get("SPACE_ID"))
-_IS_RENDER       = bool(os.environ.get("RENDER"))       # Render.com tự set biến này
-
 if _IS_HUGGING_FACE:
     print(f"[Env] Đang chạy trên Hugging Face Space: {os.environ.get('SPACE_ID')}")
-elif _IS_RENDER:
-    print("[Env] Đang chạy trên Render.com.")
 else:
     print("[Env] Đang chạy môi trường local/khác.")
 
@@ -116,7 +113,7 @@ _BOT_THREAD:  _threading.Thread | None = _bot_state.get("thread")
 _BOT_LOCK:    _threading.Lock = _bot_state["lock"]
 _bot_loop:    asyncio.AbstractEventLoop | None = _bot_state.get("loop")
 _READY_BOOTSTRAPPED: bool = False
-_SOCKET_LOCK_PORT = int(os.environ.get("BOT_LOCK_PORT", "9999"))
+_SOCKET_LOCK_PORT = int(os.environ.get("BOT_LOCK_PORT", "8080"))
 
 
 def _acquire_socket_lock() -> bool:
@@ -370,7 +367,7 @@ async def _flush_lobby(gs, guild_id=None):
             if guild_id:
                 try:
                     raw_cfg  = get_cached_config(str(guild_id))
-                    tc       = bot.get_channel(int(raw_cfg.get("text_channel_id", 0) or 0))
+                    tc       = bot.get_channel(raw_cfg.get("text_channel_id", 0))
                     if tc:
                         new_msg = await tc.send(embed=build_embed(gs, guild_id=guild_id))
                         gs["lobby_message"] = new_msg
@@ -667,64 +664,8 @@ async def init_guild(guild_id: str, text_channel):
         asyncio.create_task(_lobby_loop(gid))
 
 
-# ── Xóa tin nhắn trong text channel (trừ lobby embed) ───────────────────────
-async def _purge_channel(guild_id: str, reason: str = "Tự động dọn dẹp"):
-    """
-    Xóa tất cả tin nhắn trong text channel trừ lobby embed.
-    Sau đó gửi thông báo số tin nhắn đã xóa, tự xóa sau 15 giây.
-    """
-    try:
-        gid        = str(guild_id)
-        raw_cfg    = get_cached_config(gid)
-        tc_id      = int(raw_cfg.get("text_channel_id") or 0)
-        if not tc_id:
-            return
-        channel    = bot.get_channel(tc_id)
-        if not channel:
-            return
-        gs         = get_guild_state(gid)
-        lobby_msg  = gs.get("lobby_message")
-        lobby_id   = lobby_msg.id if lobby_msg else None
-
-        deleted    = []
-        try:
-            deleted = await channel.purge(
-                limit=200,
-                check=lambda m: (lobby_id is None or m.id != lobby_id),
-                bulk=True
-            )
-        except discord.Forbidden:
-            async for msg in channel.history(limit=200):
-                if lobby_id and msg.id == lobby_id:
-                    continue
-                try:
-                    await msg.delete()
-                    deleted.append(msg)
-                    await asyncio.sleep(0.3)
-                except Exception:
-                    pass
-
-        count = len(deleted)
-        if count == 0:
-            return
-
-        guild_obj  = channel.guild
-        guild_name = guild_obj.name if guild_obj else gid
-        notify = await channel.send(
-            f"🧹 **[ {guild_name} ]** : Đã Xóa **{count}** Tin Nhắn ( {reason} )",
-            delete_after=15
-        )
-    except Exception as e:
-        print(f"[purge_channel] [{guild_id}] Lỗi: {e}")
-
-
-_PURGE_INTERVAL = 30   # giây
-
-
 async def _lobby_loop(guild_id: str):
-    gid            = str(guild_id)
-    purge_counter  = 0
-
+    gid = str(guild_id)
     while True:
         try:
             gs = get_guild_state(gid)
@@ -741,12 +682,6 @@ async def _lobby_loop(guild_id: str):
                     asyncio.create_task(launch_game(gid, gs))
 
             await _flush_lobby(gs, guild_id=gid)
-
-            # Xóa tin nhắn mỗi 30 giây khi game chưa bắt đầu
-            purge_counter += 1
-            if purge_counter >= _PURGE_INTERVAL:
-                purge_counter = 0
-                asyncio.create_task(_purge_channel(gid, reason="Tự Động Dọn Dẹp"))
 
         except Exception as e:
             print(f"[lobby_loop] [{gid}] Lỗi: {e}")
@@ -1001,7 +936,7 @@ async def clear_command(interaction: discord.Interaction):
     if not text_channel_id:
         return await interaction.response.send_message("⚠️ Server chưa setup.", ephemeral=True)
 
-    channel = bot.get_channel(int(text_channel_id))
+    channel = bot.get_channel(text_channel_id)
     if not channel:
         return await interaction.response.send_message("⚠️ Không thể truy cập kênh.", ephemeral=True)
 
@@ -1113,14 +1048,12 @@ async def on_ready():
         tc_id = cfg.get("text_channel_id")
         if not tc_id:
             continue
-        text_channel = bot.get_channel(int(tc_id))
+        text_channel = bot.get_channel(tc_id)
         if not text_channel:
             continue
         try:
             await init_guild(guild_id, text_channel)
             print(f"  [Bot] Guild {guild_id} khởi tạo OK.")
-            # Dọn tin nhắn cũ khi bot khởi động lại
-            asyncio.create_task(_purge_channel(guild_id, reason="Khởi Động Lại"))
         except Exception as e:
             print(f"  [Bot] Guild {guild_id} lỗi: {e}")
 
@@ -1335,33 +1268,12 @@ try:
         st.json(game_stats)
 
 except ImportError:
-    # Không chạy trong Streamlit
-    # Nếu là Render.com → chạy uvicorn (FastAPI) + bot thread song song
-    if _IS_RENDER and _fastapi_app is not None:
-        import uvicorn
-        _RENDER_PORT = int(os.environ.get("PORT", "10000"))
-        print(f"[Main] Render.com detected — khởi động uvicorn trên port {_RENDER_PORT}.")
-        start_bot_once()
-
-        _uvicorn_config = uvicorn.Config(
-            _fastapi_app,
-            host="0.0.0.0",
-            port=_RENDER_PORT,
-            log_level="warning",
-        )
-        _uvicorn_server = uvicorn.Server(_uvicorn_config)
+    # Không chạy trong Streamlit — chế độ standalone
+    print("[Main] Streamlit không có — chạy standalone.")
+    start_bot_once()
+    if _BOT_THREAD:
         try:
-            _uvicorn_server.run()   # blocks — bot thread chạy daemon song song
+            _BOT_THREAD.join()
         except KeyboardInterrupt:
             print("[Main] Nhận Ctrl+C — đang tắt...")
             _shutting_down = True
-    else:
-        # Local / môi trường khác
-        print("[Main] Streamlit không có — chạy standalone.")
-        start_bot_once()
-        if _BOT_THREAD:
-            try:
-                _BOT_THREAD.join()
-            except KeyboardInterrupt:
-                print("[Main] Nhận Ctrl+C — đang tắt...")
-                _shutting_down = True

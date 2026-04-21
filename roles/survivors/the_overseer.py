@@ -21,8 +21,8 @@ class TheOverseer(BaseRole):
     )
 
     dm_message = (
-        "📷 **THE OVERSEER – NGƯỜI GIÁM SÁT**\n\n"
-        "Bạn thuộc phe **Survivors**.\n\n"
+        "📷 **NGƯỜI GIÁM SÁT**\n\n"
+        "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🌙 Bạn kiểm soát camera an ninh — mỗi đêm có thể bật Camera để theo dõi.\n\n"
         "📋 Cơ chế:\n"
         "• Camera ghi lại tối đa 3 người đang hoạt động trong đêm (ngẫu nhiên).\n"
@@ -107,7 +107,7 @@ class TheOverseer(BaseRole):
                 result_text = "📷 Camera ghi nhận hoạt động từ:\n\n"
                 result_text += "\n".join(f"• **{n}**" for n in names)
 
-            # ── Cảnh báo kênh Anomalies (không tiết lộ tên người) ──
+            # ── Cảnh báo kênh Dị Thể (không tiết lộ tên người) ──
             if anomaly_found and hasattr(self.game, "anomaly_chat_mgr"):
                 await self.game.anomaly_chat_mgr.send(
                     embed=discord.Embed(
