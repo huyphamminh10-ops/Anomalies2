@@ -1,41 +1,10 @@
 import discord
 import traceback
-import os
-import re
 from discord.ext import commands
 from discord import app_commands
 from config_manager import load_guild_config, save_guild_config
 from updater import greet_owner_on_setup
 from cogs.settings import check_command_permission as _check_perm
-
-
-# ===============================
-# HÀM XỬ LÝ TÊN SERVER AN TOÀN
-# ===============================
-def slugify_ten_server(name: str) -> str:
-    """
-    Chuyển tên server thành dạng an toàn để làm folder
-    Space -> _
-    Bỏ ký tự đặc biệt
-    """
-    name = name.strip()
-    name = name.replace(" ", "_")
-    name = re.sub(r"[^\w\-]", "", name)
-    return name
-
-
-def get_guild_dir(guild_id: str, guild_name: str) -> str:
-    """
-    Tạo folder theo dạng:
-    Ten_Server-123456789
-    """
-    base_dir = "guild_data"
-    safe_name = slugify_ten_server(guild_name)
-    folder_name = f"{safe_name}-{guild_id}"
-
-    path = os.path.join(base_dir, folder_name)
-    os.makedirs(path, exist_ok=True)
-    return path
 
 
 class Setup(commands.Cog):
@@ -45,14 +14,17 @@ class Setup(commands.Cog):
     # ===============================
     # HÀM PHỤ LẤY CATEGORY OBJECT
     # ===============================
-    def lay_category(self, guild_id: str):
+    def lay_category(self, guild_id):
         config = load_guild_config(guild_id)
         category_id = config.get("category_id")
 
         if not category_id:
             return None
 
-        channel = self.bot.get_channel(category_id)
+        try:
+            channel = self.bot.get_channel(int(category_id))
+        except (TypeError, ValueError):
+            return None
 
         if isinstance(channel, discord.CategoryChannel):
             return channel
@@ -62,7 +34,7 @@ class Setup(commands.Cog):
     # ===============================
     # HÀM PHỤ LẤY TÊN CATEGORY
     # ===============================
-    def lay_ten_category(self, guild_id: str) -> str:
+    def lay_ten_category(self, guild_id) -> str:
         category = self.lay_category(guild_id)
         return category.name if category else "Chưa đặt"
 
@@ -123,7 +95,6 @@ class Setup(commands.Cog):
                 name="Alive-❤️‍🩹",
                 color=discord.Color.green(),
                 permissions=discord.Permissions(
-                    # Quyền cơ bản như Thành Viên mặc định của Discord
                     view_channel=True,
                     send_messages=True,
                     send_messages_in_threads=True,
@@ -188,7 +159,6 @@ class Setup(commands.Cog):
                 except Exception as e:
                     print(f"[SETUP] Text perms lỗi cho {role.name}: {e}")
 
-            # Alive và Dead: KHÔNG set override → để "/"
             print(f"[SETUP] Text channel: set cho {len(text_roles_added)} server roles ✔")
 
             # ================================================================
@@ -223,31 +193,25 @@ class Setup(commands.Cog):
                 except Exception as e:
                     print(f"[SETUP] Voice perms lỗi cho {role.name}: {e}")
 
-            # Alive và Dead: KHÔNG set override → để "/"
             print(f"[SETUP] Voice channel: set cho {len(voice_roles_added)} server roles ✔")
 
             # ===============================
-            # LƯU CONFIG
+            # LƯU CONFIG LÊN MONGODB ATLAS
+            # (upsert + merge default đã xử lý trong config_manager)
             # ===============================
-            config["category_id"]      = category.id
-            config["text_channel_id"]   = text_channel.id
-            config["voice_channel_id"]  = voice_channel.id
-            config["alive_role_id"]     = alive_role.id
-            config["dead_role_id"]      = dead_role.id
+            config["category_id"]      = str(category.id)
+            config["text_channel_id"]  = str(text_channel.id)
+            config["voice_channel_id"] = str(voice_channel.id)
+            config["alive_role_id"]    = str(alive_role.id)
+            config["dead_role_id"]     = str(dead_role.id)
 
             config.setdefault("max_players", 65)
             config.setdefault("min_players_to_start", 5)
             config.setdefault("countdown_minutes", 3)
 
-            save_guild_config(guild_id, config)
+            save_guild_config(guild_id, config, guild.name)
 
-            print("[SETUP] Đã lưu config.json ✔")
-
-            # ===============================
-            # TẠO FOLDER SERVER
-            # ===============================
-            guild_dir = get_guild_dir(guild_id, guild.name)
-            print(f"[SETUP] Folder server: {guild_dir}")
+            print("[SETUP] Đã lưu config lên MongoDB ✔")
 
             # ===============================
             # GỌI INIT_GUILD TỪ bot.py
@@ -264,7 +228,11 @@ class Setup(commands.Cog):
             # ===============================
             # THÔNG BÁO HOÀN TẤT
             # ===============================
-            roles_info = f"\n🔧 Đã cấp quyền cho {len(server_roles)} server role (text: chat | voice: nói)." if server_roles else ""
+            roles_info = (
+                f"\n🔧 Đã cấp quyền cho {len(server_roles)} server role "
+                f"(text: chat | voice: nói)."
+                if server_roles else ""
+            )
 
             await interaction.followup.send(
                 f"✅ **Setup hoàn tất!**\n\n"
@@ -273,7 +241,7 @@ class Setup(commands.Cog):
                 f"🔊 Kênh thoại: `{voice_channel.name}`\n\n"
                 f"❤️‍🩹 **Alive Role** `{alive_role.name}` — quyền như Thành Viên (chat + nói)\n"
                 f"💀 **Dead Role** `{dead_role.name}` — cấm chat & mic trong kênh game\n"
-                f"📁 Thư mục dữ liệu: `{guild_dir}`"
+                f"☁️ Cấu hình đã được lưu trên MongoDB Atlas."
                 f"{roles_info}",
                 ephemeral=True
             )
