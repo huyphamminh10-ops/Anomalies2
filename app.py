@@ -113,7 +113,7 @@ _BOT_THREAD:  _threading.Thread | None = _bot_state.get("thread")
 _BOT_LOCK:    _threading.Lock = _bot_state["lock"]
 _bot_loop:    asyncio.AbstractEventLoop | None = _bot_state.get("loop")
 _READY_BOOTSTRAPPED: bool = False
-_SOCKET_LOCK_PORT = int(os.environ.get("BOT_LOCK_PORT", "8080"))
+_SOCKET_LOCK_PORT = int(os.environ.get("BOT_LOCK_PORT", "9999"))
 
 
 def _acquire_socket_lock() -> bool:
