@@ -61,6 +61,11 @@ try:
     async def get_table():
         return game_stats
 
+    @_fastapi_app.get("/")
+    @_fastapi_app.head("/")
+    async def _root_health_check():
+        return {"status": "ok", "bot": "Anomalies", "message": "Service is live"}
+
     @_fastapi_app.get("/ping")
     async def ping():
         """Endpoint cho UptimeRobot keep-alive."""
