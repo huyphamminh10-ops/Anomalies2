@@ -667,8 +667,64 @@ async def init_guild(guild_id: str, text_channel):
         asyncio.create_task(_lobby_loop(gid))
 
 
+# ── Xóa tin nhắn trong text channel (trừ lobby embed) ───────────────────────
+async def _purge_channel(guild_id: str, reason: str = "Tự động dọn dẹp"):
+    """
+    Xóa tất cả tin nhắn trong text channel trừ lobby embed.
+    Sau đó gửi thông báo số tin nhắn đã xóa, tự xóa sau 15 giây.
+    """
+    try:
+        gid        = str(guild_id)
+        raw_cfg    = get_cached_config(gid)
+        tc_id      = int(raw_cfg.get("text_channel_id") or 0)
+        if not tc_id:
+            return
+        channel    = bot.get_channel(tc_id)
+        if not channel:
+            return
+        gs         = get_guild_state(gid)
+        lobby_msg  = gs.get("lobby_message")
+        lobby_id   = lobby_msg.id if lobby_msg else None
+
+        deleted    = []
+        try:
+            deleted = await channel.purge(
+                limit=200,
+                check=lambda m: (lobby_id is None or m.id != lobby_id),
+                bulk=True
+            )
+        except discord.Forbidden:
+            async for msg in channel.history(limit=200):
+                if lobby_id and msg.id == lobby_id:
+                    continue
+                try:
+                    await msg.delete()
+                    deleted.append(msg)
+                    await asyncio.sleep(0.3)
+                except Exception:
+                    pass
+
+        count = len(deleted)
+        if count == 0:
+            return
+
+        guild_obj  = channel.guild
+        guild_name = guild_obj.name if guild_obj else gid
+        notify = await channel.send(
+            f"🧹 **[ {guild_name} ]** : Đã Xóa **{count}** Tin Nhắn ( {reason} )",
+            delete_after=15
+        )
+    except Exception as e:
+        print(f"[purge_channel] [{guild_id}] Lỗi: {e}")
+
+
+_PURGE_INTERVAL = 30   # giây
+
+
 async def _lobby_loop(guild_id: str):
-    gid = str(guild_id)
+    gid            = str(guild_id)
+    purge_counter  = 0
+
     while True:
         try:
             gs = get_guild_state(gid)
@@ -685,6 +741,12 @@ async def _lobby_loop(guild_id: str):
                     asyncio.create_task(launch_game(gid, gs))
 
             await _flush_lobby(gs, guild_id=gid)
+
+            # Xóa tin nhắn mỗi 30 giây khi game chưa bắt đầu
+            purge_counter += 1
+            if purge_counter >= _PURGE_INTERVAL:
+                purge_counter = 0
+                asyncio.create_task(_purge_channel(gid, reason="Tự Động Dọn Dẹp"))
 
         except Exception as e:
             print(f"[lobby_loop] [{gid}] Lỗi: {e}")
@@ -1057,6 +1119,8 @@ async def on_ready():
         try:
             await init_guild(guild_id, text_channel)
             print(f"  [Bot] Guild {guild_id} khởi tạo OK.")
+            # Dọn tin nhắn cũ khi bot khởi động lại
+            asyncio.create_task(_purge_channel(guild_id, reason="Khởi Động Lại"))
         except Exception as e:
             print(f"  [Bot] Guild {guild_id} lỗi: {e}")
 
