@@ -575,8 +575,12 @@ def _reset_lobby(gs: dict, guild_id: str = None):
 async def launch_game(guild_id: str, gs: dict):
     gid = str(guild_id)
 
-    if gs.get("is_active"):
-        print(f"[launch_game] [{gid}] ⚠️ is_active=True — bỏ qua.")
+    # FIX: Vòng lặp lobby set is_active=True NGAY trước khi gọi launch_game()
+    # để chặn race với spectator. Vì vậy guard cũ "if is_active: return" sẽ
+    # khiến engine không bao giờ start. Thay bằng check engine trùng lặp:
+    # chỉ bỏ qua khi đã có engine thực sự đang chạy cho guild này.
+    if gid in active_games:
+        print(f"[launch_game] [{gid}] ⚠️ engine đã tồn tại — bỏ qua.")
         return
 
     if get_guild_status(gid) == "ingame":
