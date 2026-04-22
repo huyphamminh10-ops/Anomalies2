@@ -209,7 +209,7 @@ class TheNeuroParasite(BaseRole):
 
             super().__init__(
                 placeholder="Chọn mục tiêu ký sinh...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1
             )

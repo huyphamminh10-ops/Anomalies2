@@ -30,7 +30,7 @@ class ReviveView(View):
 
         select = Select(
             placeholder="⚰️ Chọn Survivor để hồi sinh...",
-            options=options,
+            options=options[:25],
             custom_id="retrib_target"
         )
         select.callback = self.on_select

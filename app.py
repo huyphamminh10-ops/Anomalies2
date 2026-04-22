@@ -218,6 +218,20 @@ _config_cache_time = {}
 _EDIT_INTERVAL = 0.0   # Không throttle thêm — loop sleep đã handle
 
 
+def _to_int(value, default=None):
+    """
+    Ép kiểu ID về int an toàn.
+    MongoDB có thể trả về ID dưới dạng string → bot.get_channel("123") trả None.
+    Helper này cover string/int/float/None và mọi giá trị "rác".
+    """
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 def get_cached_config(guild_id: str) -> dict:
     import time
     gid = str(guild_id)
@@ -372,7 +386,7 @@ async def _flush_lobby(gs, guild_id=None):
             if guild_id:
                 try:
                     raw_cfg  = get_cached_config(str(guild_id))
-                    tc       = bot.get_channel(raw_cfg.get("text_channel_id", 0))
+                    tc       = bot.get_channel(_to_int(raw_cfg.get("text_channel_id"), 0))
                     if tc:
                         new_msg = await tc.send(embed=build_embed(gs, guild_id=guild_id))
                         gs["lobby_message"] = new_msg
@@ -404,7 +418,7 @@ async def _purge_channel(guild_id: str, reason: str = "Tự Động Dọn Dẹp"
         tc_id   = raw_cfg.get("text_channel_id")
         if not tc_id:
             return
-        channel = bot.get_channel(int(tc_id))
+        channel = bot.get_channel(_to_int(tc_id, 0))
         if not channel:
             return
 
@@ -509,11 +523,14 @@ def build_game_config(raw_config: dict):
         save_crash_log           = raw_config.get("save_crash_log", True),
         large_server_mode        = raw_config.get("large_server_mode", False),
         large_server_threshold   = raw_config.get("large_server_threshold", 40),
-        dead_role_id             = raw_config.get("dead_role_id"),
-        alive_role_id            = raw_config.get("alive_role_id"),
-        text_channel_id          = raw_config.get("text_channel_id"),
-        voice_channel_id         = raw_config.get("voice_channel_id"),
-        category_id              = raw_config.get("category_id"),
+        # FIX Bug 5: MongoDB có thể trả về ID dạng string → guild.get_role(str)
+        # và bot.get_channel(str) đều trả None. Ép kiểu int trước khi đẩy vào
+        # GameConfig để Alive/Dead role và channel luôn được gán đúng.
+        dead_role_id             = _to_int(raw_config.get("dead_role_id")),
+        alive_role_id            = _to_int(raw_config.get("alive_role_id")),
+        text_channel_id          = _to_int(raw_config.get("text_channel_id")),
+        voice_channel_id         = _to_int(raw_config.get("voice_channel_id")),
+        category_id              = _to_int(raw_config.get("category_id")),
         role_distribute_time     = raw_config.get("role_distribute_time", 15),
         night_time               = raw_config.get("night_time", 45),
         day_time                 = max(30, min(120, raw_config.get("day_time", 90))),
@@ -578,7 +595,7 @@ async def launch_game(guild_id: str, gs: dict):
             return
 
     raw_config   = get_cached_config(gid)
-    text_channel = bot.get_channel(raw_config.get("text_channel_id", 0))
+    text_channel = bot.get_channel(_to_int(raw_config.get("text_channel_id"), 0))
 
     if not text_channel:
         _reset_lobby(gs, guild_id=gid)
@@ -621,7 +638,7 @@ async def launch_game(guild_id: str, gs: dict):
             members       = members,
             text_channel  = text_channel,
             config        = game_config,
-            voice_channel = bot.get_channel(raw_config.get("voice_channel_id", 0)),
+            voice_channel = bot.get_channel(_to_int(raw_config.get("voice_channel_id"), 0)),
         )
 
         active_games[gid] = engine
@@ -714,6 +731,43 @@ async def init_guild(guild_id: str, text_channel):
         else:
             print(f"  [{gid}] Không tìm thấy guild object, bỏ qua restore players.")
 
+    # ── Quét người chơi đang ngồi sẵn trong voice chat ───────────
+    # (Tính năng này từng bị xóa — khôi phục lại)
+    # Bot có thể restart trong khi mọi người vẫn ngồi trong voice channel,
+    # on_voice_state_update sẽ KHÔNG fire cho họ. Phải scan thủ công.
+    try:
+        raw_cfg_init = get_cached_config(gid)
+        vc_id        = _to_int(raw_cfg_init.get("voice_channel_id"))
+        if vc_id:
+            vc = bot.get_channel(vc_id)
+            if vc and hasattr(vc, "members"):
+                added = 0
+                for vm in vc.members:
+                    if vm.bot:
+                        continue
+                    if vm not in gs["players_join_order"]:
+                        gs["players_join_order"].append(vm)
+                        added += 1
+                if added:
+                    save_active_players(gid, [m.id for m in gs["players_join_order"]])
+                    print(f"  [{gid}] Voice scan: thêm {added} người chơi sẵn trong voice.")
+
+                # Đặt lại state theo số người hiện có
+                player_count = len(gs["players_join_order"])
+                min_p = cfg_min_players(raw_cfg_init)
+                max_p = cfg_max_players(raw_cfg_init)
+                if not gs.get("is_active") and gs["state"] != GameState.IN_GAME:
+                    if player_count >= max_p:
+                        gs["state"]          = GameState.FULL_FAST
+                        gs["countdown_time"] = 10
+                    elif player_count >= min_p:
+                        gs["state"]          = GameState.COUNTDOWN
+                        gs["countdown_time"] = cfg_countdown(raw_cfg_init)
+                    else:
+                        gs["state"] = GameState.WAITING
+    except Exception as _e:
+        print(f"  [{gid}] Voice scan lỗi: {_e}")
+
     saved = load_guild_lobby(gid)
     if saved and saved.get("message_id"):
         try:
@@ -768,9 +822,14 @@ async def _lobby_loop(guild_id: str):
                     gs["is_active"] = True
                     gs["state"]     = GameState.IN_GAME
                     gs["countdown_time"] = 0
+                    # FIX Bug 1: flush embed sang IN_GAME ngay lập tức
+                    # nếu không loop sau sẽ early-continue (is_active=True) và embed
+                    # bị đóng băng ở "00:01" mãi mãi.
+                    gs["dirty"] = True
+                    await _flush_lobby(gs, guild_id=gid)
                     asyncio.create_task(launch_game(gid, gs))
                     purge_counter = 0
-                    continue   # không chạy _flush_lobby lần này
+                    continue
 
             await _flush_lobby(gs, guild_id=gid)
 
@@ -930,8 +989,8 @@ async def on_voice_state_update(member, before, after):
     if not raw_config.get("voice_channel_id"):
         return
 
-    voice_channel = bot.get_channel(raw_config["voice_channel_id"])
-    text_channel  = bot.get_channel(raw_config.get("text_channel_id", 0))
+    voice_channel = bot.get_channel(_to_int(raw_config.get("voice_channel_id"), 0))
+    text_channel  = bot.get_channel(_to_int(raw_config.get("text_channel_id"), 0))
     gs            = get_guild_state(guild_id)
 
     if after.channel == voice_channel and before.channel != voice_channel:
@@ -939,7 +998,14 @@ async def on_voice_state_update(member, before, after):
             engine = active_games.get(guild_id)
             pid    = member.id
 
-            if engine and pid in engine._players_dict:
+            # FIX Bug 2: Race window giữa is_active=True và active_games[gid]=engine.
+            # Nếu engine chưa được gắn vào active_games, KHÔNG được rename
+            # người chơi thực thành "👻 Spectator". Bỏ qua tick này — khi engine
+            # đã sẵn sàng, on_voice_state_update kế tiếp sẽ xử lý đúng.
+            if engine is None:
+                return
+
+            if pid in engine._players_dict:
                 if pid in engine.dead_players and engine.config.mute_dead:
                     try:
                         await member.edit(mute=True)
@@ -953,9 +1019,8 @@ async def on_voice_state_update(member, before, after):
             except Exception:
                 pass
 
-            if engine:
-                engine.spectators.add(pid)
-                await engine.dead_chat_mgr.add_spectator(member)
+            engine.spectators.add(pid)
+            await engine.dead_chat_mgr.add_spectator(member)
             return
 
         async with _get_lobby_lock(gs):
@@ -1036,7 +1101,7 @@ async def clear_command(interaction: discord.Interaction):
     if not text_channel_id:
         return await interaction.response.send_message("⚠️ Server chưa setup.", ephemeral=True)
 
-    channel = bot.get_channel(text_channel_id)
+    channel = bot.get_channel(_to_int(text_channel_id, 0))
     if not channel:
         return await interaction.response.send_message("⚠️ Không thể truy cập kênh.", ephemeral=True)
 
@@ -1148,7 +1213,7 @@ async def on_ready():
         tc_id = cfg.get("text_channel_id")
         if not tc_id:
             continue
-        text_channel = bot.get_channel(tc_id)
+        text_channel = bot.get_channel(_to_int(tc_id, 0))
         if not text_channel:
             continue
         try:

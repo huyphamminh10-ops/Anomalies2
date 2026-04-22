@@ -28,7 +28,7 @@ class JailView(View):
 
         select = Select(
             placeholder="🔒 Chọn người để giam giữ...",
-            options=options,
+            options=options[:25],
             custom_id="jailor_target"
         )
         select.callback = self.on_select

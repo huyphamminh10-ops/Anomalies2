@@ -168,7 +168,7 @@ class TheCorruptedAI(BaseRole):
             self.role = role
             super().__init__(
                 placeholder="🔍 Quét một người...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1,
                 row=row,
@@ -215,7 +215,7 @@ class TheCorruptedAI(BaseRole):
             self.role = role
             super().__init__(
                 placeholder="💀 Dùng 2 điểm giết...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1,
                 row=row,

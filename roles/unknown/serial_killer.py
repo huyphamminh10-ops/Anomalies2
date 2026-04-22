@@ -90,7 +90,7 @@ class SerialKiller(BaseRole):
 
             super().__init__(
                 placeholder="Chọn nạn nhân...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1
             )

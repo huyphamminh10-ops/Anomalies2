@@ -77,7 +77,7 @@ class TheArchivist(BaseRole):
 
             super().__init__(
                 placeholder="Chọn người đã chết...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1
             )

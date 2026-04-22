@@ -95,7 +95,7 @@ class TheDarkArchitect(BaseRole):
             n = min(3, len(options))
             super().__init__(
                 placeholder="Chọn đúng 3 mục tiêu...",
-                options=options,
+                options=options[:25],
                 min_values=n,
                 max_values=n
             )

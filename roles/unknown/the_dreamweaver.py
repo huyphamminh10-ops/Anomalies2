@@ -84,7 +84,7 @@ class TheDreamweaver(BaseRole):
 
             super().__init__(
                 placeholder="Chọn 2 người...",
-                options=options,
+                options=options[:25],
                 min_values=2,
                 max_values=2
             )

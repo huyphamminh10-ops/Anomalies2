@@ -97,7 +97,7 @@ class Vigilante(BaseRole):
             ][:25]
             super().__init__(
                 placeholder="🔫 Chọn mục tiêu để bắn...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1
             )

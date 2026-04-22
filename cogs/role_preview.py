@@ -1347,7 +1347,7 @@ class RoleInfoView(View):
             )
             for name, value in _FACTION_SELECT_VALUES.items()
         ]
-        sel          = Select(placeholder="Chọn phe...", options=options, row=0)
+        sel          = Select(placeholder="Chọn phe...", options=options[:25], row=0)
         sel.callback = self._faction_callback  # type: ignore[method-assign]
         self.add_item(sel)
 

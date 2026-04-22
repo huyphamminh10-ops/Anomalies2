@@ -115,7 +115,7 @@ class TheWhisperThief(BaseRole):
             ][:25]
             super().__init__(
                 placeholder="Chọn đúng 2 người để nghe lén...",
-                options=options,
+                options=options[:25],
                 min_values=2,
                 max_values=2
             )

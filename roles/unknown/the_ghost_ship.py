@@ -88,7 +88,7 @@ class TheGhostShip(BaseRole):
             self.role = role
             super().__init__(
                 placeholder="Chọn mục tiêu bị bắt cóc...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1
             )

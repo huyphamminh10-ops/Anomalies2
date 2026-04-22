@@ -103,7 +103,7 @@ class ThePuppeteer(BaseRole):
             self.role = role
             super().__init__(
                 placeholder="Chọn người bị điều khiển...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1
             )
@@ -167,7 +167,7 @@ class ThePuppeteer(BaseRole):
 
             super().__init__(
                 placeholder="Chọn mục tiêu bị ép vote...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1
             )

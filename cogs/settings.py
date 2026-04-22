@@ -636,7 +636,7 @@ class _RoleManageView(View):
             placeholder="Chọn roles (tối đa 12)...",
             min_values=0,
             max_values=min(12, len(options)),
-            options=options,
+            options=options[:25],
         )
         sel.callback = self._callback
         self.add_item(sel)

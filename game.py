@@ -269,7 +269,7 @@ class _ChoiceView(discord.ui.View):
 
     class _ChoiceSelect(discord.ui.Select):
         def __init__(self, view_ref, options):
-            super().__init__(placeholder="Chọn mục tiêu...", options=options, min_values=1, max_values=1)
+            super().__init__(placeholder="Chọn mục tiêu...", options=options[:25], min_values=1, max_values=1)
             self.view_ref = view_ref
         async def callback(self, interaction: discord.Interaction):
             chosen_id = int(self.values[0])
@@ -2602,7 +2602,7 @@ class VoteSelectV2(discord.ui.Select):
         self.session = session
         super().__init__(
             placeholder="Chọn người bạn muốn trục xuất...",
-            options=options,
+            options=options[:25],
             min_values=1,
             max_values=1
         )

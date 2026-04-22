@@ -49,7 +49,7 @@ class InvestigatorSelect(discord.ui.Select):
 
         super().__init__(
             placeholder="Chọn mục tiêu điều tra...",
-            options=options,
+            options=options[:25],
             min_values=1,
             max_values=1
         )

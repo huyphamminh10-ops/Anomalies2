@@ -102,7 +102,7 @@ class ThePaperShredder(BaseRole):
             ][:25]
             super().__init__(
                 placeholder="Chọn mục tiêu hủy di chúc...",
-                options=options,
+                options=options[:25],
                 min_values=1,
                 max_values=1
             )
