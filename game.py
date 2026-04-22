@@ -2153,11 +2153,15 @@ class GameEngine:
     check_win = _check_win   # backward compat
 
     async def _purge_text_channel(self, keep_id: int = None, reason: str = "Tự Động Dọn Dẹp"):
-        """Xóa tất cả tin nhắn trong text_channel, giữ lại keep_id. Thông báo sau 15s."""
+        """Xóa tất cả tin nhắn trong text_channel, giữ lại keep_id (và lobby embed). Thông báo sau 15s."""
         if not self.text_channel:
             return
         try:
+            lobby_id = getattr(self, "lobby_message_id", None)
+
             def check(msg):
+                if lobby_id and msg.id == lobby_id:
+                    return False
                 return keep_id is None or msg.id != keep_id
 
             deleted = []
@@ -2166,6 +2170,8 @@ class GameEngine:
             except discord.Forbidden:
                 async for msg in self.text_channel.history(limit=300):
                     if keep_id and msg.id == keep_id:
+                        continue
+                    if lobby_id and msg.id == lobby_id:
                         continue
                     try:
                         await msg.delete()

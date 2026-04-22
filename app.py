@@ -361,13 +361,35 @@ async def update_lobby(gs, guild_id=None):
 
 
 async def _flush_lobby(gs, guild_id=None):
-    if not gs.get("lobby_message") or not gs.get("dirty"):
+    if not gs.get("dirty"):
         return
 
     now = _time.monotonic()
     if now < gs.get("_backoff_until", 0.0):
         return
     if now - gs.get("last_edit_time", 0.0) < _EDIT_INTERVAL:
+        return
+
+    # Nếu lobby_message bị xóa (vd: end_game purge) → tạo lại trong text channel
+    if not gs.get("lobby_message"):
+        if not guild_id:
+            return
+        try:
+            raw_cfg = get_cached_config(str(guild_id))
+            tc      = bot.get_channel(_to_int(raw_cfg.get("text_channel_id"), 0))
+            if not tc:
+                return
+            new_msg = await tc.send(embed=build_embed(gs, guild_id=guild_id))
+            gs["lobby_message"]  = new_msg
+            gs["dirty"]          = False
+            gs["last_edit_time"] = now
+            save_guild_lobby(str(guild_id), {
+                "message_id": new_msg.id,
+                "channel_id": tc.id,
+            })
+            print(f"[flush_lobby] [{guild_id}] Tạo lại lobby message {new_msg.id}")
+        except Exception as _e:
+            print(f"[flush_lobby] [{guild_id}] Không tạo lại được message: {_e}")
         return
 
     gs["dirty"]          = False
@@ -646,6 +668,11 @@ async def launch_game(guild_id: str, gs: dict):
         )
 
         active_games[gid] = engine
+        # Truyền lobby message id để end_game purge giữ lại embed
+        try:
+            engine.lobby_message_id = gs["lobby_message"].id if gs.get("lobby_message") else None
+        except Exception:
+            engine.lobby_message_id = None
         await engine.start(survivor_classes, anomaly_classes, unknown_classes)
 
     except Exception as e:
@@ -667,6 +694,37 @@ async def launch_game(guild_id: str, gs: dict):
             except Exception as _fe:
                 print(f"[launch_game] [{gid}] end_game cleanup lỗi: {_fe}")
         _reset_lobby(gs, guild_id=gid)
+
+        # Rescan voice channel: người chơi vẫn còn trong VC sau khi game kết thúc
+        # phải được tự động thêm lại vào lobby (không bắt họ rời rồi vào lại)
+        try:
+            _raw_cfg = get_cached_config(gid)
+            _vc_id   = _to_int(_raw_cfg.get("voice_channel_id"))
+            if _vc_id:
+                _vc = bot.get_channel(_vc_id)
+                if _vc and hasattr(_vc, "members"):
+                    _added = 0
+                    for _vm in _vc.members:
+                        if _vm.bot:
+                            continue
+                        if _vm not in gs["players_join_order"]:
+                            gs["players_join_order"].append(_vm)
+                            _added += 1
+                    if _added:
+                        save_active_players(gid, [m.id for m in gs["players_join_order"]])
+                        print(f"[launch_game] [{gid}] Post-game voice scan: thêm lại {_added} người chơi.")
+                        _pc    = len(gs["players_join_order"])
+                        _min_p = cfg_min_players(_raw_cfg)
+                        _max_p = cfg_max_players(_raw_cfg)
+                        if _pc >= _max_p:
+                            gs["state"]          = GameState.FULL_FAST
+                            gs["countdown_time"] = 10
+                        elif _pc >= _min_p:
+                            gs["state"]          = GameState.COUNTDOWN
+                            gs["countdown_time"] = cfg_countdown(_raw_cfg)
+        except Exception as _e:
+            print(f"[launch_game] [{gid}] Post-game voice scan lỗi: {_e}")
+
         await update_lobby(gs, guild_id=gid)
 
 
