@@ -215,7 +215,7 @@ _pending_role_maps: dict[str, dict] = {}
 _config_cache      = {}
 _config_cache_time = {}
 
-_EDIT_INTERVAL = 1.0
+_EDIT_INTERVAL = 0.0   # Không throttle thêm — loop sleep đã handle
 
 
 def get_cached_config(guild_id: str) -> dict:
@@ -746,14 +746,17 @@ async def init_guild(guild_id: str, text_channel):
 async def _lobby_loop(guild_id: str):
     gid           = str(guild_id)
     purge_counter = 0
+    _TICK         = 1.0   # Lobby cập nhật đúng 1 giây / lần
 
     while True:
+        tick_start = _time.monotonic()
+
         try:
             gs = get_guild_state(gid)
 
             if gs.get("is_active") or gs["state"] == GameState.IN_GAME:
                 purge_counter = 0   # reset khi vào game
-                await asyncio.sleep(1)
+                await asyncio.sleep(_TICK)
                 continue
 
             if gs["state"] in (GameState.COUNTDOWN, GameState.FULL_FAST):
@@ -780,7 +783,10 @@ async def _lobby_loop(guild_id: str):
         except Exception as e:
             print(f"[lobby_loop] [{gid}] Lỗi: {e}")
 
-        await asyncio.sleep(1)
+        # ── Ngủ đúng phần còn lại của giây để giữ nhịp 1s ───────
+        elapsed = _time.monotonic() - tick_start
+        sleep_for = max(0.0, _TICK - elapsed)
+        await asyncio.sleep(sleep_for)
 
 
 # ══════════════════════════════════════════════════════════════════
