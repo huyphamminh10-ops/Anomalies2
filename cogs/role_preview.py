@@ -1212,6 +1212,85 @@ _ALL_META: dict[str, dict] = {
 }
 
 
+# ── Câu chọc ngẫu nhiên khi quá tải role theo phe ─────────────────────
+# Placeholder {n} = số lượng vai trò của phe đó trong bản nháp.
+_OVERFLOW_JOKES: dict[str, list[str]] = {
+    "Survivors": [
+        "Hay bạn muốn có tỉ lệ Dân Thành Thị cao hơn đống sinh vật tởm lợm kia?",
+        "Hay bạn muốn ngôi làng luôn yên bình?",
+        "Nhiều người sống sót kiểu này thì chơi không công bằng tí nào 😭",
+        "Làm ơn, giảm cái số lượng Survivors và cho Anomalies có chỗ đứng đi. Kiểu này sao chơi?",
+        "{n} mạng người mà chỉ có vài con quái? Đây là dã ngoại chứ không phải sinh tồn nha bro 🏕️",
+        "Survivors đông như đi hội chợ, Anomalies tủi thân khóc trong góc 😢",
+        "Bạn đang mở lớp dạy yoga cho dân làng à? Sao toàn người tốt vậy?",
+        "Tỉ lệ này mà thắng được Anomalies thì... ờ thì chắc chắn thắng rồi 🥱",
+        "Bớt Survivors lại, nhường đất cho lũ quái còn có chỗ săn mồi chứ!",
+        "Làng quá đông dân, Anomalies xin nghỉ phép vì áp lực công việc 📋",
+        "Hay là đổi tên game thành 'Mô Phỏng Họp Tổ Dân Phố' đi cho lành?",
+    ],
+    "Anomalies": [
+        "Thành thị dạo này nồng nặc mùi tởm thế, bật cái Mobcap lên và giảm giúp tui số Anomalies đi.",
+        "QUÁ MẤT CÂN BẰNG, anh bạn muốn thế giới diệt vong lắm hả?",
+        "Sao dân nào dân nấy đều có đặc điểm kì lạ quá. Chân trên đầu, tim dưới d*i. Này, xoá cái cơn ác mộng này đi, mất cân bằng quá.",
+        "Haiz, bạn quá muốn giết người 😮‍💨",
+        "{n} con quái trong một lobby? Survivors còn chưa kịp chào hello đã thành bữa tối 🍽️",
+        "Bạn đang tổ chức đại hội Anomalies à? Cho gửi lời mời tham dự với 🎉",
+        "Bớt mấy con dị thể đi, Survivors nó năn nỉ kìa 🙏",
+        "Đêm đầu tiên bật đèn lên đã thấy {n} bộ răng nanh nhe ra rồi. Sợ không?",
+        "Nhường tí đường sống cho dân thường được không, lương tâm đâu rồi?",
+        "Tới mức này thì Survivors khỏi cần chơi luôn, ngồi nhìn quái xé nhau ăn cũng vui mà 🍿",
+        "Cảnh báo: Hệ sinh thái mất cân bằng nghiêm trọng. Vui lòng giảm Anomalies trước khi quá muộn ⚠️",
+    ],
+    "Unknown Entities": [
+        "Cái lobby như vậy mà nhét {n} thực thể không xác định. Nể bạn luôn 😬",
+        "{n} THỰC THỂ KHÔNG XÁC ĐỊNH Á ⁉️ THẾ THÌ ĐÚNG 1 ĐÊM UNKNOWN THẮNG MỊA RỒI",
+        "Giảm thực thể không xác định từ {n} xuống 1 hay 2 thôi.",
+        "Bạn định mở cổng dimension à? {n} Unknown là quá đủ cho ngày tận thế rồi đó 🌀",
+        "Unknown nhiều như vậy thì cả Survivors lẫn Anomalies đều khóc ròng 😭",
+        "{n} thực thể không xác định = {n} dấu hỏi to đùng cho cân bằng game ❓",
+        "Cẩn thận đấy, gọi nhiều Unknown quá là chính bạn cũng không biết mình đang chơi gì đâu.",
+        "Lobby này chắc đổi tên thành 'Khu Trưng Bày Sinh Vật Lạ' cho hợp ✨",
+        "{n} Unknown trong một ván — bạn đang viết kịch bản phim kinh dị à?",
+        "Giảm bớt Unknown đi, người chơi chưa kịp hiểu luật đã bị xoá sổ rồi 💀",
+        "Bạn có chắc muốn {n} con Unknown không? Cả discord server sẽ chửi bạn đó 📣",
+    ],
+}
+
+
+def _pick_overflow_joke(faction: str, count: int) -> str:
+    import random as _rand
+    pool = _OVERFLOW_JOKES.get(faction) or _OVERFLOW_JOKES["Survivors"]
+    return _rand.choice(pool).format(n=count)
+
+
+def _draft_total(draft: dict[str, list[tuple[str, int]]]) -> int:
+    return sum(c for f in _EDITOR_FACTIONS for _, c in draft.get(f, []))
+
+
+def _faction_total(draft: dict[str, list[tuple[str, int]]], faction: str) -> int:
+    return sum(c for _, c in draft.get(faction, []))
+
+
+def _build_overflow_error_embed(
+    faction: str, faction_count: int, max_lobby: int
+) -> discord.Embed:
+    embed = discord.Embed(
+        title       = "❌ Lỗi",
+        description = (
+            f"**Bạn không thể đặt số lượng vai trò nhiều hơn số lượng tối đa trong phòng.**\n"
+            f"Lobby tối đa: **{max_lobby}** người  •  "
+            f"{_EDITOR_FACTION_EMOJI[faction]} {faction}: **{faction_count}** vai trò."
+        ),
+        color = discord.Color.red(),
+    )
+    embed.add_field(
+        name  = "❓",
+        value = _pick_overflow_joke(faction, faction_count),
+        inline = False,
+    )
+    return embed
+
+
 def _build_editor_overview_embed(
     guild_id: str,
     max_lobby: int,
@@ -1501,6 +1580,31 @@ class RoleEditorView(View):
         qty     = int(chosen)
         role    = self._pending_role
         faction = self._faction
+
+        # ── Kiểm tra quá tải so với lobby tối đa ──────────────────────
+        # Tính tổng phe SAU KHI thêm/cập nhật role này.
+        proj_entries: list[tuple[str, int]] = []
+        replaced = False
+        for n, c in self._draft.get(faction, []):
+            if n == role:
+                proj_entries.append((role, qty))
+                replaced = True
+            else:
+                proj_entries.append((n, c))
+        if not replaced:
+            proj_entries.append((role, qty))
+        proj_faction_total = sum(c for _, c in proj_entries)
+
+        if proj_faction_total > self.max_lobby:
+            # KHÔNG ghi vào draft, KHÔNG đổi state — chỉ gửi cảnh báo riêng.
+            await interaction.response.send_message(
+                embed     = _build_overflow_error_embed(
+                    faction, proj_faction_total, self.max_lobby,
+                ),
+                ephemeral = True,
+            )
+            return
+
         entries = self._draft.setdefault(faction, [])
         for idx, (n, _) in enumerate(entries):
             if n == role:
