@@ -1212,28 +1212,44 @@ _ALL_META: dict[str, dict] = {
 }
 
 
-def _build_editor_overview_embed(guild_id: str, max_lobby: int) -> discord.Embed:
-    override = _pending_role_overrides.get(guild_id, {})
+def _build_editor_overview_embed(
+    guild_id: str,
+    max_lobby: int,
+    draft: dict[str, list[tuple[str, int]]] | None = None,
+    dirty: bool = False,
+) -> discord.Embed:
+    """
+    draft : nội dung đang xem (chưa hoặc đã lưu).
+    dirty : True  → embed CAM,  trạng thái 🟠 Chưa Lưu
+            False → embed XANH, trạng thái 🟢 Đã Lưu
+    """
+    if draft is None:
+        draft = _pending_role_overrides.get(guild_id, {})
+
+    color  = discord.Color.orange() if dirty else discord.Color.green()
+    status = "🟠 Trạng thái: **Chưa Lưu**" if dirty else "🟢 Trạng thái: **Đã Lưu**"
+
     embed = discord.Embed(
         title="🛠 CHỈNH SỬA VAI TRÒ — Ván tiếp theo",
-        color=discord.Color.orange(),
+        color=color,
     )
     embed.set_footer(
         text=f"Lobby tối đa: {max_lobby} người  •  Danh sách tự reset sau ván."
     )
-    has_any = any(override.get(f) for f in _EDITOR_FACTIONS)
+    has_any = any(draft.get(f) for f in _EDITOR_FACTIONS)
     if not has_any:
         embed.description = (
+            f"{status}\n\n"
             "Chưa có danh sách tuỳ chỉnh.\n"
             "➊ Chọn phe  ➋ Chọn vai trò  ➌ Chọn số lượng  ➍ Nhấn 💾 Lưu\n\n"
             "⚠️ Khi bật tuỳ chỉnh, **Distributor** sẽ bị bỏ qua."
         )
         return embed
 
-    lines: list[str] = []
+    lines: list[str] = [status, ""]
     total = 0
     for faction in _EDITOR_FACTIONS:
-        entries = override.get(faction, [])
+        entries = draft.get(faction, [])
         if not entries:
             continue
         lines.append(f"**{_EDITOR_FACTION_EMOJI[faction]} {faction}**")
@@ -1250,6 +1266,7 @@ def _editor_role_options(
     max_lobby: int,
     guild_id: str,
     pending: str,
+    draft: dict[str, list[tuple[str, int]]] | None = None,
 ) -> list[discord.SelectOption]:
     """Tạo options cho role select — luôn trả về ít nhất 1 option."""
     if faction == "Survivors":
@@ -1259,8 +1276,9 @@ def _editor_role_options(
     else:
         meta = UNKNOWN_META
 
-    override  = _pending_role_overrides.get(guild_id, {})
-    added_set = {name for name, _ in override.get(faction, [])}
+    if draft is None:
+        draft = _pending_role_overrides.get(guild_id, {})
+    added_set = {name for name, _ in draft.get(faction, [])}
 
     eligible = [
         name for name, m in meta.items()
@@ -1313,6 +1331,14 @@ class RoleEditorView(View):
         self._faction     = "Survivors"
         self._pending_role: str | None = None
         self._pending_qty : int | None = None
+
+        # Draft = bản nháp đang chỉnh; chỉ commit vào _pending_role_overrides
+        # khi nhấn 💾 Lưu. Khởi tạo từ bản đã lưu (nếu có).
+        saved = _pending_role_overrides.get(guild_id, {})
+        self._draft: dict[str, list[tuple[str, int]]] = {
+            f: list(saved.get(f, [])) for f in _EDITOR_FACTIONS
+        }
+        self._dirty: bool = False
 
         # ── Row 0: Faction select ────────────────────────────────
         self._sel_faction = Select(
@@ -1405,6 +1431,7 @@ class RoleEditorView(View):
         self._sel_role.options     = _editor_role_options(
             self._faction, self.max_lobby, self.guild_id,
             self._pending_role or "",
+            draft = self._draft,
         )
         self._sel_role.placeholder = f"🎭 Chọn vai trò — {_EDITOR_FACTION_EMOJI[self._faction]} {self._faction}"
         self._sel_role.disabled    = False
@@ -1427,7 +1454,9 @@ class RoleEditorView(View):
             self._sel_qty.disabled    = True
 
     def _sync_save_button(self) -> None:
-        self._btn_save.disabled = not (self._pending_role and self._pending_qty)
+        # Cho phép Lưu khi có thay đổi chưa lưu (dirty), KHÔNG cần đang chọn
+        # role/qty mới — vì người dùng có thể vừa Xoá xong vẫn cần Lưu.
+        self._btn_save.disabled = not self._dirty
 
     # ── Callbacks ─────────────────────────────────────────────────
 
@@ -1437,7 +1466,11 @@ class RoleEditorView(View):
         self._sync_qty_select()
         self._sync_save_button()
         await interaction.response.edit_message(
-            embed = _build_editor_overview_embed(self.guild_id, self.max_lobby),
+            embed = _build_editor_overview_embed(
+                self.guild_id, self.max_lobby,
+                draft = self._draft,
+                dirty = self._dirty,
+            ),
             view  = self,
         )
 
@@ -1463,22 +1496,12 @@ class RoleEditorView(View):
             await interaction.response.defer()
             return
 
-        # ➜ Chỉ ghi nhớ tạm trong view, KHÔNG hiển thị, CHƯA lưu.
-        # Người dùng phải nhấn 💾 Lưu thì mới hiện ra trong embed.
-        self._pending_qty = int(chosen)
-        await self._refresh(interaction)
-
-    async def _on_save(self, interaction: discord.Interaction) -> None:
-        if not (self._pending_role and self._pending_qty):
-            await interaction.response.defer()
-            return
-
+        # Khi đã đủ role + qty: thêm ngay vào DRAFT (chưa commit) và đánh
+        # dấu dirty. Embed sẽ chuyển sang CAM "Chưa Lưu".
+        qty     = int(chosen)
         role    = self._pending_role
-        qty     = self._pending_qty
         faction = self._faction
-
-        override = _pending_role_overrides.setdefault(self.guild_id, {})
-        entries  = override.setdefault(faction, [])
+        entries = self._draft.setdefault(faction, [])
         for idx, (n, _) in enumerate(entries):
             if n == role:
                 entries[idx] = (role, qty)
@@ -1486,22 +1509,48 @@ class RoleEditorView(View):
         else:
             entries.append((role, qty))
 
-        # Reset pending sau khi đã lưu
+        self._dirty        = True
+        self._pending_role = None
+        self._pending_qty  = None
+        await self._refresh(interaction)
+
+    async def _on_save(self, interaction: discord.Interaction) -> None:
+        if not self._dirty:
+            await interaction.response.defer()
+            return
+
+        # Commit DRAFT → _pending_role_overrides (deep copy, lọc rỗng)
+        new_override: dict[str, list[tuple[str, int]]] = {}
+        for f in _EDITOR_FACTIONS:
+            entries = self._draft.get(f, [])
+            if entries:
+                new_override[f] = list(entries)
+
+        if new_override:
+            _pending_role_overrides[self.guild_id] = new_override
+        else:
+            _pending_role_overrides.pop(self.guild_id, None)
+
+        self._dirty        = False
         self._pending_role = None
         self._pending_qty  = None
         await self._refresh(interaction)
 
     async def _on_remove(self, interaction: discord.Interaction) -> None:
-        override = _pending_role_overrides.get(self.guild_id, {})
-        entries  = override.get(self._faction, [])
+        entries = self._draft.get(self._faction, [])
         if entries:
             entries.pop()
+            self._dirty = True
         self._pending_role = None
         self._pending_qty  = None
         await self._refresh(interaction)
 
     async def _on_clear(self, interaction: discord.Interaction) -> None:
-        _pending_role_overrides.pop(self.guild_id, None)
+        had_any = any(self._draft.get(f) for f in _EDITOR_FACTIONS)
+        for f in _EDITOR_FACTIONS:
+            self._draft[f] = []
+        if had_any:
+            self._dirty = True
         self._pending_role = None
         self._pending_qty  = None
         await self._refresh(interaction)
@@ -1531,19 +1580,30 @@ class RoleMainView(View):
         self._cached_role_names : list[str] | None = cached_role_names
         self._cached_role_map   : dict | None       = None
 
-        override  = _pending_role_overrides.get(guild_id, {})
-        edit_desc = (
+        override     = _pending_role_overrides.get(guild_id, {})
+        has_override = any(override.get(f) for f in _EDITOR_FACTIONS)
+        edit_desc    = (
             "✏️ Đang có tuỳ chỉnh — nhấn để chỉnh sửa"
-            if any(override.get(f) for f in _EDITOR_FACTIONS)
+            if has_override
             else "Tuỳ chỉnh pool vai trò cho ván tiếp theo"
+        )
+        current_label = (
+            "Vai trò hiện tại  ( Thủ Công )"
+            if has_override else
+            "Vai trò hiện tại  ( Tự Động )"
+        )
+        current_desc  = (
+            "✏️ Đang dùng danh sách tuỳ chỉnh đã lưu"
+            if has_override
+            else "Xem phân bổ từ kênh thoại"
         )
 
         sel = Select(
             custom_id   = "main_action",
             placeholder = "🎭 Chọn thao tác...",
             options     = [
-                discord.SelectOption(emoji="👥", label="Vai trò hiện tại",
-                                     value="current", description="Xem phân bổ từ kênh thoại"),
+                discord.SelectOption(emoji="👥", label=current_label,
+                                     value="current", description=current_desc),
                 discord.SelectOption(emoji="📊", label="Thống kê vai trò",
                                      value="stats",   description="Xem thống kê & tỉ lệ xuất hiện"),
                 discord.SelectOption(emoji="📖", label="Thông tin vai trò",
@@ -1600,6 +1660,23 @@ class RoleMainView(View):
 
     async def _action_current(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
+
+        # ── Nếu có danh sách tuỳ chỉnh đã LƯU, hiển thị ngay (Thủ Công) ──
+        override = _pending_role_overrides.get(self.guild_id, {})
+        if any(override.get(f) for f in _EDITOR_FACTIONS):
+            ovr_names: list[str] = []
+            for f in _EDITOR_FACTIONS:
+                for name, count in override.get(f, []):
+                    ovr_names.extend([name] * count)
+            embed = _build_preview_embed(ovr_names, len(ovr_names))
+            embed.title = "🛠 VAI TRÒ HIỆN TẠI ( Thủ Công )"
+            embed.color = discord.Color.green()
+            embed.set_footer(
+                text="Đang dùng danh sách tuỳ chỉnh đã lưu  •  /role → 🛠 để chỉnh sửa"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
         members = _get_voice_members(interaction)
         if not members:
             await interaction.followup.send(
@@ -1665,9 +1742,20 @@ class RoleMainView(View):
         await interaction.followup.send(embed=embed, view=new_view, ephemeral=True)
 
     async def _action_edit(self, interaction: discord.Interaction) -> None:
+        # ── Permission gate: dùng cùng quy tắc với /setting, /clear, /setup ──
         try:
-            from app import get_cached_config, cfg_max_players  # type: ignore[import]
-            max_lobby = cfg_max_players(get_cached_config(str(interaction.guild_id)))
+            from cogs.settings import check_command_permission  # type: ignore[import]
+            from app import get_cached_config, cfg_max_players   # type: ignore[import]
+            cfg = get_cached_config(str(interaction.guild_id)) or {}
+            if not check_command_permission(interaction, cfg):
+                await interaction.response.send_message(
+                    "❌ Bạn không có quyền **Chỉnh sửa vai trò**.\n"
+                    "Quyền này dùng chung cấu hình với `/setting`, `/clear`, `/setup`.\n"
+                    "Liên hệ chủ server để được cấp quyền (`/setting` → Quyền sử dụng).",
+                    ephemeral = True,
+                )
+                return
+            max_lobby = cfg_max_players(cfg)
         except Exception:
             max_lobby = self.max_lobby
         await interaction.response.send_message(
