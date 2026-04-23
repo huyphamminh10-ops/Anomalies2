@@ -651,6 +651,37 @@ async def launch_game(guild_id: str, gs: dict):
 
         survivor_classes, anomaly_classes, unknown_classes = load_role_classes()
 
+        # ── Inject custom role override (từ /role → Chỉnh sửa vai trò) ─────────
+        try:
+            from cogs.role_preview import _pending_role_overrides  # type: ignore[import]
+            _ovr = _pending_role_overrides.pop(gid, None)
+            if _ovr and any(_ovr.values()):
+                import importlib, inspect
+                _s_new, _a_new, _u_new = [], [], []
+                _all_loaded = survivor_classes + anomaly_classes + unknown_classes
+                _cls_map    = {cls.name: cls for cls in _all_loaded if hasattr(cls, "name")}
+                for _faction, _entries in _ovr.items():
+                    for _role_name, _count in _entries:
+                        _cls = _cls_map.get(_role_name)
+                        if not _cls:
+                            print(f"[override] ⚠ Role không tìm thấy: {_role_name!r}")
+                            continue
+                        _bucket = (
+                            _s_new if _faction == "Survivors"        else
+                            _a_new if _faction == "Anomalies"        else
+                            _u_new
+                        )
+                        _bucket.extend([_cls] * _count)
+                if _s_new or _a_new or _u_new:
+                    survivor_classes, anomaly_classes, unknown_classes = _s_new, _a_new, _u_new
+                    print(
+                        f"[override] ✔ Dùng danh sách tuỳ chỉnh: "
+                        f"S={len(_s_new)} A={len(_a_new)} U={len(_u_new)}"
+                    )
+        except Exception as _ovr_err:
+            print(f"[override] ✘ Lỗi inject override, dùng Distributor: {_ovr_err}")
+        # ── End override ────────────────────────────────────────────────────────
+
         if not (survivor_classes or anomaly_classes or unknown_classes):
             await text_channel.send("❌ Không load được role. Kiểm tra thư mục `roles/`.")
             _reset_lobby(gs, guild_id=gid)
