@@ -243,7 +243,7 @@ def _build_setting_embed(setting: dict, idx: int, total: int) -> discord.Embed:
         ),
         inline=False,
     )
-    type_icon = {"time": "⏱️ Đồng hồ", "toggle": "🔄 Bật / Tắt", "other": "⚙️ Tùy chọn"}
+    type_icon = {"time": "⏱️ Đồng hồ", "toggle": "🔄 Bật / Tắt", "other": "⚙️ Tùy chọn", "number": "🔢 Số Lượng"}
     embed.set_footer(
         text=f"Thông số {idx + 1}/{total}  •  Loại: {type_icon.get(s_type, '')}  •  /setting"
     )
