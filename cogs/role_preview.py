@@ -1272,20 +1272,40 @@ def _faction_total(draft: dict[str, list[tuple[str, int]]], faction: str) -> int
 
 
 def _build_overflow_error_embed(
-    faction: str, faction_count: int, max_lobby: int
+    totals: dict[str, int], total: int, max_lobby: int
 ) -> discord.Embed:
-    embed = discord.Embed(
-        title       = "❌ Lỗi",
-        description = (
-            f"**Bạn không thể đặt số lượng vai trò nhiều hơn số lượng tối đa trong phòng.**\n"
-            f"Lobby tối đa: **{max_lobby}** người  •  "
-            f"{_EDITOR_FACTION_EMOJI[faction]} {faction}: **{faction_count}** vai trò."
-        ),
-        color = discord.Color.red(),
+    """
+    totals : {faction: số role} của bản nháp đã chiếu (sau khi cộng role mới).
+    total  : tổng tất cả vai trò.
+    Tìm phe đông nhất để chọn câu chọc, và liệt kê các phe đang vắng mặt
+    (Anomalies / Unknown Entities) để cảnh báo cân bằng.
+    """
+    # Phe đông nhất → dùng câu chọc của phe đó
+    dominant = max(_EDITOR_FACTIONS, key=lambda f: totals.get(f, 0))
+    dom_count = totals.get(dominant, 0)
+
+    breakdown_lines = [
+        f"{_EDITOR_FACTION_EMOJI[f]} {f}: **{totals.get(f, 0)}**"
+        for f in _EDITOR_FACTIONS
+    ]
+
+    missing = [f for f in ("Anomalies", "Unknown Entities") if totals.get(f, 0) == 0]
+
+    desc = (
+        "**Bạn không thể đặt số lượng vai trò nhiều hơn số lượng tối đa trong phòng.**\n"
+        f"Lobby tối đa: **{max_lobby}** người  •  Tổng vai trò: **{total}**\n\n"
+        + "  •  ".join(breakdown_lines)
     )
+    if missing:
+        desc += (
+            "\n\n⚠️ Phe **" + " & ".join(missing) + "** đang trống — "
+            "ván sẽ mất cân bằng nghiêm trọng."
+        )
+
+    embed = discord.Embed(title="❌ Lỗi", description=desc, color=discord.Color.red())
     embed.add_field(
         name  = "❓",
-        value = _pick_overflow_joke(faction, faction_count),
+        value = _pick_overflow_joke(dominant, dom_count),
         inline = False,
     )
     return embed
@@ -1581,25 +1601,33 @@ class RoleEditorView(View):
         role    = self._pending_role
         faction = self._faction
 
-        # ── Kiểm tra quá tải so với lobby tối đa ──────────────────────
-        # Tính tổng phe SAU KHI thêm/cập nhật role này.
-        proj_entries: list[tuple[str, int]] = []
-        replaced = False
-        for n, c in self._draft.get(faction, []):
-            if n == role:
-                proj_entries.append((role, qty))
-                replaced = True
+        # ── Kiểm tra quá tải TỔNG so với lobby tối đa ─────────────────
+        # Dựng totals theo từng phe SAU KHI áp dụng (role, qty) lên draft.
+        proj_totals: dict[str, int] = {}
+        for f in _EDITOR_FACTIONS:
+            entries = self._draft.get(f, [])
+            if f == faction:
+                replaced = False
+                t = 0
+                for n, c in entries:
+                    if n == role:
+                        t += qty
+                        replaced = True
+                    else:
+                        t += c
+                if not replaced:
+                    t += qty
+                proj_totals[f] = t
             else:
-                proj_entries.append((n, c))
-        if not replaced:
-            proj_entries.append((role, qty))
-        proj_faction_total = sum(c for _, c in proj_entries)
+                proj_totals[f] = sum(c for _, c in entries)
 
-        if proj_faction_total > self.max_lobby:
+        proj_total = sum(proj_totals.values())
+
+        if proj_total > self.max_lobby:
             # KHÔNG ghi vào draft, KHÔNG đổi state — chỉ gửi cảnh báo riêng.
             await interaction.response.send_message(
                 embed     = _build_overflow_error_embed(
-                    faction, proj_faction_total, self.max_lobby,
+                    proj_totals, proj_total, self.max_lobby,
                 ),
                 ephemeral = True,
             )
