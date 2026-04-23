@@ -565,9 +565,26 @@ def build_game_config(raw_config: dict):
 # RESET LOBBY
 # ==============================
 
+async def _restore_nick(member, original_nick: str | None):
+    """Trả lại nickname gốc cho Spectator."""
+    try:
+        await member.edit(nick=original_nick)
+    except Exception:
+        pass
+
+
 def _reset_lobby(gs: dict, guild_id: str = None):
     gs["state"]              = GameState.WAITING
     gs["players_join_order"] = []
+    # Restore tất cả Spectator nicks trước khi clear
+    _old_nicks = gs.get("original_nicknames", {})
+    if _old_nicks and guild_id:
+        _guild_obj = bot.get_guild(int(guild_id)) if guild_id else None
+        if _guild_obj:
+            for _pid, _nick in list(_old_nicks.items()):
+                _member_obj = _guild_obj.get_member(_pid)
+                if _member_obj:
+                    asyncio.create_task(_restore_nick(_member_obj, _nick))
     gs["original_nicknames"] = {}
     gs["dirty"]              = True
     gs["is_active"]          = False
@@ -713,6 +730,23 @@ async def launch_game(guild_id: str, gs: dict):
         except Exception:
             pass
     finally:
+        # Restore tất cả Spectator nicknames còn sót lại
+        try:
+            _gs    = get_guild_state(gid)
+            _nicks = _gs.get("original_nicknames", {})
+            _guild = bot.get_guild(int(gid))
+            for _pid, _nick in list(_nicks.items()):
+                if _guild:
+                    _m = _guild.get_member(_pid)
+                    if _m:
+                        try:
+                            await _m.edit(nick=_nick)
+                        except Exception:
+                            pass
+            _nicks.clear()
+        except Exception as _ne:
+            print(f"[launch_game] [{gid}] Spectator nick restore lỗi: {_ne}")
+
         # Dọn engine: nếu crash chưa ended thì end_game() để unmute/gỡ role
         _engine = active_games.pop(gid, None)
         if _engine and not _engine.ended:
@@ -1099,7 +1133,10 @@ async def on_voice_state_update(member, before, after):
                 return
 
             if pid in engine._players_dict:
-                if pid in engine.dead_players and engine.config.mute_dead:
+                # Người chơi đã chết hoặc bị exile → mute khi vào lại voice
+                is_dead    = pid in engine.dead_players
+                force_mute = pid in getattr(engine, '_force_muted', set())
+                if is_dead and (engine.config.mute_dead or force_mute):
                     try:
                         await member.edit(mute=True)
                     except Exception:

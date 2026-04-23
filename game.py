@@ -1095,6 +1095,7 @@ class GameEngine:
         self.alive_players: Set[int]   = set(m.id for m in members)
         self.dead_players: Set[int]    = set()
         self.spectators: Set[int]      = set()
+        self._force_muted: Set[int]    = set()  # pid bị exile/chết cần mute khi vào lại voice
         self.initial_player_count = len(members)
         self._alive_cache_dirty   = True      # invalidate on death/revive
         self._alive_cache: List   = []
@@ -1225,8 +1226,11 @@ class GameEngine:
         except Exception as e:
             self.logger.warn(f"Cannot add Alive role to {member.display_name}: {e}")
 
-    async def _apply_dead_role(self, member: discord.Member):
-        """Khi chết: gỡ Alive role, gán Dead role, mute nếu cần."""
+    async def _apply_dead_role(self, member: discord.Member, force_mute: bool = False):
+        """
+        Khi chết: gỡ Alive role, gán Dead role, mute nếu cần.
+        force_mute=True: bỏ qua config.mute_dead (dùng cho vote-out — luôn mute).
+        """
         alive_role = self._get_alive_role()
         dead_role  = self._get_dead_role()
         if not self.config.no_remove_roles:
@@ -1241,9 +1245,18 @@ class GameEngine:
                     await member.add_roles(dead_role, reason="Anomalies — người chơi chết")
             except Exception as e:
                 self.logger.warn(f"Cannot add Dead role to {member.display_name}: {e}")
-        # Mute nếu cần (fallback khi không có Dead role dùng permission)
-        if self.config.mute_dead and self._muting_enabled and member.voice:
-            await self.voice_ctrl._try_mute(member, True)
+        # Mute:
+        #  - force_mute=True  → luôn mute (vote-out)
+        #  - force_mute=False → mute nếu config.mute_dead=True (chết ban đêm)
+        #  - no_remove_roles  → không mute (mode không gán role Discord)
+        if not self.config.no_remove_roles:
+            should_mute = (force_mute or self.config.mute_dead) and self._muting_enabled
+            if should_mute and self.config.allow_voice:
+                if member.voice:
+                    await self.voice_ctrl._try_mute(member, True)
+                # Nếu không trong voice → đánh dấu để mute khi vào lại
+                if force_mute or self.config.mute_dead:
+                    self._force_muted.add(member.id)
 
     async def _cleanup_discord_roles(self, member: discord.Member):
         """Hết trận: tháo Dead/Alive role, unmute."""
@@ -1925,7 +1938,8 @@ class GameEngine:
         member,
         reason: str = "Không rõ",
         bypass: bool = False,
-        bypass_protection: bool = False
+        bypass_protection: bool = False,
+        force_mute: bool = False,
     ):
         bypass = bypass or bypass_protection
         if hasattr(member, "player"):
@@ -2012,7 +2026,7 @@ class GameEngine:
 
         # Gán Dead role + mute nếu cần
         if self._muting_enabled:
-            await self._apply_dead_role(member)
+            await self._apply_dead_role(member, force_mute=force_mute)
 
         # on_death hook
         if role and hasattr(role, "on_death"):
@@ -2492,7 +2506,12 @@ class GameEngine:
                     f"🚫 **{target.display_name}** bị trục xuất!\n*Vai trò: {role_name}*",
                     color=0xe74c3c
                 )
-                await self.kill_player(target, reason="Bị trục xuất bởi dân làng", bypass=True)
+                await self.kill_player(
+                    target,
+                    reason     = "Bị trục xuất bởi dân làng",
+                    bypass     = True,
+                    force_mute = True,   # Vote-out: LUÔN mute, bỏ qua config.mute_dead
+                )
             break
 
         await self._fire_hooks("on_vote_end")
