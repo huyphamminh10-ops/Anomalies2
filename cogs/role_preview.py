@@ -1556,7 +1556,7 @@ class RoleMainView(View):
                 embed=_build_preview_embed(self._cached_role_names, player_count), ephemeral=True)
             return
         try:
-            from bot import load_role_classes, _pending_role_maps  # type: ignore[import]
+            from app import load_role_classes, _pending_role_maps  # type: ignore[import]
             s, a, u              = load_role_classes()
             role_names, role_map = _run_preview_distribution(player_count, s + a + u, members)
             _pending_role_maps[str(interaction.guild_id)] = role_map
@@ -1583,7 +1583,7 @@ class RoleMainView(View):
         )
         if player_count >= 5:
             try:
-                from bot import load_role_classes, _pending_role_maps  # type: ignore[import]
+                from app import load_role_classes, _pending_role_maps  # type: ignore[import]
                 s, a, u              = load_role_classes()
                 role_names, role_map = _run_preview_distribution(player_count, s + a + u, members)
                 self._cached_role_names = role_names
@@ -1602,8 +1602,11 @@ class RoleMainView(View):
         await interaction.followup.send(embed=embed, view=new_view, ephemeral=True)
 
     async def _action_edit(self, interaction: discord.Interaction) -> None:
-        members   = _get_voice_members(interaction)
-        max_lobby = max(len(members), 5) if members else self.max_lobby
+        try:
+            from app import get_cached_config, cfg_max_players  # type: ignore[import]
+            max_lobby = cfg_max_players(get_cached_config(str(interaction.guild_id)))
+        except Exception:
+            max_lobby = self.max_lobby
         await interaction.response.send_message(
             embed=_build_editor_overview_embed(self.guild_id, max_lobby),
             view=RoleEditorView(self.bot, self.guild_id, max_lobby),
@@ -2135,7 +2138,7 @@ class RoleMainView(View):
             )
             return
         try:
-            from bot import load_role_classes, _pending_role_maps  # type: ignore[import]
+            from app import load_role_classes, _pending_role_maps  # type: ignore[import]
             s, a, u              = load_role_classes()
             role_names, role_map = _run_preview_distribution(player_count, s + a + u, members)
             _pending_role_maps[str(interaction.guild_id)] = role_map
@@ -2163,7 +2166,7 @@ class RoleMainView(View):
         )
         if player_count >= 5:
             try:
-                from bot import load_role_classes, _pending_role_maps  # type: ignore[import]
+                from app import load_role_classes, _pending_role_maps  # type: ignore[import]
                 s, a, u              = load_role_classes()
                 role_names, role_map = _run_preview_distribution(player_count, s + a + u, members)
                 self._cached_role_names = role_names
@@ -2182,8 +2185,11 @@ class RoleMainView(View):
         await interaction.followup.send(embed=embed, view=new_view, ephemeral=True)
 
     async def _action_edit(self, interaction: discord.Interaction) -> None:
-        members   = _get_voice_members(interaction)
-        max_lobby = max(len(members), 5) if members else self.max_lobby
+        try:
+            from app import get_cached_config, cfg_max_players  # type: ignore[import]
+            max_lobby = cfg_max_players(get_cached_config(str(interaction.guild_id)))
+        except Exception:
+            max_lobby = self.max_lobby
         await interaction.response.send_message(
             embed = _build_editor_overview_embed(self.guild_id, max_lobby),
             view  = RoleEditorView(self.bot, self.guild_id, max_lobby),
