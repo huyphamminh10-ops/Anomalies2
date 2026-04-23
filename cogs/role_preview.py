@@ -1225,7 +1225,7 @@ def _build_editor_overview_embed(guild_id: str, max_lobby: int) -> discord.Embed
     if not has_any:
         embed.description = (
             "Chưa có danh sách tuỳ chỉnh.\n"
-            "➊ Chọn phe  ➋ Chọn vai trò  ➌ Chọn số lượng\n\n"
+            "➊ Chọn phe  ➋ Chọn vai trò  ➌ Chọn số lượng  ➍ Nhấn 💾 Lưu\n\n"
             "⚠️ Khi bật tuỳ chỉnh, **Distributor** sẽ bị bỏ qua."
         )
         return embed
@@ -1245,7 +1245,12 @@ def _build_editor_overview_embed(guild_id: str, max_lobby: int) -> discord.Embed
     return embed
 
 
-def _editor_role_options(faction: str, max_lobby: int, guild_id: str, pending: str) -> list[discord.SelectOption]:
+def _editor_role_options(
+    faction: str,
+    max_lobby: int,
+    guild_id: str,
+    pending: str,
+) -> list[discord.SelectOption]:
     """Tạo options cho role select — luôn trả về ít nhất 1 option."""
     if faction == "Survivors":
         meta = SURVIVORS_META
@@ -1426,10 +1431,7 @@ class RoleEditorView(View):
 
     # ── Callbacks ─────────────────────────────────────────────────
 
-    async def _on_faction(self, interaction: discord.Interaction) -> None:
-        self._faction      = self._sel_faction.values[0]
-        self._pending_role = None
-        self._pending_qty  = None
+    async def _refresh(self, interaction: discord.Interaction) -> None:
         self._sync_faction_select()
         self._sync_role_select()
         self._sync_qty_select()
@@ -1439,6 +1441,12 @@ class RoleEditorView(View):
             view  = self,
         )
 
+    async def _on_faction(self, interaction: discord.Interaction) -> None:
+        self._faction      = self._sel_faction.values[0]
+        self._pending_role = None
+        self._pending_qty  = None
+        await self._refresh(interaction)
+
     async def _on_role(self, interaction: discord.Interaction) -> None:
         chosen = self._sel_role.values[0]
         if chosen == "__none__":
@@ -1447,27 +1455,18 @@ class RoleEditorView(View):
         if chosen != self._pending_role:
             self._pending_qty = None
         self._pending_role = chosen
-        self._sync_role_select()
-        self._sync_qty_select()
-        self._sync_save_button()
-        await interaction.response.edit_message(
-            embed = _build_editor_overview_embed(self.guild_id, self.max_lobby),
-            view  = self,
-        )
+        await self._refresh(interaction)
 
     async def _on_qty(self, interaction: discord.Interaction) -> None:
         chosen = self._sel_qty.values[0]
-        if chosen == "__disabled__":
+        if chosen == "__disabled__" or not self._pending_role:
             await interaction.response.defer()
             return
 
+        # ➜ Chỉ ghi nhớ tạm trong view, KHÔNG hiển thị, CHƯA lưu.
+        # Người dùng phải nhấn 💾 Lưu thì mới hiện ra trong embed.
         self._pending_qty = int(chosen)
-        self._sync_qty_select()
-        self._sync_save_button()
-        await interaction.response.edit_message(
-            embed = _build_editor_overview_embed(self.guild_id, self.max_lobby),
-            view  = self,
-        )
+        await self._refresh(interaction)
 
     async def _on_save(self, interaction: discord.Interaction) -> None:
         if not (self._pending_role and self._pending_qty):
@@ -1487,16 +1486,10 @@ class RoleEditorView(View):
         else:
             entries.append((role, qty))
 
+        # Reset pending sau khi đã lưu
         self._pending_role = None
         self._pending_qty  = None
-        self._sync_faction_select()
-        self._sync_role_select()
-        self._sync_qty_select()
-        self._sync_save_button()
-        await interaction.response.edit_message(
-            embed = _build_editor_overview_embed(self.guild_id, self.max_lobby),
-            view  = self,
-        )
+        await self._refresh(interaction)
 
     async def _on_remove(self, interaction: discord.Interaction) -> None:
         override = _pending_role_overrides.get(self.guild_id, {})
@@ -1505,27 +1498,13 @@ class RoleEditorView(View):
             entries.pop()
         self._pending_role = None
         self._pending_qty  = None
-        self._sync_faction_select()
-        self._sync_role_select()
-        self._sync_qty_select()
-        self._sync_save_button()
-        await interaction.response.edit_message(
-            embed = _build_editor_overview_embed(self.guild_id, self.max_lobby),
-            view  = self,
-        )
+        await self._refresh(interaction)
 
     async def _on_clear(self, interaction: discord.Interaction) -> None:
         _pending_role_overrides.pop(self.guild_id, None)
         self._pending_role = None
         self._pending_qty  = None
-        self._sync_faction_select()
-        self._sync_role_select()
-        self._sync_qty_select()
-        self._sync_save_button()
-        await interaction.response.edit_message(
-            embed = _build_editor_overview_embed(self.guild_id, self.max_lobby),
-            view  = self,
-        )
+        await self._refresh(interaction)
 
 
 # ══════════════════════════════════════════════════════════════════
