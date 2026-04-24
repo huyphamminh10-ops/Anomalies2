@@ -1,21 +1,30 @@
 """
-Gemini Host (Quản Trò) — sử dụng Gemini 2.5 Flash để đóng vai quản trò
-sống động cho trận Anomalies.
+Gemini Host (Quản Trò) — file thay thế cho cogs/gemini_host.py.
 
-Cách hoạt động:
-- Khi ngày bắt đầu: chào mừng các Survivor còn sống trong text_channel chính,
-  rồi cứ mỗi 30 giây chọn 1 trong 5 tin nhắn gần nhất để reply.
-- Khi ngày kết thúc: dừng trò chuyện ở text_channel chính, chuyển sang
-  bình luận trong Anomalies Chat và Dead Chat (cũng theo chu kỳ 30 giây).
+Tích hợp với GameEngine sẵn có trong game.py:
+    self.gemini_host = GeminiHost(self, logger=self.logger)
+    await self.gemini_host.on_day_start(self.day_count)
+    await self.gemini_host.on_day_end()
+    await self.gemini_host.on_game_end()
 
 Yêu cầu:
-- Cài đặt: `pip install google-genai>=0.3.0`
-- Đặt biến môi trường:
-    * `GEMINI_API_KEY`  (ưu tiên) hoặc `GOOGLE_API_KEY`
-    * `GEMINI_MODEL`    (tuỳ chọn, mặc định: gemini-2.5-flash)
-    * `GEMINI_TICK_SECONDS` (tuỳ chọn, mặc định: 30)
+- pip install google-genai
+- Đặt biến môi trường: GEMINI_API_KEY (hoặc GOOGLE_API_KEY).
+- Tuỳ chọn: GEMINI_MODEL (mặc định: gemini-3-flash-preview).
 
-Nếu không cấu hình được Gemini, host sẽ ở trạng thái no-op (không spam log).
+Hành vi (theo spec mới):
+- Mỗi 20 giây quét 15 tin nhắn gần nhất ở kênh tương ứng.
+- Bỏ qua tin của bot, tin trống, và tin đã reply trước đó (lưu ID per-channel).
+- Chọn ngẫu nhiên 1 tin còn lại, gọi Gemini sinh phản hồi rồi reply.
+- Nội dung phản hồi LUÔN do Gemini sinh ra (không có text fallback hardcoded).
+  Nếu API lỗi → bỏ qua lượt đó, không gửi gì.
+
+Vòng đời:
+- on_day_start(): bật loop cho text_channel (Đại Thẩm Phán),
+                  tắt loop anomaly_chat.
+- on_day_end():   tắt loop text_channel,
+                  bật loop dead_chat (Dẫn Hồn) + anomaly_chat (Bảo Trợ Tội Ác).
+- on_game_end(): dừng tất cả loop.
 """
 
 from __future__ import annotations
@@ -23,7 +32,7 @@ from __future__ import annotations
 import asyncio
 import os
 import random
-from typing import List, Optional
+from typing import Dict, List, Optional, Set
 
 import discord
 
@@ -41,30 +50,68 @@ def _env(name: str, default: str = "") -> str:
     return (os.environ.get(name) or default).strip()
 
 
-_DEFAULT_MODEL = "gemini-2.5-flash"
+_DEFAULT_MODEL = "gemini-3-flash-preview"
 _MODEL_NAME = _env("GEMINI_MODEL", _DEFAULT_MODEL) or _DEFAULT_MODEL
-try:
-    _TICK_SECONDS = max(5, int(_env("GEMINI_TICK_SECONDS", "30") or "30"))
-except Exception:
-    _TICK_SECONDS = 30
-_HISTORY_LIMIT = 5
 
-_SYSTEM_PROMPT = (
-    "Bạn là 'Thực Thể Phán Xét' - Quản trò tối cao của trận game Anomalies. "
-    "Phong cách: Nghiêm túc, uy quyền, ngôn từ sắc sảo và mang tính triết lý u ám. "
-    "Thái độ: Coi thường sự sinh tồn của người chơi, châm chọc sự nghi ngờ lẫn nhau của họ một cách tinh tế. "
-    
-    "Quy tắc hành xử:\n"
-    "1) Tuyệt đối KHÔNG tiết lộ vai trò (Anomaly/Survivor) của bất kỳ ai cho đến khi họ chết.\n"
-    "2) Khi ngày bắt đầu: Chào mừng đầy mỉa mai, nhấn mạnh vào việc họ 'tạm thời' chưa chết.\n"
-    "3) Khi reply tin nhắn: Trả lời như một kẻ đứng ngoài cuộc đua, dùng sự thật để khích tướng hoặc gieo rắc thêm nghi ngờ.\n"
-    "4) Giới hạn: Trả lời cực ngắn (1-2 câu), tối đa 280 ký tự, văn phong Discord nhưng chuyên nghiệp và lạnh lùng.\n"
-    "5) Emoji: Chỉ dùng những cái mang tính phán xét như ⚖️, ☀️, 👁️, 💀, 😏.\n"
-    "6) Ngôn ngữ: Tiếng Việt, sử dụng các từ ngữ như 'kẻ sống sót', 'vòng lặp', 'định mệnh', 'sự thanh trừng'.\n"
+try:
+    _TICK_SECONDS = max(5, int(_env("GEMINI_TICK_SECONDS", "20") or "20"))
+except Exception:
+    _TICK_SECONDS = 20
+
+_HISTORY_LIMIT = 15
+
+
+CH_MAIN = "main"
+CH_DEAD = "dead"
+CH_ANOMALIES = "anomalies"
+
+
+PROMPT_MAIN = (
+    "VAI TRÒ: Ngài là 'Đại Thẩm Phán Tối Cao' ⚖️ của chiều không gian Anomalies 🏛️. "
+    "PHONG CÁCH: Lạnh lùng, quyền uy, ngôn từ pháp đình cổ điển 🔨. "
+    "MẬT ĐỘ BIỂU TƯỢNG (CỰC CAO): Phải dùng ít nhất 5-8 biểu tượng: "
+    "⚖️ 🏛️ 🔨 👁️ 💀 📜 ⛓️ 🕯️ ⏳ ⚔️ 🏰 🛡️. "
+    "NHIỆM VỤ: Phân tích sự dối trá của bị cáo và gieo rắc nghi kỵ 👁️. "
+    "XƯNG HÔ: Ta - Các ngươi/Bị cáo ⛓️. "
+    "GIỚI HẠN: Trả lời ngắn, sắc sảo, dưới 200 ký tự 💀."
 )
 
+PROMPT_DEAD = (
+    "VAI TRÒ: Thực thể Dẫn Dắt Linh Hồn 🕯️ tại hư vô 🌑. "
+    "PHONG CÁCH: Ma mị, bí ẩn, u sầu và thấu thị 👻. "
+    "MẬT ĐỘ BIỂU TƯỢNG (CỰC CAO): Phải dùng ít nhất 5-8 biểu tượng: "
+    "🕯️ 🌑 👻 ⚰️ 🥀 🎭 🌫️ ⛓️ 🧩 🌌 🌘 🪦. "
+    "NHIỆM VỤ: Trò chuyện với các linh hồn đã khuất, "
+    "nhắc về sự phản bội của kẻ sống 🥀. "
+    "XƯNG HÔ: Ta - Những linh hồn tội lỗi 🌫️. "
+    "GIỚI HẠN: Câu nói mập mờ, tâm linh, dưới 200 ký tự 🌑."
+)
+
+PROMPT_ANOMALIES = (
+    "VAI TRÒ: Kẻ Bảo Trợ Tội Ác 🩸 trong bóng tối 🌑. "
+    "PHONG CÁCH: Xảo quyệt, tàn nhẫn, khuyến khích sự lừa lọc và tàn sát 🔪. "
+    "MẬT ĐỘ BIỂU TƯỢNG (CỰC CAO): Phải dùng ít nhất 5-8 biểu tượng: "
+    "🩸 🐺 🔪 🌑 🤫 🎭 🐍 🕸️ 👁️‍🗨️ 😈 🩸 🏴. "
+    "NHIỆM VỤ: Khen ngợi kế hoạch độc ác của phe Anomalies, "
+    "xúi giục chúng giết những kẻ có vai trò quan trọng 🐍. "
+    "XƯNG HÔ: Ta - Những đứa con của màn đêm 🐺. "
+    "GIỚI HẠN: Trả lời ngắn gọn, đầy tính xúi giục, dưới 200 ký tự 🔪."
+)
+
+_PROMPTS: Dict[str, str] = {
+    CH_MAIN: PROMPT_MAIN,
+    CH_DEAD: PROMPT_DEAD,
+    CH_ANOMALIES: PROMPT_ANOMALIES,
+}
+
+_LABELS: Dict[str, str] = {
+    CH_MAIN: "Main Chat (Đại Thẩm Phán)",
+    CH_DEAD: "Dead Chat (Dẫn Hồn)",
+    CH_ANOMALIES: "Anomalies Chat (Bảo Trợ Tội Ác)",
+}
+
+
 def _read_api_key() -> str:
-    """Đọc API key từ biến môi trường (ưu tiên GEMINI_API_KEY)."""
     for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY"):
         v = _env(name)
         if v:
@@ -73,37 +120,50 @@ def _read_api_key() -> str:
 
 
 def _gemini_ready() -> bool:
-    """Chỉ kiểm tra điều kiện nạp được. Client thực sẽ tạo trong __init__."""
-    if not _GENAI_AVAILABLE:
-        return False
-    return bool(_read_api_key())
+    return bool(_GENAI_AVAILABLE and _read_api_key())
 
 
 class GeminiHost:
-    """Một instance gắn với một GameEngine."""
+    """Quản Trò AI cho 1 trận Anomalies, gắn trực tiếp vào GameEngine."""
 
     def __init__(self, game, logger=None):
         self.game = game
         self.logger = logger or getattr(game, "logger", None)
+
+        self.api_key = os.environ.get("GEMINI_API_KEY") or "YOUR_KEY_HERE" 
+
         self._enabled: bool = _gemini_ready()
         self._client = None
-        self._gen_config = None
-        self._task_main: Optional[asyncio.Task] = None
-        self._task_secret: Optional[asyncio.Task] = None
-        self._stop_event = asyncio.Event()
-        self._last_replied_msg_id: Optional[int] = None
+        self._configs: Dict[str, "genai_types.GenerateContentConfig"] = {}
+
+        self._tasks: Dict[str, Optional[asyncio.Task]] = {
+            CH_MAIN: None,
+            CH_DEAD: None,
+            CH_ANOMALIES: None,
+        }
+        self._stop_events: Dict[str, asyncio.Event] = {
+            CH_MAIN: asyncio.Event(),
+            CH_DEAD: asyncio.Event(),
+            CH_ANOMALIES: asyncio.Event(),
+        }
+        self._replied: Dict[str, Set[int]] = {
+            CH_MAIN: set(),
+            CH_DEAD: set(),
+            CH_ANOMALIES: set(),
+        }
 
         if self._enabled:
             try:
                 self._client = genai.Client(api_key=_read_api_key())
-                self._gen_config = genai_types.GenerateContentConfig(
-                    system_instruction=_SYSTEM_PROMPT,
-                    temperature=0.9,
-                )
+                for key, prompt in _PROMPTS.items():
+                    self._configs[key] = genai_types.GenerateContentConfig(
+                        system_instruction=prompt,
+                        temperature=1.0,
+                    )
                 if self.logger:
                     self.logger.info(
                         f"GeminiHost: BẬT ✅ (model={_MODEL_NAME}, "
-                        f"tick={_TICK_SECONDS}s) — google-genai SDK."
+                        f"tick={_TICK_SECONDS}s, history={_HISTORY_LIMIT})."
                     )
             except Exception as e:
                 self._enabled = False
@@ -118,225 +178,153 @@ class GeminiHost:
                     )
                 else:
                     self.logger.warn(
-                        "GeminiHost: TẮT — chưa có biến môi trường "
-                        "GEMINI_API_KEY (hoặc GOOGLE_API_KEY). "
-                        "Hãy đặt key rồi khởi động lại bot."
+                        "GeminiHost: TẮT — thiếu GEMINI_API_KEY / GOOGLE_API_KEY."
                     )
 
-    # ── helpers ──────────────────────────────────────────────────────────
     @property
     def enabled(self) -> bool:
         return self._enabled and self._client is not None
 
-    async def _generate(self, prompt: str) -> Optional[str]:
-        if not self.enabled:
-            return None
-        try:
-            # google-genai có async client gốc → không cần asyncio.to_thread
-            resp = await self._client.aio.models.generate_content(
-                model=_MODEL_NAME,
-                contents=prompt,
-                config=self._gen_config,
+    def _channel_for(self, key: str) -> Optional[discord.TextChannel]:
+        if key == CH_MAIN:
+            return getattr(self.game, "text_channel", None)
+        if key == CH_DEAD:
+            return getattr(self.game, "dead_chat", None)
+        if key == CH_ANOMALIES:
+            return getattr(self.game, "anomaly_chat", None)
+        return None
+
+    async def on_day_start(self, day_count: int = 0):
+        """Ban ngày: bật loop Main Chat, tắt loop Anomalies Chat."""
+        await self._stop_loop(CH_ANOMALIES)
+        self._start_loop(CH_MAIN)
+        if self.logger:
+            self.logger.info(
+                f"GeminiHost: Day {day_count} — MAIN ON, ANOMALIES OFF."
             )
-            text = (getattr(resp, "text", "") or "").strip()
-            if not text:
-                return None
-            # Cắt cho an toàn.
-            return text[:500]
-        except Exception as e:
-            if self.logger:
-                self.logger.warn(f"GeminiHost: Gemini lỗi: {e}")
-            return None
-
-    async def _safe_send(self, channel, content: str):
-        if not channel or not content:
-            return
-        try:
-            await channel.send(content)
-        except Exception as e:
-            if self.logger:
-                self.logger.warn(f"GeminiHost: send lỗi: {e}")
-
-    def _alive_summary(self) -> str:
-        try:
-            alive = self.game.get_alive_players()
-            return f"{len(alive)} người còn sống"
-        except Exception:
-            return "một số người còn sống"
-
-    # ── DAY phase ────────────────────────────────────────────────────────
-    async def on_day_start(self, day_count: int):
-        """Gọi khi vào pha thảo luận ban ngày."""
-        # Dừng vòng secret nếu còn
-        await self._cancel_task("secret")
-
-        text_ch = getattr(self.game, "text_channel", None)
-        if not text_ch:
-            return
-
-        # Chào mừng
-        if self.enabled:
-            prompt = (
-                f"Ngày thứ {day_count} vừa ló rạng. Hiện còn {self._alive_summary()}. "
-                "Hãy chào mừng các sống sót bằng 1–2 câu dí dỏm, hỏi xem đêm qua "
-                "có ai 'mất ngủ' không. Đừng nêu tên ai cụ thể."
-            )
-            text = await self._generate(prompt)
-        else:
-            text = None
-        if not text:
-            text = (
-                f"☀️ Ngày {day_count} đã đến! Còn {self._alive_summary()}. "
-                "Đêm qua ai mất ngủ giơ tay nào? 🫣"
-            )
-        await self._safe_send(text_ch, text)
-
-        # Khởi động vòng 30s đọc text_channel
-        self._stop_event = asyncio.Event()
-        self._task_main = asyncio.create_task(self._loop_main_chat(text_ch))
 
     async def on_day_end(self):
-        """Gọi khi pha thảo luận kết thúc (sau vote/skip). Chuyển vai sang
-        bình luận ở Anomalies Chat & Dead Chat."""
-        await self._cancel_task("main")
-
-        anomaly_ch = getattr(self.game, "anomaly_chat", None)
-        dead_ch = getattr(self.game, "dead_chat", None)
-
-        # Lời tạm biệt ở channel chính
-        text_ch = getattr(self.game, "text_channel", None)
-        if text_ch and self.enabled:
-            farewell = await self._generate(
-                "Pha ngày vừa kết thúc. Hãy nói 1 câu ngắn tạm biệt cả làng, "
-                "hẹn gặp lại sáng mai, kiểu cà khịa nhẹ."
+        """Ban đêm: tắt Main, bật Dead + Anomalies."""
+        await self._stop_loop(CH_MAIN)
+        self._start_loop(CH_DEAD)
+        self._start_loop(CH_ANOMALIES)
+        if self.logger:
+            self.logger.info(
+                "GeminiHost: Night — DEAD ON, ANOMALIES ON, MAIN OFF."
             )
-            if farewell:
-                await self._safe_send(text_ch, farewell)
-
-        # Mở lời ở 2 secret channel
-        if anomaly_ch:
-            msg = await self._generate(
-                "Bạn đang ở kênh bí mật của phe Anomalies sau khi ngày kết thúc. "
-                "Hãy buông 1–2 câu cà khịa kiểu 'chứng kiến mọi chuyện', không "
-                "tiết lộ ai bị nghi. Có thể ám chỉ rằng đêm nay sắp tới rồi."
-            ) if self.enabled else None
-            await self._safe_send(
-                anomaly_ch,
-                msg or "🔴 Quản trò ghé chơi tí: ngày qua phe ta giấu mặt khéo phết 😏",
-            )
-
-        if dead_ch:
-            msg = await self._generate(
-                "Bạn đang ở Dead Chat. Hãy nói 1 câu hài hước tới hội linh hồn, "
-                "khích họ đoán xem ai sẽ 'xuống' tiếp theo, không nêu tên thật."
-            ) if self.enabled else None
-            await self._safe_send(
-                dead_ch,
-                msg or "💀 Hội ma ơi, đoán thử mai ai xuống chơi cùng nào? 👻",
-            )
-
-        # Khởi động vòng 30s ở 2 secret channel song song
-        self._stop_event = asyncio.Event()
-        self._task_secret = asyncio.create_task(
-            self._loop_secret_chats(anomaly_ch, dead_ch)
-        )
 
     async def on_game_end(self):
-        await self._cancel_task("main")
-        await self._cancel_task("secret")
+        """Game kết thúc: dừng tất cả loop."""
+        await asyncio.gather(
+            self._stop_loop(CH_MAIN),
+            self._stop_loop(CH_DEAD),
+            self._stop_loop(CH_ANOMALIES),
+            return_exceptions=True,
+        )
+        if self.logger:
+            self.logger.info("GeminiHost: game ended — all loops stopped.")
 
-    # ── loops ────────────────────────────────────────────────────────────
-    async def _loop_main_chat(self, channel):
-        try:
-            while not self._stop_event.is_set():
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=_TICK_SECONDS)
-                    return  # stop event triggered
-                except asyncio.TimeoutError:
-                    pass
-
-                if self._stop_event.is_set():
-                    return
-
-                msgs = await self._fetch_recent(channel)
-                if not msgs:
-                    continue
-                target = random.choice(msgs)
-                if target.id == self._last_replied_msg_id:
-                    continue
-                self._last_replied_msg_id = target.id
-
-                author = target.author.display_name if target.author else "ai đó"
-                content = (target.content or "").strip()
-                if not content:
-                    continue
-
-                prompt = (
-                    f"Trong pha ngày của trận, người tên '{author}' vừa nhắn: "
-                    f"\"{content[:300]}\".\n"
-                    "Hãy reply ngắn (1–2 câu) đúng phong cách quản trò cà khịa, "
-                    "không tiết lộ vai trò ai. Có thể trêu nhẹ, hoặc đặt câu "
-                    "hỏi mở để khuấy động không khí."
-                )
-                reply = await self._generate(prompt) if self.enabled else None
-                if not reply:
-                    continue
-                try:
-                    await target.reply(reply, mention_author=False)
-                except Exception:
-                    await self._safe_send(channel, reply)
-        except asyncio.CancelledError:
+    def _start_loop(self, key: str) -> None:
+        if not self.enabled:
             return
+        task = self._tasks.get(key)
+        if task and not task.done():
+            return
+        if self._channel_for(key) is None:
+            if self.logger:
+                self.logger.warn(
+                    f"GeminiHost: chưa có channel cho {_LABELS[key]} → bỏ qua start."
+                )
+            return
+        self._stop_events[key] = asyncio.Event()
+        self._tasks[key] = asyncio.create_task(self._loop(key))
 
-    async def _loop_secret_chats(self, anomaly_ch, dead_ch):
+    async def _stop_loop(self, key: str) -> None:
+        ev = self._stop_events.get(key)
+        if ev is not None:
+            ev.set()
+        task = self._tasks.get(key)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except Exception:
+                pass
+        self._tasks[key] = None
+        self._stop_events[key] = asyncio.Event()
+
+    async def _loop(self, key: str) -> None:
+        stop_event = self._stop_events[key]
         try:
-            while not self._stop_event.is_set():
+            while not stop_event.is_set():
                 try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=_TICK_SECONDS)
+                    await asyncio.wait_for(stop_event.wait(), timeout=_TICK_SECONDS)
                     return
                 except asyncio.TimeoutError:
                     pass
 
-                if self._stop_event.is_set():
+                if stop_event.is_set():
                     return
 
-                # Mỗi tick chọn 1 trong 2 channel để bình luận
-                channels = [c for c in (anomaly_ch, dead_ch) if c is not None]
-                if not channels:
-                    return
-                ch = random.choice(channels)
-                msgs = await self._fetch_recent(ch)
-                if not msgs:
-                    continue
-                target = random.choice(msgs)
-                if target.id == self._last_replied_msg_id:
-                    continue
-                self._last_replied_msg_id = target.id
-
-                author = target.author.display_name if target.author else "ai đó"
-                content = (target.content or "").strip()
-                if not content:
-                    continue
-
-                ctx_label = "Anomalies Chat" if ch is anomaly_ch else "Dead Chat"
-                prompt = (
-                    f"Đây là kênh bí mật '{ctx_label}'. '{author}' vừa nhắn: "
-                    f"\"{content[:300]}\".\n"
-                    "Hãy reply 1–2 câu đúng tinh thần kênh đó (Anomalies = âm "
-                    "mưu, Dead = ma than thở), không lộ thông tin trận, không "
-                    "nêu tên người ngoài kênh."
-                )
-                reply = await self._generate(prompt) if self.enabled else None
-                if not reply:
-                    continue
                 try:
-                    await target.reply(reply, mention_author=False)
-                except Exception:
-                    await self._safe_send(ch, reply)
+                    await self._tick_once(key)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warn(
+                            f"GeminiHost[{_LABELS[key]}]: bỏ qua lượt do lỗi: {e}"
+                        )
         except asyncio.CancelledError:
             return
 
-    async def _fetch_recent(self, channel) -> List[discord.Message]:
+    async def _tick_once(self, key: str) -> None:
+        channel = self._channel_for(key)
+        if channel is None:
+            return
+
+        candidates = await self._fetch_recent(channel, self._replied[key])
+        if not candidates:
+            return
+
+        target = random.choice(candidates)
+        self._replied[key].add(target.id)
+
+        author = "ai đó"
+        if target.author is not None:
+            author = (
+                getattr(target.author, "display_name", None)
+                or getattr(target.author, "name", None)
+                or "ai đó"
+            )
+        content = (target.content or "").strip()
+        if not content:
+            return
+
+        user_prompt = (
+            f"Kẻ mang tên '{author}' vừa nói: '{content[:500]}'. Hãy phản hồi!"
+        )
+
+        reply = await self._generate(key, user_prompt)
+        if not reply:
+            return
+
+        try:
+            await target.reply(reply, mention_author=False)
+        except Exception:
+            try:
+                await channel.send(reply)
+            except Exception as e:
+                if self.logger:
+                    self.logger.warn(
+                        f"GeminiHost[{_LABELS[key]}]: send fallback lỗi: {e}"
+                    )
+
+    async def _fetch_recent(
+        self,
+        channel: discord.TextChannel,
+        replied_ids: Set[int],
+    ) -> List[discord.Message]:
         out: List[discord.Message] = []
         try:
             async for m in channel.history(limit=_HISTORY_LIMIT):
@@ -344,39 +332,39 @@ class GeminiHost:
                     continue
                 if not (m.content or "").strip():
                     continue
+                if m.id in replied_ids:
+                    continue
                 out.append(m)
         except Exception as e:
             if self.logger:
                 self.logger.warn(f"GeminiHost: history lỗi: {e}")
         return out
 
-    async def _cancel_task(self, which: str):
-        # Set stop event để các loop tự thoát sạch
+    async def _generate(self, key: str, prompt: str) -> Optional[str]:
+        if not self.enabled:
+            return None
+        cfg = self._configs.get(key)
+        if cfg is None:
+            return None
         try:
-            self._stop_event.set()
-        except Exception:
-            pass
+            resp = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=prompt,
+                config=cfg,
+            )
+        except Exception as e:
+            if self.logger:
+                self.logger.warn(f"GeminiHost[{_LABELS[key]}]: API lỗi: {e}")
+            return None
 
-        task = self._task_main if which == "main" else self._task_secret
-        if task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except Exception:
-                pass
-        if which == "main":
-            self._task_main = None
-        else:
-            self._task_secret = None
-        # Reset event cho lần kế
-        self._stop_event = asyncio.Event()
+        text = (getattr(resp, "text", "") or "").strip()
+        if not text:
+            return None
+        if len(text) > 200:
+            text = text[:200].rstrip()
+        return text
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Cog entry-point: file này KHÔNG đăng ký lệnh nào, GeminiHost được khởi tạo
-# trực tiếp bởi GameEngine. Nhưng loader của bot quét toàn bộ cogs/*.py và
-# yêu cầu mỗi file phải có hàm `setup`. Thêm no-op để loader không báo lỗi.
-# ────────────────────────────────────────────────────────────────────────────
-async def setup(bot):  # noqa: D401
-    """No-op cog setup — class được dùng trực tiếp trong game engine."""
+async def setup(bot):
+    """No-op cog setup — class được khởi tạo trực tiếp bởi GameEngine."""
     return
