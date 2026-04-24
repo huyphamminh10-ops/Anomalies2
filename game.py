@@ -1716,6 +1716,23 @@ class GameEngine:
             color=0x2c3e50
         )
 
+        # Ping các thành viên Anomalies vào anomaly_chat để họ biết kênh
+        if self.anomaly_chat:
+            anomaly_mentions = " ".join(
+                self._players_dict[pid].mention
+                for pid, role in self.roles.items()
+                if getattr(role, "team", "") == "Anomalies" and self.is_alive(pid)
+                and pid in self._players_dict
+            )
+            if anomaly_mentions:
+                try:
+                    await self.anomaly_chat.send(
+                        f"🔔 {anomaly_mentions}\n"
+                        f"🌙 **Đêm {self.night_count} bắt đầu** — Lên kế hoạch ngay!"
+                    )
+                except Exception as _e:
+                    self.logger.warn(f"[phase_night] Ping Anomalies lỗi: {_e}")
+
         # Mute tất cả người còn sống vào đầu đêm (chế độ free)
         if self.config.allow_voice and self._muting_enabled and self.config.voice_mode != "parliament":
             alive_members = self.get_alive_players()
