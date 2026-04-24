@@ -370,3 +370,13 @@ class GeminiHost:
             self._task_secret = None
         # Reset event cho lần kế
         self._stop_event = asyncio.Event()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Cog entry-point: file này KHÔNG đăng ký lệnh nào, GeminiHost được khởi tạo
+# trực tiếp bởi GameEngine. Nhưng loader của bot quét toàn bộ cogs/*.py và
+# yêu cầu mỗi file phải có hàm `setup`. Thêm no-op để loader không báo lỗi.
+# ────────────────────────────────────────────────────────────────────────────
+async def setup(bot):  # noqa: D401
+    """No-op cog setup — class được dùng trực tiếp trong game engine."""
+    return
