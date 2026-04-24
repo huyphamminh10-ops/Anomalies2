@@ -9,7 +9,7 @@ Cách hoạt động:
   bình luận trong Anomalies Chat và Dead Chat (cũng theo chu kỳ 30 giây).
 
 Yêu cầu:
-- Cài đặt: `pip install google-generativeai>=0.7.0`
+- Cài đặt: `pip install google-genai>=0.3.0`
 - Đặt biến môi trường:
     * `GEMINI_API_KEY`  (ưu tiên) hoặc `GOOGLE_API_KEY`
     * `GEMINI_MODEL`    (tuỳ chọn, mặc định: gemini-2.5-flash)
@@ -28,10 +28,12 @@ from typing import List, Optional
 import discord
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
     _GENAI_AVAILABLE = True
 except Exception:
     genai = None  # type: ignore
+    genai_types = None  # type: ignore
     _GENAI_AVAILABLE = False
 
 
@@ -71,16 +73,10 @@ def _read_api_key() -> str:
 
 
 def _gemini_ready() -> bool:
+    """Chỉ kiểm tra điều kiện nạp được. Client thực sẽ tạo trong __init__."""
     if not _GENAI_AVAILABLE:
         return False
-    api_key = _read_api_key()
-    if not api_key:
-        return False
-    try:
-        genai.configure(api_key=api_key)
-        return True
-    except Exception:
-        return False
+    return bool(_read_api_key())
 
 
 class GeminiHost:
@@ -90,7 +86,8 @@ class GeminiHost:
         self.game = game
         self.logger = logger or getattr(game, "logger", None)
         self._enabled: bool = _gemini_ready()
-        self._model = None
+        self._client = None
+        self._gen_config = None
         self._task_main: Optional[asyncio.Task] = None
         self._task_secret: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
@@ -98,25 +95,26 @@ class GeminiHost:
 
         if self._enabled:
             try:
-                self._model = genai.GenerativeModel(
-                    model_name=_MODEL_NAME,
+                self._client = genai.Client(api_key=_read_api_key())
+                self._gen_config = genai_types.GenerateContentConfig(
                     system_instruction=_SYSTEM_PROMPT,
+                    temperature=0.9,
                 )
                 if self.logger:
                     self.logger.info(
                         f"GeminiHost: BẬT ✅ (model={_MODEL_NAME}, "
-                        f"tick={_TICK_SECONDS}s) — đọc key từ biến môi trường."
+                        f"tick={_TICK_SECONDS}s) — google-genai SDK."
                     )
             except Exception as e:
                 self._enabled = False
                 if self.logger:
-                    self.logger.warn(f"GeminiHost: không khởi tạo được model: {e}")
+                    self.logger.warn(f"GeminiHost: không khởi tạo được client: {e}")
         else:
             if self.logger:
                 if not _GENAI_AVAILABLE:
                     self.logger.warn(
-                        "GeminiHost: TẮT — chưa cài `google-generativeai`. "
-                        "Chạy: pip install google-generativeai"
+                        "GeminiHost: TẮT — chưa cài `google-genai`. "
+                        "Chạy: pip install google-genai"
                     )
                 else:
                     self.logger.warn(
@@ -128,15 +126,17 @@ class GeminiHost:
     # ── helpers ──────────────────────────────────────────────────────────
     @property
     def enabled(self) -> bool:
-        return self._enabled and self._model is not None
+        return self._enabled and self._client is not None
 
     async def _generate(self, prompt: str) -> Optional[str]:
         if not self.enabled:
             return None
         try:
-            resp = await asyncio.to_thread(
-                self._model.generate_content,
-                prompt,
+            # google-genai có async client gốc → không cần asyncio.to_thread
+            resp = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=prompt,
+                config=self._gen_config,
             )
             text = (getattr(resp, "text", "") or "").strip()
             if not text:
