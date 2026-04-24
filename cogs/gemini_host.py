@@ -130,8 +130,6 @@ class GeminiHost:
         self.game = game
         self.logger = logger or getattr(game, "logger", None)
 
-        self.api_key = os.environ.get("GEMINI_API_KEY") or "YOUR_KEY_HERE" 
-
         self._enabled: bool = _gemini_ready()
         self._client = None
         self._configs: Dict[str, "genai_types.GenerateContentConfig"] = {}
