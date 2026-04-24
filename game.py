@@ -1315,17 +1315,15 @@ class GameEngine:
             except Exception as e:
                 self.logger.warn(f"Cannot add Dead role to {member.display_name}: {e}")
         # Mute:
-        #  - force_mute=True  → luôn mute (vote-out)
+        #  - force_mute=True  → luôn mute (vote-out), BỎ QUA no_remove_roles
         #  - force_mute=False → mute nếu config.mute_dead=True (chết ban đêm)
-        #  - no_remove_roles  → không mute (mode không gán role Discord)
-        if not self.config.no_remove_roles:
-            should_mute = (force_mute or self.config.mute_dead) and self._muting_enabled
-            if should_mute and self.config.allow_voice:
-                if member.voice:
-                    await self.voice_ctrl._try_mute(member, True)
-                # Nếu không trong voice → đánh dấu để mute khi vào lại
-                if force_mute or self.config.mute_dead:
-                    self._force_muted.add(member.id)
+        #  - no_remove_roles  → chỉ ngăn gán/gỡ Discord role, KHÔNG ngăn force_mute
+        should_mute = (force_mute or (self.config.mute_dead and not self.config.no_remove_roles)) and self._muting_enabled
+        if should_mute and self.config.allow_voice:
+            if member.voice:
+                await self.voice_ctrl._try_mute(member, True)
+            # Nếu không trong voice → đánh dấu để mute khi vào lại
+            self._force_muted.add(member.id)
 
     async def _cleanup_discord_roles(self, member: discord.Member):
         """Hết trận: tháo Dead/Alive role, unmute."""
