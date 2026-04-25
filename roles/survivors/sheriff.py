@@ -25,6 +25,7 @@ class Sheriff(BaseRole):
     )
 
     async def send_ui(self, game):
+        self.used_tonight = False  # reset mỗi đêm
         view = SheriffView(game, self)
         await self.safe_send(
             embed=discord.Embed(
@@ -55,6 +56,15 @@ class SheriffSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Chặn dùng lại trong cùng một đêm
+        if getattr(self.role, "used_tonight", False):
+            await interaction.response.send_message(
+                "⚠️ Bạn đã kiểm tra người chơi đêm nay rồi.", ephemeral=True
+            )
+            return
+
+        self.role.used_tonight = True
+
         target      = self.game.get_member(int(self.values[0]))
         target_role = self.game.get_role(target)
         if not target_role:
@@ -86,7 +96,12 @@ class SheriffSelect(discord.ui.Select):
                         )
                     )
 
-        await interaction.response.send_message(
+        # Vô hiệu hóa Select sau khi dùng
+        self.disabled = True
+        self.placeholder = "✅ Đã kiểm tra đêm nay"
+
+        await interaction.response.edit_message(view=self.view)
+        await interaction.followup.send(
             embed=discord.Embed(
                 title="👮 KẾT QUẢ KIỂM TRA",
                 description=result,
