@@ -33,7 +33,6 @@ class TheGlitchStalker(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -51,11 +50,12 @@ class TheGlitchStalker(BaseRole):
             )
         )
 
-
     # =====================================
     # UI BAN ĐÊM
     # =====================================
     async def send_ui(self, game):
+        # FIX BUG: reset target mỗi đêm để biết người chơi đã chọn hay chưa
+        self.target_id = None
 
         alive = [
             p for p in game.get_alive_players()
@@ -120,6 +120,16 @@ class TheGlitchStalker(BaseRole):
             self.role.target_id = int(self.values[0])
             self.role.last_target = self.role.target_id
 
+            # FIX BUG: lưu vào selected_targets để engine không auto-fill ghi đè
+            # Việc soi vai sẽ do legacy resolver trong game.py thực thi
+            # khi đêm kết thúc (đọc target_id và DM kết quả cho Stalker).
+            try:
+                target_member = self.game._players_dict.get(self.role.target_id)
+                if target_member:
+                    self.game.selected_targets[self.role.player.id] = target_member
+            except Exception:
+                pass
+
             await interaction.response.send_message(
                 "👁️ Đang theo dõi mục tiêu...",
                 ephemeral=True
@@ -128,4 +138,7 @@ class TheGlitchStalker(BaseRole):
             for item in self.view.children:
                 item.disabled = True
 
-            await interaction.message.edit(view=self.view)
+            try:
+                await interaction.message.edit(view=self.view)
+            except Exception:
+                pass

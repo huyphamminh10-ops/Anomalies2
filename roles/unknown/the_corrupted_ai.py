@@ -56,6 +56,10 @@ class TheCorruptedAI(BaseRole):
     # GỬI UI BAN ĐÊM
     # ================================
     async def send_ui(self, game):
+        # Reset cờ "đã hành động" mỗi đêm
+        self._scanned_tonight = False
+        self._killed_tonight  = False
+
         alive = [
             p for p in game.get_alive_players()
             if p != self.player
@@ -176,6 +180,19 @@ class TheCorruptedAI(BaseRole):
             )
 
         async def callback(self, interaction: discord.Interaction):
+            if interaction.user.id != self.role.player.id:
+                await interaction.response.send_message(
+                    "Đây không phải lượt của bạn.", ephemeral=True
+                )
+                return
+
+            # Mỗi đêm chỉ được quét 1 lần
+            if getattr(self.role, "_scanned_tonight", False):
+                await interaction.response.send_message(
+                    "⚠️ Bạn đã quét đêm nay rồi.", ephemeral=True
+                )
+                return
+
             target_id = int(self.values[0])
 
             if self.role.last_scanned == target_id:
@@ -202,9 +219,20 @@ class TheCorruptedAI(BaseRole):
                 gained = "ℹ️ Không thu được tài nguyên từ mục tiêu này."
 
             self.role.last_scanned = target_id
-            await interaction.response.send_message(
-                f"🤖 Quét hoàn tất.\n{gained}", ephemeral=True
-            )
+            self.role._scanned_tonight = True
+
+            # Vô hiệu hóa Select QUÉT, giữ KillSelect/điều hướng còn dùng được
+            self.disabled = True
+            self.placeholder = "✅ Đã quét đêm nay"
+            try:
+                await interaction.response.edit_message(view=self.view)
+                await interaction.followup.send(
+                    f"🤖 Quét hoàn tất.\n{gained}", ephemeral=True
+                )
+            except Exception:
+                await interaction.response.send_message(
+                    f"🤖 Quét hoàn tất.\n{gained}", ephemeral=True
+                )
 
     # ================================================================
     # KILL SELECT  (cần 2 kill_charges)
@@ -223,6 +251,19 @@ class TheCorruptedAI(BaseRole):
             )
 
         async def callback(self, interaction: discord.Interaction):
+            if interaction.user.id != self.role.player.id:
+                await interaction.response.send_message(
+                    "Đây không phải lượt của bạn.", ephemeral=True
+                )
+                return
+
+            # Mỗi đêm chỉ được giết 1 lần
+            if getattr(self.role, "_killed_tonight", False):
+                await interaction.response.send_message(
+                    "⚠️ Bạn đã ra tay đêm nay rồi.", ephemeral=True
+                )
+                return
+
             if self.role.kill_charges < 2:
                 await interaction.response.send_message(
                     f"❌ Cần **2 Điểm Giết** để hành động. Hiện có: `{self.role.kill_charges}/2`",
@@ -242,6 +283,7 @@ class TheCorruptedAI(BaseRole):
 
             await self.game.kill_player(target, reason="Bị Corrupted AI xử lý")
             self.role.kill_charges -= 2
+            self.role._killed_tonight = True
 
             if target_role:
                 if target_role.team == "Survivors":
@@ -256,7 +298,18 @@ class TheCorruptedAI(BaseRole):
                 f"Dị Thể `{self.role.killed_anomalies}/3` | "
                 f"Unknown `{self.role.killed_unknown}/3`"
             )
-            await interaction.response.send_message(
-                f"💀 Mục tiêu đã bị xử lý.\n📊 Tiến độ: {progress}",
-                ephemeral=True
-            )
+
+            # Vô hiệu hóa Select GIẾT sau khi dùng
+            self.disabled = True
+            self.placeholder = "✅ Đã ra tay đêm nay"
+            try:
+                await interaction.response.edit_message(view=self.view)
+                await interaction.followup.send(
+                    f"💀 Mục tiêu đã bị xử lý.\n📊 Tiến độ: {progress}",
+                    ephemeral=True
+                )
+            except Exception:
+                await interaction.response.send_message(
+                    f"💀 Mục tiêu đã bị xử lý.\n📊 Tiến độ: {progress}",
+                    ephemeral=True
+                )

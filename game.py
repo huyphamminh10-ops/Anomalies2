@@ -1457,15 +1457,45 @@ class GameEngine:
         all_classes = survivor_classes + anomaly_classes + unknown_classes
         members     = list(self._players_dict.values())
 
-        # Seed ngẫu nhiên mỗi ván — trộn time + member IDs để không bao giờ lặp lại
-        _seed = int(time.time() * 1000) ^ sum(m.id for m in members)
-        random.seed(_seed)
-        random.shuffle(members)
+        # FIX BUG: Ưu tiên dùng map đã pre-compute từ /preview để bảng Embed
+        # khớp 100 % với phân vai thực tế. Nếu map đã lưu trùng đúng tập
+        # member hiện tại → dùng lại; nếu khác (có người rời/vào) → roll mới.
+        role_map = None
+        try:
+            from app import _pending_role_maps  # type: ignore[import]
+            guild_id = ""
+            try:
+                gid = getattr(self, "guild_id", None)
+                if gid:
+                    guild_id = str(gid)
+                elif getattr(self, "text_channel", None) and getattr(self.text_channel, "guild", None):
+                    guild_id = str(self.text_channel.guild.id)
+            except Exception:
+                guild_id = ""
+            pending = _pending_role_maps.pop(guild_id, None) if guild_id else None
+            if pending and set(pending.keys()) == {m.id for m in members}:
+                role_map = pending
+                self.logger.info(
+                    f"[distribute_roles] Dùng lại preview map (guild={guild_id}, "
+                    f"{len(role_map)} người)."
+                )
+            elif pending:
+                self.logger.warn(
+                    f"[distribute_roles] Preview map không khớp lobby hiện tại "
+                    f"(preview={len(pending)} vs lobby={len(members)}) → roll mới."
+                )
+        except Exception as _e:
+            self.logger.debug(f"[distribute_roles] Không đọc được _pending_role_maps: {_e}")
 
-        role_map = distribute_roles(members, all_classes)
+        if role_map is None:
+            # Seed ngẫu nhiên mỗi ván — trộn time + member IDs để không bao giờ lặp lại
+            _seed = int(time.time() * 1000) ^ sum(m.id for m in members)
+            random.seed(_seed)
+            random.shuffle(members)
+            role_map = distribute_roles(members, all_classes)
+            # Reset seed về random thật
+            random.seed()
 
-        # Reset seed về random thật
-        random.seed()
         self.roles.update(role_map)
 
         ok, warnings = BalanceHelper.validate(self.roles, self.config)
@@ -1564,7 +1594,7 @@ class GameEngine:
                     self.night_effects["cipher_alive"] = True
 
             # Ghost Ship
-            gs_role = self.get_role_by_name("The Ghost Ship")
+            gs_role = self.get_role_by_name("Con Tàu Ma")
             if gs_role:
                 try:
                     gs_role.calculate_required(self)
@@ -1573,7 +1603,7 @@ class GameEngine:
 
             # Main loop
             while not self.ended:
-                tw_role = self.get_role_by_name("The Time-Weaver")
+                tw_role = self.get_role_by_name("Kẻ Dệt Thời Gian")
                 if tw_role:
                     try:
                         tw_role.save_snapshot(self)
@@ -1790,7 +1820,7 @@ class GameEngine:
             await self._auto_fill_actions()
 
         # Pre-process Dark-Architect blocks TRƯỚC khi resolve actions
-        dark_arch = self.get_role_by_name("The Dark-Architect")
+        dark_arch = self.get_role_by_name("Kiến Trúc Sư Bóng Tối")
         if dark_arch and self.is_alive(dark_arch.player.id):
             blocked_targets = getattr(dark_arch, "blocked_targets", set())
             if blocked_targets:
@@ -1812,7 +1842,7 @@ class GameEngine:
         await self._cleanup_temp_channels()
 
         # TimeWeaver morning passive
-        tw_role = self.get_role_by_name("The Time-Weaver")
+        tw_role = self.get_role_by_name("Kẻ Dệt Thời Gian")
         if tw_role and self.is_alive(tw_role.player.id):
             await self._safe_call(tw_role.morning_passive, self, label="TimeWeaver.morning_passive")
 
@@ -1872,25 +1902,25 @@ class GameEngine:
             return m.display_name if m else "???"
 
         # ── JAILOR ────────────────────────────────────────────────
-        jailor = self.get_role_by_name("Jailor")
+        jailor = self.get_role_by_name("Cai Ngục")
         if jailor and self.is_alive(jailor.player.id):
             await self._safe_call(jailor.night_action, self, label="Jailor.night_action")
             if getattr(jailor, "current_prisoner", None):
                 self.add_night_event("Survivors", f"**{jailor.current_prisoner.display_name}** đã bị Quản Ngục giam giữ đêm nay.")
 
         # ── THE ARCHITECT ─────────────────────────────────────────
-        architect = self.get_role_by_name("The Architect")
+        architect = self.get_role_by_name("Kiến Trúc Sư")
         if architect and self.is_alive(architect.player.id) and self.protected:
             self.add_night_event("Survivors", f"Một Kiến Trúc Sư đã gia cố **{len(self.protected)}** ngôi nhà.")
 
         # ── MEDIUM ────────────────────────────────────────────────
-        medium = self.get_role_by_name("Medium")
+        medium = self.get_role_by_name("Nhà Ngoại Cảm")
         if medium and self.is_alive(medium.player.id):
             await self._safe_call(medium.night_action, self, label="Medium.night_action")
             self.add_night_event("Survivors", "Một Đồng Cốt đã mở phiên giao tiếp với linh hồn.")
 
         # ── SPY ───────────────────────────────────────────────────
-        spy = self.get_role_by_name("Spy")
+        spy = self.get_role_by_name("Điệp Viên")
         if spy and self.is_alive(spy.player.id):
             anomaly_target = None
             for pid, role in self.roles.items():
@@ -1914,12 +1944,15 @@ class GameEngine:
                 )
 
         # ── THE OVERSEER ──────────────────────────────────────────
-        overseer = self.get_role_by_name("The Overseer")
+        overseer = self.get_role_by_name("Người Giám Sát")
         if overseer and self.is_alive(overseer.player.id) and getattr(overseer, "used_tonight", False):
             self.add_night_event("Survivors", "Camera an ninh đã ghi lại hoạt động đêm nay.")
 
-        # ── THE GLITCH-STALKER ────────────────────────────────────
-        stalker = self.get_role_by_name("The Glitch-Stalker")
+        # ── THE GLITCH-STALKER (Kẻ Rình Rập) ──────────────────────
+        # FIX BUG: trước đây lookup bằng tên tiếng Anh "The Glitch-Stalker"
+        # nhưng class đặt name="Kẻ Rình Rập" → get_role_by_name trả None →
+        # block không chạy → người chơi kẹt ở "Đang theo dõi mục tiêu".
+        stalker = self.get_role_by_name("Kẻ Rình Rập")
         if stalker and getattr(stalker, "target_id", None):
             target_role = self.roles.get(stalker.target_id)
             if target_role:
@@ -1936,7 +1969,7 @@ class GameEngine:
         # Dark-Architect block đã được xử lý trước action_queue.resolve() — bỏ qua ở đây
 
         # ── THE HARBINGER ─────────────────────────────────────────
-        harbinger = self.get_role_by_name("The Harbinger")
+        harbinger = self.get_role_by_name("Sứ Giả Tận Thế")
         if harbinger and getattr(harbinger, "mass_kill_ready", False):
             alive_marked = [pid for pid in getattr(harbinger, "marked", []) if self.is_alive(pid)]
             for pid in alive_marked[:3]:
@@ -1946,7 +1979,7 @@ class GameEngine:
             harbinger.cooldown = True
 
         # ── THE PUPPETEER ─────────────────────────────────────────
-        puppeteer = self.get_role_by_name("The Puppeteer")
+        puppeteer = self.get_role_by_name("Kẻ Điều Khiển")
         if puppeteer and getattr(puppeteer, "control_data", None):
             victim_id, forced_id = puppeteer.control_data
             self.puppeteer_controls[victim_id] = forced_id
@@ -1954,20 +1987,20 @@ class GameEngine:
             puppeteer.control_data = None
 
         # ── THE GLITCH-WORM ──────────────────────────────────────
-        gw = self.get_role_by_name("The Glitch-Worm")
+        gw = self.get_role_by_name("Sâu Lỗi")
         if gw and getattr(gw, "marked_target", None):
             self.wills[gw.marked_target] = "✖ Dữ liệu đã bị Glitch-Worm phá hủy."
             self.add_night_event("Anomalies", f"Sâu Mã Độc xâm nhập, phá hủy dữ liệu **{name(gw.marked_target)}**.")
             gw.marked_target = None
 
         # ── THE NEURO-PARASITE ───────────────────────────────────
-        np_role = self.get_role_by_name("The Neuro-Parasite")
+        np_role = self.get_role_by_name("Ký Sinh Thần Kinh")
         if np_role and getattr(np_role, "host_id", None) and not self.is_alive(np_role.host_id):
             self.queue_kill(np_role.player.id, reason="Ký sinh chủ đã chết")
             self.add_night_event("Anomalies", "Ký sinh chủ của Neuro-Parasite chết — ký sinh tan rã.")
 
         # ── THE BIO-MIMIC ─────────────────────────────────────────
-        bm = self.get_role_by_name("The Bio-Mimic")
+        bm = self.get_role_by_name("Kẻ Mô Phỏng Sinh Học")
         if bm and getattr(bm, "host_id", None):
             if not self.is_alive(bm.host_id) and not getattr(bm, "link_used", False):
                 bm.link_used      = True
@@ -1975,7 +2008,7 @@ class GameEngine:
                 self.add_night_event("Anomalies", "Bio-Mimic hấp thụ năng lượng từ liên kết đứt — nhận miễn nhiễm.")
 
         # ── THE GHOST SHIP ────────────────────────────────────────
-        gs = self.get_role_by_name("The Ghost Ship")
+        gs = self.get_role_by_name("Con Tàu Ma")
         if gs and getattr(gs, "last_target", None) and self.night_count >= 3:
             self.add_night_event("Unknown", f"**{name(gs.last_target)}** biến mất không dấu vết.")
 
@@ -1984,7 +2017,7 @@ class GameEngine:
             self.add_night_event("Unknown", "Thời gian bị bóp méo — thảo luận ngày mai bị rút ngắn.")
 
         # ── THE DREAMWEAVER ───────────────────────────────────────
-        dw = self.get_role_by_name("The Dreamweaver")
+        dw = self.get_role_by_name("Kẻ Dệt Mộng")
         if dw and getattr(dw, "dream_pairs", None):
             self.add_night_event("Unknown", "Hai linh hồn bị buộc trong cùng giấc mơ.")
 
@@ -2000,7 +2033,7 @@ class GameEngine:
         Cuối đêm: nếu Anomalies đã vote nhưng chưa có kill được queue cho phe Anomalies,
         lấy mục tiêu nhiều phiếu nhất (dù không đạt đa số) để đảm bảo kill luôn xảy ra.
         """
-        overlord = self.get_role_by_name("Overlord")
+        overlord = self.get_role_by_name("Lãnh Chúa")
         if overlord and self.is_alive(overlord.player.id):
             # Overlord còn sống — kill đã được queue trong callback rồi
             return
@@ -2107,7 +2140,7 @@ class GameEngine:
             return
 
         # Trapper
-        trapper = self.get_role_by_name("Trapper")
+        trapper = self.get_role_by_name("Thợ Đặt Bẫy")
         if trapper and trapper.player.id == pid and not bypass:
             attackers = [self._players_dict.get(k) for k, r in self.roles.items() if getattr(r, "team", "") == TEAM_ANOMALY]
             survived = not await self._safe_call_bool(
@@ -2189,12 +2222,12 @@ class GameEngine:
             self.add_night_event("Anomalies", f"**{member.display_name}** bị tiêu diệt trong đêm.")
 
         # Mayor Aide notification
-        aide = self.get_role_by_name("Mayor's Aide")
+        aide = self.get_role_by_name("Phụ Tá Thị Trưởng")
         if aide and self.is_alive(aide.player.id):
             await self._safe_call(aide.on_other_death, self, member, label="MayorAide.on_other_death")
 
         # Janitor
-        janitor = self.get_role_by_name("Janitor")
+        janitor = self.get_role_by_name("Lao Công")
         if janitor and janitor.player.id != pid:
             clean_effect = self.night_effects.get("clean_target")
             clean_select = self.selected_targets.get(janitor.player.id)
@@ -2638,7 +2671,7 @@ class GameEngine:
     # ══════════════════════════════════════════════════
 
     async def _send_sleeper_night_report(self):
-        sleeper = self.get_role_by_name("The Sleeper")
+        sleeper = self.get_role_by_name("Kẻ Ngủ Mê")
         if not sleeper or not self.is_alive(sleeper.player.id):
             return
 

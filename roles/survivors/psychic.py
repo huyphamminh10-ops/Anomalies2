@@ -25,6 +25,7 @@ class Psychic(BaseRole):
     )
 
     async def send_ui(self, game):
+        self.used_tonight = False  # reset mỗi đêm
         view = PsychicView(game, self)
         await self.safe_send(
             embed=discord.Embed(
@@ -55,6 +56,19 @@ class PsychicSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # Chỉ chủ sở hữu UI mới được dùng
+        if interaction.user.id != self.role.player.id:
+            await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
+            return
+
+        # Chặn dùng lại trong cùng một đêm
+        if getattr(self.role, "used_tonight", False):
+            await interaction.response.send_message(
+                "⚠️ Bạn đã cảm nhận đêm nay rồi.", ephemeral=True
+            )
+            return
+        self.role.used_tonight = True
+
         target      = self.game.get_member(int(self.values[0]))
         target_role = self.game.get_role(target)
         if not target_role:
@@ -83,7 +97,13 @@ class PsychicSelect(discord.ui.Select):
             result = "✨ Linh hồn người này có vẻ **trong sạch** và hiền lành."
             color  = 0x2ecc71
 
-        await interaction.response.send_message(
+        # Vô hiệu hóa Select sau khi dùng
+        for item in self.view.children:
+            item.disabled = True
+        self.placeholder = "✅ Đã cảm nhận đêm nay"
+
+        await interaction.response.edit_message(view=self.view)
+        await interaction.followup.send(
             embed=discord.Embed(
                 title="🔮 LINH CẢM",
                 description=result,

@@ -139,7 +139,13 @@ class ThePuppeteer(BaseRole):
                 self.game, self.role, victim_id, alive
             )
 
-            await interaction.response.send_message(
+            # Vô hiệu hóa Select chọn nạn nhân ngay sau khi chọn
+            for item in self.view.children:
+                item.disabled = True
+            self.placeholder = "✅ Đã chọn nạn nhân"
+            await interaction.response.edit_message(view=self.view)
+
+            await interaction.followup.send(
                 "Chọn mục tiêu mà họ sẽ bị ép vote:",
                 view=view,
                 ephemeral=True

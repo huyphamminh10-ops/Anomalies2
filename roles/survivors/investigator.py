@@ -55,6 +55,12 @@ class InvestigatorSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.role.player.id:
+            await interaction.response.send_message(
+                "Đây không phải lượt của bạn.", ephemeral=True
+            )
+            return
+
         target      = self.game.get_member(int(self.values[0]))
         target_role = self.game.get_role(target)
         if not target_role:
@@ -65,7 +71,11 @@ class InvestigatorSelect(discord.ui.Select):
             result = "🔴 **ĐỎ** — Người này thuộc phe **Dị Thể**!"
             color  = 0xe74c3c
             # ── Cảnh báo Dị Thể (không nói tên ai bị điều tra) ──
-            if hasattr(self.game, "anomaly_chat_mgr"):
+            # FIX BUG: max_count=2 ⇒ 2 Thám Tử cùng cảnh báo → embed gửi 2 lần.
+            # Dedupe per-night: chỉ gửi 1 cảnh báo / đêm dù bao nhiêu Thám Tử trúng.
+            already_warned = self.game.night_effects.get("investigator_warning_sent", False)
+            if not already_warned and hasattr(self.game, "anomaly_chat_mgr"):
+                self.game.night_effects["investigator_warning_sent"] = True
                 await self.game.anomaly_chat_mgr.send(
                     embed=discord.Embed(
                         title="🔎 CẢNH BÁO TRINH SÁT",
@@ -93,6 +103,15 @@ class InvestigatorSelect(discord.ui.Select):
             ),
             ephemeral=True
         )
+
+        # FIX BUG: khoá Select sau khi đã chọn để Thám Tử không bấm lại
+        # (mỗi lần bấm trúng Anomaly lại bắn cảnh báo).
+        try:
+            for item in self.view.children:
+                item.disabled = True
+            await interaction.message.edit(view=self.view)
+        except Exception:
+            pass
 
 
 class InvestigatorView(discord.ui.View):

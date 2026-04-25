@@ -33,7 +33,7 @@ class MayorAide(BaseRole):
     # ==============================
 
     async def send_ui(self, game):
-        mayor_role = game.get_role_by_name("Mayor")
+        mayor_role = game.get_role_by_name("Thị Trưởng")
         status_desc = "❌ Thị Trưởng chưa được xác định." if not mayor_role else (
             f"🏛️ Thị Trưởng: **{mayor_role.player.display_name}**\n"
             f"❤️ Trạng thái: {'🟢 Còn sống' if game.is_alive(mayor_role.player.id) else '💀 Đã chết'}"
@@ -89,7 +89,7 @@ class MayorAide(BaseRole):
     # ==============================
 
     async def on_game_start(self, game):
-        self.mayor = game.get_role_by_name("Mayor")
+        self.mayor = game.get_role_by_name("Thị Trưởng")
 
         if self.mayor:
             try:
