@@ -566,31 +566,10 @@ class AnomalyChatManager:
     # ── Tạo kênh ──────────────────────────────────────────────────────────────
     async def create(self, guild: discord.Guild, category=None, fallback_channel=None):
         """
-        Ưu tiên đặt vào `category` (lấy từ config). Nếu category bị xoá hoặc
-        không hợp lệ, fallback tạo PRIVATE THREAD trong `fallback_channel`
-        (text_channel chính của game).
+        Luôn tạo PRIVATE THREAD trong `fallback_channel` (text_channel chính của game),
+        bất kể có hay không có category.
         """
         self.is_thread = False
-        # Nếu category_id có nhưng channel đã bị xoá → category sẽ là None
-        if category is not None:
-            try:
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(
-                        read_messages=False, send_messages=False,
-                    )
-                }
-                self.channel = await guild.create_text_channel(
-                    "🔴︱anomalies-chat",
-                    overwrites=overwrites,
-                    category=category,
-                    reason="Anomalies Game — Anomaly Chat",
-                )
-                self.logger.info(f"Anomaly Chat created in category: #{self.channel.name}")
-                return
-            except Exception as e:
-                self.logger.warn(f"Anomaly Chat: tạo trong category lỗi → fallback thread: {e}")
-
-        # Fallback: tạo private thread trong text channel
         if fallback_channel is not None:
             try:
                 self.channel = await fallback_channel.create_thread(
@@ -598,15 +577,15 @@ class AnomalyChatManager:
                     type=discord.ChannelType.private_thread,
                     invitable=False,
                     auto_archive_duration=1440,
-                    reason="Anomalies Game — Anomaly Chat (thread fallback)",
+                    reason="Anomalies Game — Anomaly Chat",
                 )
                 self.is_thread = True
-                self.logger.info(f"Anomaly Chat created as thread: #{self.channel.name}")
+                self.logger.info(f"Anomaly Chat created as private thread: #{self.channel.name}")
                 return
             except Exception as e:
                 self.logger.error(f"Failed to create Anomaly Chat thread: {e}")
         else:
-            self.logger.error("Anomaly Chat: không có category lẫn fallback_channel.")
+            self.logger.error("Anomaly Chat: không có fallback_channel để tạo private thread.")
 
     # ── Cấp quyền cho 1 thành viên (đọc + ghi) ────────────────────────────────
     async def add_member(self, member, send: bool = True):
@@ -740,28 +719,10 @@ class DeadChatManager:
         fallback_channel=None,
     ):
         """
-        Ưu tiên đặt vào `category`. Nếu không có/bị xoá → fallback tạo
-        PRIVATE THREAD trong `fallback_channel` (text_channel chính).
+        Luôn tạo PRIVATE THREAD trong `fallback_channel` (text_channel chính của game),
+        bất kể có hay không có category.
         """
         self.is_thread = False
-        if category is not None:
-            try:
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(
-                        read_messages=False, send_messages=False,
-                    )
-                }
-                self.channel = await guild.create_text_channel(
-                    "💀︱dead-chat",
-                    overwrites=overwrites,
-                    category=category,
-                    reason="Anomalies Game — Dead Chat",
-                )
-                self.logger.info(f"Dead Chat created in category: #{self.channel.name}")
-                return
-            except Exception as e:
-                self.logger.warn(f"Dead Chat: tạo trong category lỗi → fallback thread: {e}")
-
         if fallback_channel is not None:
             try:
                 self.channel = await fallback_channel.create_thread(
@@ -769,15 +730,15 @@ class DeadChatManager:
                     type=discord.ChannelType.private_thread,
                     invitable=False,
                     auto_archive_duration=1440,
-                    reason="Anomalies Game — Dead Chat (thread fallback)",
+                    reason="Anomalies Game — Dead Chat",
                 )
                 self.is_thread = True
-                self.logger.info(f"Dead Chat created as thread: #{self.channel.name}")
+                self.logger.info(f"Dead Chat created as private thread: #{self.channel.name}")
                 return
             except Exception as e:
                 self.logger.error(f"Failed to create Dead Chat thread: {e}")
         else:
-            self.logger.error("Dead Chat: không có category lẫn fallback_channel.")
+            self.logger.error("Dead Chat: không có fallback_channel để tạo private thread.")
 
     async def add_dead_player(self, member: discord.Member):
         """Grant send permissions to a newly dead player."""
