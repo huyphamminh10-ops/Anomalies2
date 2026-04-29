@@ -430,10 +430,36 @@ async def do_setup(interaction: discord.Interaction, guild: discord.Guild, state
 
         # ── 7. Folder + init_guild ───────────────────────────────────
         get_guild_dir(guild_id, guild.name)
-        import sys
-        bot_module = sys.modules.get("__main__")
-        if hasattr(bot_module, "init_guild") and text_channel:
-            await bot_module.init_guild(guild_id, text_channel)
+
+        # FIX: gọi init_guild() để gửi embed Lobby ngay sau khi setup xong.
+        # Cách cũ (sys.modules["__main__"]) bị HỎNG khi bot chạy qua Streamlit
+        # vì __main__ lúc đó là module của Streamlit, không phải app.py
+        # → init_guild bị bỏ qua trong im lặng → không có embed lobby.
+        # Fix: ưu tiên `from app import init_guild`, fallback __main__ cho an toàn.
+        _init_guild = None
+        try:
+            from app import init_guild as _init_guild  # type: ignore
+        except Exception as _imp_err:
+            print(f"[SETUP] Không import được app.init_guild: {_imp_err}")
+            try:
+                import sys
+                _bot_module = sys.modules.get("__main__")
+                _init_guild = getattr(_bot_module, "init_guild", None)
+            except Exception:
+                _init_guild = None
+
+        if _init_guild and text_channel:
+            try:
+                await _init_guild(guild_id, text_channel)
+                print(f"[SETUP] ✅ Đã gọi init_guild({guild_id}) — embed lobby sẽ được gửi.")
+            except Exception as _ig_err:
+                print(f"[SETUP] ❌ init_guild lỗi: {_ig_err}")
+                traceback.print_exc()
+        else:
+            print(
+                f"[SETUP] ⚠️ Không tìm thấy init_guild — "
+                f"text_channel={bool(text_channel)}, init_guild={bool(_init_guild)}"
+            )
 
         # ── 8. Embed kết quả ─────────────────────────────────────────
         embed = discord.Embed(title="✅ SETUP HOÀN TẤT!", color=COLOR_DONE)
