@@ -1143,6 +1143,7 @@ class GameEngine:
         # ── Night systems ─────────────────────────────────────────
         self.action_queue            = ActionQueue()
         self.kill_queue: List[Tuple] = []
+        self.pending_death_announcements: List[str] = []   # thông báo xác chết defer đến sáng
         self.protected: Set[int]     = set()
         self.blocked: Set[int]       = set()
         self.cleaned_roles: Set[int] = set()
@@ -1684,6 +1685,7 @@ class GameEngine:
         self.harbinger_mass_kill   = False
         self.fast_forward_next_day = False
         self.night_events  = []
+        self.pending_death_announcements.clear()   # reset mỗi đêm
         # Chỉ reset per-night effects — GIỮ cipher_alive (persistent)
         self.night_effects["blind_active"]          = False
         self.night_effects["cipher_destroy_active"] = False
@@ -2163,8 +2165,11 @@ class GameEngine:
                 f'💀 **{member.display_name}** đã ngã xuống... Phe Dị Thể mất đi một thành viên.'
             )
 
-        # Announce
-        await self.log(f"💀 **{member.display_name}** ĐÃ CHẾT.", color=0xe74c3c)
+        # Announce — nếu đang ban đêm, defer đến sáng; còn lại thông báo ngay
+        if self.phase == "night":
+            self.pending_death_announcements.append(member.display_name)
+        else:
+            await self.log(f"💀 **{member.display_name}** ĐÃ CHẾT.", color=0xe74c3c)
 
         # Night event log
         if any(k in reason for k in ("Anomal", "Overlord", "Harbinger", "Stalker", "Corrupted AI", "Puppeteer")):
@@ -2460,6 +2465,12 @@ class GameEngine:
           + (" ⏩ *(Rút ngắn!)*" if self.fast_forward_next_day else ""),
           color=0xf39c12
       )
+
+      # ── Thông báo xác chết từ đêm qua (defer đến sáng) ─────────────────
+      if self.pending_death_announcements:
+          for name in self.pending_death_announcements:
+              await self.log(f"💀 **{name}** ĐÃ CHẾT trong đêm qua.", color=0xe74c3c)
+          self.pending_death_announcements.clear()
 
       alive_members = self.get_alive_players()
 
