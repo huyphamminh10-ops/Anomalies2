@@ -170,6 +170,8 @@ class Vigilante(BaseRole):
         if is_day and not self.revealed:
             self.revealed = True
             member = game.guild.get_member(self.player.id)
+            if member:
+                game.save_nick(member)
             try:
                 await member.edit(nick="VIGILANTE")
             except Exception:

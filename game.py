@@ -1143,7 +1143,8 @@ class GameEngine:
         # ── Night systems ─────────────────────────────────────────
         self.action_queue            = ActionQueue()
         self.kill_queue: List[Tuple] = []
-        self.pending_death_announcements: List[str] = []   # thông báo xác chết defer đến sáng
+        self.pending_death_announcements: List[str] = []
+        self.nick_registry: Dict[int, str | None] = {}  # lưu nick gốc trước khi đổi
         self.protected: Set[int]     = set()
         self.blocked: Set[int]       = set()
         self.cleaned_roles: Set[int] = set()
@@ -1325,6 +1326,36 @@ class GameEngine:
     def generate_night_report(self) -> List[str]:
         return [text for _, text in self.night_events]
 
+    # ══════════════════════════════════════════════════
+    # §NICK REGISTRY — lưu & trả lại nick khi đổi tên
+    # ══════════════════════════════════════════════════
+
+    def save_nick(self, member: discord.Member) -> None:
+        """Lưu nick gốc của member nếu chưa lưu. Gọi TRƯỚC khi edit(nick=...)."""
+        if member.id not in self.nick_registry:
+            self.nick_registry[member.id] = member.nick  # None nếu chưa có nick
+
+    async def restore_nick(self, member: discord.Member) -> None:
+        """Trả lại nick gốc đã lưu cho member."""
+        original = self.nick_registry.pop(member.id, "NOT_SAVED")
+        if original == "NOT_SAVED":
+            return  # không có trong registry → bỏ qua
+        try:
+            await member.edit(nick=original)
+        except Exception:
+            pass
+
+    async def restore_all_nicks(self) -> None:
+        """Trả lại tất cả nick đã lưu trong registry. Gọi lúc end_game."""
+        for pid, original in list(self.nick_registry.items()):
+            member = self.guild.get_member(pid)
+            if member:
+                try:
+                    await member.edit(nick=original)
+                except Exception:
+                    pass
+        self.nick_registry.clear()
+
     def add_night_event(self, faction: str, text: str):
         # ── Cipher Breaker active: phá hủy hoàn toàn night event ──
         try:
@@ -1459,6 +1490,10 @@ class GameEngine:
             random.seed()
 
         self.roles.update(role_map)
+
+        # Gán _game vào mỗi role để các role có thể dùng game.save_nick() v.v.
+        for _role_obj in self.roles.values():
+            _role_obj._game = self
 
         ok, warnings = BalanceHelper.validate(self.roles, self.config)
         for w in warnings:
@@ -2346,6 +2381,9 @@ class GameEngine:
         self._muting_enabled = False
         await asyncio.sleep(0.3)
 
+        # Trả lại nick gốc cho tất cả người đã đổi tên trong game
+        await self.restore_all_nicks()
+
         # Unmute tất cả người chơi + gỡ Dead/Alive role
         all_members = list(self._players_dict.values())
         for member in all_members:
@@ -2406,7 +2444,12 @@ class GameEngine:
         except Exception as _e:
             self.logger.warn(f"[emergency_force_end] Gửi thông báo lỗi: {_e}")
 
-        # 2. Thu hồi role + unmute
+        # 2. Trả lại nick + thu hồi role + unmute
+        try:
+            await self.restore_all_nicks()
+        except Exception:
+            pass
+
         all_members = list(self._players_dict.values())
         for member in all_members:
             try:

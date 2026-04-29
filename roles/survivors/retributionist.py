@@ -163,7 +163,8 @@ class Retributionist(BaseRole):
             self.revealed = True
 
             member = game.guild.get_member(self.player.id)
-
+            if member:
+                game.save_nick(member)
             try:
                 await member.edit(nick="NGƯỜI PHỤC HẬN")
             except:

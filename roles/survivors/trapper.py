@@ -73,6 +73,8 @@ class Trapper(BaseRole):
                 pass
         else:
             member = game.guild.get_member(target.id)
+            if member:
+                game.save_nick(member)
             try:
                 await member.edit(nick="ANOMALY")
             except Exception:

@@ -76,11 +76,8 @@ class Mayor:
     # ==============================
 
     async def reset_nickname(self):
-        if self.original_nick:
-            try:
-                await self.player.edit(nick=self.original_nick)
-            except:
-                pass
+        # Không cần làm gì — game.restore_all_nicks() trong end_game xử lý rồi
+        pass
 
 
 # ==========================================
@@ -107,7 +104,9 @@ class RevealView(View):
         guild = interaction.guild
         member = guild.get_member(self.role.player.id)
 
-        self.role.original_nick = member.nick
+        # Lưu nick gốc vào registry trung tâm trước khi đổi
+        if getattr(self.role, "_game", None):
+            self.role._game.save_nick(member)
 
         try:
             await member.edit(nick="THỊ TRƯỞNG")
