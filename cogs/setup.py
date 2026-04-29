@@ -2,6 +2,7 @@ import discord
 import traceback
 import os
 import re
+import asyncio
 from discord.ext import commands
 from discord import app_commands
 from config_manager import load_guild_config, save_guild_config
@@ -9,294 +10,504 @@ from updater import greet_owner_on_setup
 from cogs.settings import check_command_permission as _check_perm
 
 
-# ===============================
-# HÀM XỬ LÝ TÊN SERVER AN TOÀN
-# ===============================
-def slugify_ten_server(name: str) -> str:
-    """
-    Chuyển tên server thành dạng an toàn để làm folder
-    Space -> _
-    Bỏ ký tự đặc biệt
-    """
-    name = name.strip()
-    name = name.replace(" ", "_")
-    name = re.sub(r"[^\w\-]", "", name)
-    return name
+# ───────────────────────────────────────────
+# CONSTANTS
+# ───────────────────────────────────────────
+SELECT_PAGE_SIZE = 23          # Tối đa 25 options — dành 2 slot cho "Tạo cho tôi" + "→ Trang sau"
+COLOR_SETUP      = 0x5865F2    # Màu embed setup (Discord Blurple)
+COLOR_DONE       = 0x2ecc71    # Màu xanh hoàn tất
+
+
+# ───────────────────────────────────────────
+# HELPERS
+# ───────────────────────────────────────────
+def slugify(name: str) -> str:
+    name = name.strip().replace(" ", "_")
+    return re.sub(r"[^\w\-]", "", name)
 
 
 def get_guild_dir(guild_id: str, guild_name: str) -> str:
-    """
-    Tạo folder theo dạng:
-    Ten_Server-123456789
-    """
-    base_dir = "guild_data"
-    safe_name = slugify_ten_server(guild_name)
-    folder_name = f"{safe_name}-{guild_id}"
-
-    path = os.path.join(base_dir, folder_name)
+    path = os.path.join("guild_data", f"{slugify(guild_name)}-{guild_id}")
     os.makedirs(path, exist_ok=True)
     return path
 
 
+def build_status_embed(state: dict) -> discord.Embed:
+    """Tạo embed hiển thị trạng thái setup hiện tại."""
+    lines = []
+
+    # 1. Kênh chữ
+    if state.get("text_channel_id") == "create":
+        txt = "✅ Tạo kênh mới tự động"
+    elif state.get("text_channel_id"):
+        txt = f"✅ <#{state['text_channel_id']}>"
+    else:
+        txt = "⏳ Chưa chọn"
+    lines.append(f"**1. Kênh chat chữ**\n{txt}")
+
+    # 2. Kênh thoại
+    if state.get("voice_channel_id") == "create":
+        vc = "✅ Tạo kênh mới tự động"
+    elif state.get("voice_channel_id"):
+        vc = f"✅ <#{state['voice_channel_id']}>"
+    else:
+        vc = "⏳ Chưa chọn"
+    lines.append(f"**2. Kênh thoại**\n{vc}")
+
+    # 3. Danh mục
+    if state.get("use_category") is None:
+        cat = "⏳ Chưa chọn"
+    elif state.get("use_category") is False:
+        cat = "✅ Không dùng danh mục"
+    elif state.get("category_id") == "create":
+        cat = "✅ Tạo danh mục mới tự động"
+    elif state.get("category_id"):
+        cat = f"✅ Danh mục ID: {state['category_id']}"
+    else:
+        cat = "⏳ Đang chọn danh mục..."
+    lines.append(f"**3. Danh mục (Category)**\n{cat}")
+
+    embed = discord.Embed(
+        title="⚙️ SETUP — ANOMALIES",
+        description="\n\n".join(lines),
+        color=COLOR_SETUP
+    )
+    embed.set_footer(text="Chọn lần lượt từng mục bên dưới để hoàn tất cài đặt.")
+    return embed
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# VIEW CHÍNH
+# ───────────────────────────────────────────────────────────────────────────────
+
+class SetupView(discord.ui.View):
+    def __init__(self, guild: discord.Guild, interaction: discord.Interaction, config: dict):
+        super().__init__(timeout=300)
+        self.guild       = guild
+        self.interaction = interaction
+        self.config      = config
+        self.state: dict = {}
+
+        self.text_channels  = [c for c in guild.channels if isinstance(c, discord.TextChannel)]
+        self.voice_channels = [c for c in guild.channels if isinstance(c, discord.VoiceChannel)]
+        self.categories     = list(guild.categories)
+
+        self.text_page  = 0
+        self.voice_page = 0
+        self.cat_page   = 0
+
+        self._rebuild()
+
+    def _rebuild(self):
+        self.clear_items()
+
+        # Row 0: Select kênh chữ (luôn hiện)
+        self.add_item(TextChannelSelect(self, self.text_channels, self.text_page))
+
+        # Row 1: Select kênh thoại (sau khi chọn kênh chữ)
+        if "text_channel_id" in self.state:
+            self.add_item(VoiceChannelSelect(self, self.voice_channels, self.voice_page))
+
+        # Row 2: Có dùng category không (sau khi chọn kênh thoại)
+        if "voice_channel_id" in self.state:
+            self.add_item(UseCategorySelect(self))
+
+        # Row 3: Chọn category (nếu chọn có)
+        if self.state.get("use_category") is True and "category_id" not in self.state:
+            self.add_item(CategorySelect(self, self.categories, self.cat_page))
+
+        # Row 4: Nút xác nhận (khi đủ điều kiện)
+        if self._is_complete():
+            self.add_item(ConfirmButton(self))
+
+    def _is_complete(self) -> bool:
+        if "text_channel_id" not in self.state:
+            return False
+        if "voice_channel_id" not in self.state:
+            return False
+        if self.state.get("use_category") is None:
+            return False
+        if self.state.get("use_category") is True and "category_id" not in self.state:
+            return False
+        return True
+
+    async def refresh(self, interaction: discord.Interaction):
+        self._rebuild()
+        try:
+            await interaction.response.edit_message(
+                embed=build_status_embed(self.state),
+                view=self
+            )
+        except discord.InteractionResponded:
+            await interaction.message.edit(
+                embed=build_status_embed(self.state),
+                view=self
+            )
+
+    async def on_timeout(self):
+        try:
+            for item in self.children:
+                item.disabled = True
+            await self.interaction.edit_original_response(
+                embed=discord.Embed(
+                    title="⏰ Hết thời gian",
+                    description="Setup đã hết thời gian (5 phút). Dùng `/setup` để thử lại.",
+                    color=0xe74c3c
+                ),
+                view=self
+            )
+        except Exception:
+            pass
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# SELECT: KÊNH CHỮ
+# ───────────────────────────────────────────────────────────────────────────────
+
+class TextChannelSelect(discord.ui.Select):
+    def __init__(self, view: SetupView, channels: list, page: int):
+        self._sv   = view
+        self._page = page
+        total      = max(1, -(-len(channels) // SELECT_PAGE_SIZE))
+
+        super().__init__(
+            placeholder=f"1. Kênh chat chữ sẽ ở đâu? (trang {page + 1}/{total})",
+            options=self._opts(channels, page, total),
+            min_values=1, max_values=1, row=0
+        )
+
+    def _opts(self, channels, page, total):
+        start   = page * SELECT_PAGE_SIZE
+        chunk   = channels[start: start + SELECT_PAGE_SIZE]
+        opts    = [
+            discord.SelectOption(label=f"# {c.name}"[:100], value=str(c.id), emoji="💬")
+            for c in chunk
+        ]
+        opts.append(discord.SelectOption(label="✨ Tạo kênh mới cho tôi", value="create", emoji="🔧"))
+        if total > 1:
+            nxt = (page + 1) % total
+            opts.append(discord.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
+        return opts
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self._sv.interaction.user.id:
+            return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
+        val = self.values[0]
+        if val.startswith("__page_"):
+            self._sv.text_page = int(val.split("_")[-1])
+        else:
+            self._sv.state["text_channel_id"] = val
+        await self._sv.refresh(interaction)
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# SELECT: KÊNH THOẠI
+# ───────────────────────────────────────────────────────────────────────────────
+
+class VoiceChannelSelect(discord.ui.Select):
+    def __init__(self, view: SetupView, channels: list, page: int):
+        self._sv   = view
+        self._page = page
+        total      = max(1, -(-len(channels) // SELECT_PAGE_SIZE))
+
+        super().__init__(
+            placeholder=f"2. Kênh thoại sẽ ở đâu? (trang {page + 1}/{total})",
+            options=self._opts(channels, page, total),
+            min_values=1, max_values=1, row=1
+        )
+
+    def _opts(self, channels, page, total):
+        start = page * SELECT_PAGE_SIZE
+        chunk = channels[start: start + SELECT_PAGE_SIZE]
+        opts  = [
+            discord.SelectOption(label=f"🔊 {c.name}"[:100], value=str(c.id), emoji="🔊")
+            for c in chunk
+        ]
+        opts.append(discord.SelectOption(label="✨ Tạo kênh mới cho tôi", value="create", emoji="🔧"))
+        if total > 1:
+            nxt = (page + 1) % total
+            opts.append(discord.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
+        return opts
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self._sv.interaction.user.id:
+            return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
+        val = self.values[0]
+        if val.startswith("__page_"):
+            self._sv.voice_page = int(val.split("_")[-1])
+        else:
+            self._sv.state["voice_channel_id"] = val
+        await self._sv.refresh(interaction)
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# SELECT: CÓ DÙNG CATEGORY KHÔNG
+# ───────────────────────────────────────────────────────────────────────────────
+
+class UseCategorySelect(discord.ui.Select):
+    def __init__(self, view: SetupView):
+        self._sv = view
+        super().__init__(
+            placeholder="3. Có đặt game trong danh mục (Category) không?",
+            options=[
+                discord.SelectOption(label="✅ Có, tôi muốn chọn danh mục", value="yes", emoji="📂"),
+                discord.SelectOption(label="❌ Không, bỏ qua danh mục",      value="no",  emoji="🚫"),
+            ],
+            min_values=1, max_values=1, row=2
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self._sv.interaction.user.id:
+            return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
+        if self.values[0] == "yes":
+            self._sv.state["use_category"] = True
+            self._sv.state.pop("category_id", None)
+        else:
+            self._sv.state["use_category"] = False
+            self._sv.state.pop("category_id", None)
+        await self._sv.refresh(interaction)
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# SELECT: CHỌN CATEGORY
+# ───────────────────────────────────────────────────────────────────────────────
+
+class CategorySelect(discord.ui.Select):
+    def __init__(self, view: SetupView, categories: list, page: int):
+        self._sv   = view
+        self._page = page
+        total      = max(1, -(-len(categories) // SELECT_PAGE_SIZE))
+
+        super().__init__(
+            placeholder=f"Bạn muốn đặt game vào danh mục nào? (trang {page + 1}/{total})",
+            options=self._opts(categories, page, total),
+            min_values=1, max_values=1, row=3
+        )
+
+    def _opts(self, categories, page, total):
+        start = page * SELECT_PAGE_SIZE
+        chunk = categories[start: start + SELECT_PAGE_SIZE]
+        opts  = [
+            discord.SelectOption(label=f"📂 {c.name}"[:100], value=str(c.id))
+            for c in chunk
+        ]
+        opts.append(discord.SelectOption(label="✨ Tạo danh mục mới cho tôi", value="create", emoji="🔧"))
+        if total > 1:
+            nxt = (page + 1) % total
+            opts.append(discord.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
+        return opts
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self._sv.interaction.user.id:
+            return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
+        val = self.values[0]
+        if val.startswith("__page_"):
+            self._sv.cat_page = int(val.split("_")[-1])
+        else:
+            self._sv.state["category_id"] = val
+        await self._sv.refresh(interaction)
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# NÚT XÁC NHẬN
+# ───────────────────────────────────────────────────────────────────────────────
+
+class ConfirmButton(discord.ui.Button):
+    def __init__(self, sv: SetupView):
+        super().__init__(label="✅ Xác nhận & Setup", style=discord.ButtonStyle.success, emoji="🚀", row=4)
+        self._sv = sv
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self._sv.interaction.user.id:
+            return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
+
+        for item in self._sv.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(
+            embed=discord.Embed(
+                title="⚙️ Đang cài đặt...",
+                description="Vui lòng chờ trong giây lát...",
+                color=0xf39c12
+            ),
+            view=self._sv
+        )
+
+        await do_setup(interaction, self._sv.guild, self._sv.state, self._sv.config)
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# HÀM SETUP THỰC THI
+# ───────────────────────────────────────────────────────────────────────────────
+
+async def do_setup(interaction: discord.Interaction, guild: discord.Guild, state: dict, config: dict):
+    guild_id = str(guild.id)
+
+    try:
+        # ── 1. Category ──────────────────────────────────────────────
+        category  = None
+        cat_label = "🚫 Không dùng danh mục"
+        if state.get("use_category"):
+            cat_val = state.get("category_id", "create")
+            if cat_val == "create":
+                category  = await guild.create_category("🏙️ THỊ TRẤN")
+                cat_label = f"✨ Tạo mới: `{category.name}`"
+            else:
+                category  = guild.get_channel(int(cat_val))
+                cat_label = f"📂 `{category.name}`" if category else "❓ Không tìm thấy"
+
+        # ── 2. Text channel ──────────────────────────────────────────
+        txt_val = state.get("text_channel_id", "create")
+        if txt_val == "create":
+            text_channel = await guild.create_text_channel("🌃-thị-trấn", category=category)
+            txt_label    = f"✨ Tạo mới: `{text_channel.name}`"
+        else:
+            text_channel = guild.get_channel(int(txt_val))
+            txt_label    = f"💬 `{text_channel.name}`" if text_channel else "❓ Không tìm thấy"
+
+        # ── 3. Voice channel ─────────────────────────────────────────
+        vc_val = state.get("voice_channel_id", "create")
+        if vc_val == "create":
+            voice_channel = await guild.create_voice_channel("🗣️-nói-chuyện", category=category)
+            vc_label      = f"✨ Tạo mới: `{voice_channel.name}`"
+        else:
+            voice_channel = guild.get_channel(int(vc_val))
+            vc_label      = f"🔊 `{voice_channel.name}`" if voice_channel else "❓ Không tìm thấy"
+
+        # ── 4. Roles ─────────────────────────────────────────────────
+        alive_role = await guild.create_role(
+            name="Alive-❤️‍🩹", color=discord.Color.green(),
+            permissions=discord.Permissions(
+                view_channel=True, send_messages=True, send_messages_in_threads=True,
+                read_message_history=True, add_reactions=True, use_external_emojis=True,
+                use_application_commands=True, connect=True, speak=True,
+                use_voice_activation=True, change_nickname=True,
+            ),
+            reason="Anomalies — Alive role"
+        )
+        dead_role = await guild.create_role(
+            name="Dead-☠️", color=discord.Color.dark_grey(),
+            reason="Anomalies — Dead role"
+        )
+
+        # ── 5. Permissions ───────────────────────────────────────────
+        server_roles = [
+            r for r in guild.roles
+            if not r.is_default() and r not in (alive_role, dead_role) and not r.managed
+        ]
+        if text_channel:
+            await text_channel.set_permissions(guild.default_role,
+                read_messages=True, send_messages=False, add_reactions=False)
+            for r in server_roles:
+                try:
+                    await text_channel.set_permissions(r,
+                        read_messages=True, send_messages=True, add_reactions=True)
+                except Exception:
+                    pass
+
+        if voice_channel:
+            await voice_channel.set_permissions(guild.default_role,
+                connect=True, speak=False, send_messages=False,
+                stream=False, use_voice_activation=True)
+            for r in server_roles:
+                try:
+                    await voice_channel.set_permissions(r,
+                        connect=True, speak=True, send_messages=False,
+                        use_voice_activation=True)
+                except Exception:
+                    pass
+
+        # ── 6. Lưu config ────────────────────────────────────────────
+        config["category_id"]      = category.id      if category      else None
+        config["text_channel_id"]  = text_channel.id  if text_channel  else None
+        config["voice_channel_id"] = voice_channel.id if voice_channel else None
+        config["alive_role_id"]    = alive_role.id
+        config["dead_role_id"]     = dead_role.id
+        config.setdefault("max_players",           65)
+        config.setdefault("min_players_to_start",  5)
+        config.setdefault("countdown_minutes",     3)
+        save_guild_config(guild_id, config)
+
+        # ── 7. Folder + init_guild ───────────────────────────────────
+        get_guild_dir(guild_id, guild.name)
+        import sys
+        bot_module = sys.modules.get("__main__")
+        if hasattr(bot_module, "init_guild") and text_channel:
+            await bot_module.init_guild(guild_id, text_channel)
+
+        # ── 8. Embed kết quả ─────────────────────────────────────────
+        embed = discord.Embed(title="✅ SETUP HOÀN TẤT!", color=COLOR_DONE)
+        embed.add_field(name="📂 Danh mục",   value=cat_label, inline=False)
+        embed.add_field(name="💬 Kênh chữ",   value=txt_label, inline=False)
+        embed.add_field(name="🔊 Kênh thoại", value=vc_label,  inline=False)
+        embed.add_field(name="❤️‍🩹 Alive Role", value=f"`{alive_role.name}`", inline=True)
+        embed.add_field(name="☠️ Dead Role",  value=f"`{dead_role.name}`",  inline=True)
+        if server_roles:
+            embed.set_footer(text=f"Đã cấp quyền cho {len(server_roles)} server role.")
+
+        await interaction.edit_original_response(embed=embed, view=None)
+
+    except Exception:
+        tb = traceback.format_exc()[-1800:]
+        print(f"[SETUP] ❌ LỖI:\n{tb}")
+        try:
+            await interaction.edit_original_response(
+                embed=discord.Embed(
+                    title="❌ Setup thất bại",
+                    description=f"```{tb}```",
+                    color=0xe74c3c
+                ),
+                view=None
+            )
+        except Exception:
+            pass
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# COG
+# ───────────────────────────────────────────────────────────────────────────────
+
 class Setup(commands.Cog):
+
     def __init__(self, bot):
         self.bot = bot
 
-    # ===============================
-    # HÀM PHỤ LẤY CATEGORY OBJECT
-    # ===============================
     def lay_category(self, guild_id: str):
         config = load_guild_config(guild_id)
-        category_id = config.get("category_id")
-
-        if not category_id:
+        cat_id = config.get("category_id")
+        if not cat_id:
             return None
+        ch = self.bot.get_channel(cat_id)
+        return ch if isinstance(ch, discord.CategoryChannel) else None
 
-        channel = self.bot.get_channel(category_id)
-
-        if isinstance(channel, discord.CategoryChannel):
-            return channel
-
-        return None
-
-    # ===============================
-    # HÀM PHỤ LẤY TÊN CATEGORY
-    # ===============================
     def lay_ten_category(self, guild_id: str) -> str:
-        category = self.lay_category(guild_id)
-        return category.name if category else "Chưa đặt"
+        cat = self.lay_category(guild_id)
+        return cat.name if cat else "Chưa đặt"
 
-    # ===============================
-    # LỆNH /setup
-    # ===============================
-    @app_commands.command(name="setup", description="Tạo hệ thống Anomalies cho server")
+    @app_commands.command(name="setup", description="Cài đặt hệ thống Anomalies cho server")
     @app_commands.guild_only()
     async def setup_command(self, interaction: discord.Interaction):
-
-        guild = interaction.guild
+        guild    = interaction.guild
         guild_id = str(guild.id)
-        config = load_guild_config(guild_id)
+        config   = load_guild_config(guild_id)
+
         if not _check_perm(interaction, config):
             return await interaction.response.send_message(
-                "❌ Bạn không có quyền sử dụng lệnh này.", ephemeral=True
+                "❌ Bạn không có quyền dùng lệnh này.", ephemeral=True
             )
 
-        # Gửi DM hướng dẫn update cho owner bot
         await greet_owner_on_setup(interaction)
 
-        print(f"[SETUP] Bắt đầu setup cho server: {guild.name} ({guild.id})")
+        already = ""
+        if config.get("text_channel_id"):
+            already = "\n\n⚠️ **Server đã được setup trước đó.** Tiếp tục sẽ tạo thêm kênh/role mới."
 
-        try:
-            config = load_guild_config(guild_id)
+        view  = SetupView(guild, interaction, config)
+        embed = build_status_embed(view.state)
+        if already:
+            embed.description = (embed.description or "") + already
 
-            # Nếu đã setup trước đó
-            if config.get("text_channel_id"):
-                return await interaction.response.send_message(
-                    "⚠️ Server này đã được setup rồi!",
-                    ephemeral=True
-                )
-
-            await interaction.response.defer(ephemeral=True)
-
-            # ===============================
-            # TẠO CATEGORY + CHANNEL
-            # ===============================
-            category = await guild.create_category("🏙️ THỊ TRẤN")
-
-            text_channel = await guild.create_text_channel(
-                "🌃 | Thị Trấn",
-                category=category
-            )
-
-            voice_channel = await guild.create_voice_channel(
-                "🗣️ | Nói Chuyện",
-                category=category
-            )
-
-            print("[SETUP] Đã tạo channel thành công ✔")
-
-            # ===============================
-            # TẠO ROLE ALIVE-❤️‍🩹
-            # Quyền giống như role "Thành Viên" mặc định của Discord
-            # ===============================
-            alive_role = await guild.create_role(
-                name="Alive-❤️‍🩹",
-                color=discord.Color.green(),
-                permissions=discord.Permissions(
-                    # Quyền cơ bản như Thành Viên mặc định của Discord
-                    view_channel=True,
-                    send_messages=True,
-                    send_messages_in_threads=True,
-                    read_message_history=True,
-                    add_reactions=True,
-                    use_external_emojis=True,
-                    use_application_commands=True,
-                    connect=True,
-                    speak=True,
-                    use_voice_activation=True,
-                    change_nickname=True,
-                ),
-                reason="Anomalies — Alive role tự động tạo"
-            )
-
-            # ===============================
-            # TẠO ROLE DEAD-☠️
-            # ===============================
-            dead_role = await guild.create_role(
-                name="Dead-☠️",
-                color=discord.Color.dark_grey(),
-                reason="Anomalies — Dead role tự động tạo"
-            )
-
-            # ================================================================
-            # LẤY TẤT CẢ SERVER ROLES (bỏ @everyone, bot roles, Alive, Dead)
-            # ================================================================
-            server_roles = [
-                r for r in guild.roles
-                if not r.is_default()
-                and r != alive_role
-                and r != dead_role
-                and not r.managed
-            ]
-
-            # ================================================================
-            # TEXT CHANNEL PERMISSIONS
-            # ────────────────────────────────────────────────────────────────
-            # • @everyone       : chỉ xem, không gửi tin
-            # • Tất cả server roles : có thể gửi tin (send_messages=True)
-            # • Alive / Dead    : "/" — không override, kế thừa từ role
-            # ================================================================
-            await text_channel.set_permissions(
-                guild.default_role,
-                read_messages=True,
-                send_messages=False,
-                add_reactions=False,
-                reason="Anomalies — @everyone chỉ đọc"
-            )
-
-            text_roles_added = []
-            for role in server_roles:
-                try:
-                    await text_channel.set_permissions(
-                        role,
-                        read_messages=True,
-                        send_messages=True,
-                        add_reactions=True,
-                        reason=f"Anomalies — {role.name} có thể chat"
-                    )
-                    text_roles_added.append(role.name)
-                except Exception as e:
-                    print(f"[SETUP] Text perms lỗi cho {role.name}: {e}")
-
-            # Alive và Dead: KHÔNG set override → để "/"
-            print(f"[SETUP] Text channel: set cho {len(text_roles_added)} server roles ✔")
-
-            # ================================================================
-            # VOICE CHANNEL PERMISSIONS
-            # ────────────────────────────────────────────────────────────────
-            # • @everyone       : kết nối được, KHÔNG nói, KHÔNG chat
-            # • Tất cả server roles : nói được (speak=True), không chat voice
-            # • Alive / Dead    : "/" — không override, kế thừa từ role
-            # ================================================================
-            await voice_channel.set_permissions(
-                guild.default_role,
-                connect=True,
-                speak=False,
-                send_messages=False,
-                stream=False,
-                use_voice_activation=True,
-                reason="Anomalies — @everyone vào nhưng không nói, không chat"
-            )
-
-            voice_roles_added = []
-            for role in server_roles:
-                try:
-                    await voice_channel.set_permissions(
-                        role,
-                        connect=True,
-                        speak=True,
-                        send_messages=False,
-                        use_voice_activation=True,
-                        reason=f"Anomalies — {role.name} nói được trong voice"
-                    )
-                    voice_roles_added.append(role.name)
-                except Exception as e:
-                    print(f"[SETUP] Voice perms lỗi cho {role.name}: {e}")
-
-            # Alive và Dead: KHÔNG set override → để "/"
-            print(f"[SETUP] Voice channel: set cho {len(voice_roles_added)} server roles ✔")
-
-            # ===============================
-            # LƯU CONFIG
-            # ===============================
-            config["category_id"]      = category.id
-            config["text_channel_id"]   = text_channel.id
-            config["voice_channel_id"]  = voice_channel.id
-            config["alive_role_id"]     = alive_role.id
-            config["dead_role_id"]      = dead_role.id
-
-            config.setdefault("max_players", 65)
-            config.setdefault("min_players_to_start", 5)
-            config.setdefault("countdown_minutes", 3)
-
-            save_guild_config(guild_id, config)
-
-            print("[SETUP] Đã lưu config.json ✔")
-
-            # ===============================
-            # TẠO FOLDER SERVER
-            # ===============================
-            guild_dir = get_guild_dir(guild_id, guild.name)
-            print(f"[SETUP] Folder server: {guild_dir}")
-
-            # ===============================
-            # GỌI INIT_GUILD TỪ bot.py
-            # ===============================
-            import sys
-            bot_module = sys.modules.get("__main__")
-
-            if hasattr(bot_module, "init_guild"):
-                await bot_module.init_guild(guild_id, text_channel)
-                print("[SETUP] init_guild chạy thành công ✔")
-            else:
-                print("[SETUP] Không tìm thấy init_guild trong bot.py")
-
-            # ===============================
-            # THÔNG BÁO HOÀN TẤT
-            # ===============================
-            roles_info = f"\n🔧 Đã cấp quyền cho {len(server_roles)} server role (text: chat | voice: nói)." if server_roles else ""
-
-            await interaction.followup.send(
-                f"✅ **Setup hoàn tất!**\n\n"
-                f"📂 Category: `{category.name}`\n"
-                f"💬 Kênh chữ: `{text_channel.name}`\n"
-                f"🔊 Kênh thoại: `{voice_channel.name}`\n\n"
-                f"❤️‍🩹 **Alive Role** `{alive_role.name}` — quyền như Thành Viên (chat + nói)\n"
-                f"💀 **Dead Role** `{dead_role.name}` — cấm chat & mic trong kênh game\n"
-                f"📁 Thư mục dữ liệu: `{guild_dir}`"
-                f"{roles_info}",
-                ephemeral=True
-            )
-
-        except Exception:
-            print("[SETUP] ❌ LỖI:")
-            traceback.print_exc()
-
-            error_msg = traceback.format_exc()[-1500:]
-
-            try:
-                await interaction.followup.send(
-                    f"❌ Setup thất bại:\n```{error_msg}```",
-                    ephemeral=True
-                )
-            except Exception:
-                try:
-                    await interaction.response.send_message(
-                        f"❌ Setup thất bại:\n```{error_msg}```",
-                        ephemeral=True
-                    )
-                except Exception:
-                    pass
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
