@@ -967,107 +967,242 @@ class VotingSession:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# §11  WILL SYSTEM  (unchanged logic, refactored into class)
+# §11  WILL SYSTEM  — Áp dụng cho TẤT CẢ người chơi
 # ══════════════════════════════════════════════════════════════════════
 
-MAX_WILL_LINES = 45
+MAX_WILL_LINES    = 45
+MAX_WILL_CHARS    = 60   # kí tự/dòng (không tính dấu cách)
+WILL_TRIGGER      = "Nhập di chúc"
+
+
+# ── Chuyển số thành emoji chữ số Discord ─────────────────────────────────────
+def _num_to_emoji(n: int) -> str:
+    digits = {
+        "0": "0️⃣", "1": "1️⃣", "2": "2️⃣", "3": "3️⃣", "4": "4️⃣",
+        "5": "5️⃣", "6": "6️⃣", "7": "7️⃣", "8": "8️⃣", "9": "9️⃣",
+    }
+    return "".join(digits[d] for d in str(n))
+
 
 class WillState:
     def __init__(self):
-        self.writing_will = False
-        self.will_buffer  = ""
-        self.will_lines: List[str] = []
-        self.locked       = False
+        self.writing_will: bool       = False
+        self.will_lines:  List[str]   = []    # các dòng đã confirm
+        self.locked:      bool        = False  # không thay đổi được nữa
 
 
-def get_will_state(game: "GameEngine", member_id: int) -> WillState:
+def get_will_state(game: "GameEngine", member_id: int) -> "WillState":
     if member_id not in game.will_states:
         game.will_states[member_id] = WillState()
     return game.will_states[member_id]
 
 
 async def handle_will_message(game: "GameEngine", message: discord.Message) -> bool:
+    """Xử lý tin nhắn liên quan đến di chúc trong text channel game.
+    Trả về True nếu đã xử lý (để on_message dừng sớm).
+    """
     if message.author.bot:
         return False
-    if message.channel.id != game.text_channel.id:
+    if not game.text_channel or message.channel.id != game.text_channel.id:
         return False
+
     uid     = message.author.id
-    role    = game.roles.get(uid)
     content = message.content.strip()
 
-    if content == "Tôi muốn ghi di chúc!":
-        if not role or role.name != "The Sleeper":
-            await message.reply("❌ Chỉ **The Sleeper** mới có thể ghi di chúc.", delete_after=5)
-            return True
-        ws = get_will_state(game, uid)
+    # ── Chỉ cho phép người đang chơi ─────────────────────────────────────────
+    if uid not in game.players:
+        return False
+
+    ws = get_will_state(game, uid)
+
+    # ── Trigger bắt đầu ghi di chúc ──────────────────────────────────────────
+    if content == WILL_TRIGGER:
         if ws.locked:
-            await message.reply("🔒 Di chúc đã khóa.", delete_after=5)
+            await message.reply("🔒 Di chúc của bạn đã bị khóa — không thể chỉnh sửa.", delete_after=6)
             return True
         if ws.writing_will:
-            await message.reply("📖 Đang trong chế độ ghi rồi.", delete_after=5)
+            await message.reply("📖 Bạn đang trong chế độ ghi di chúc rồi. Hãy gửi từng dòng.", delete_after=6)
             return True
+
         ws.writing_will = True
-        ws.will_buffer  = ""
         embed = discord.Embed(
-            title="📖 HỆ THỐNG GHI DI CHÚC",
+            title="📜 HỆ THỐNG DI CHÚC",
             description=(
-                f"Viết từng câu — nói **Xuống hàng** để lưu dòng.\n"
-                f"Khi xong nói **Đã viết xong**.\n⚠ Tối đa {MAX_WILL_LINES} dòng."
+                f"Hãy viết di chúc của bạn, Tối đa **{MAX_WILL_LINES} dòng**. "
+                f"Mỗi dòng tối đa **{MAX_WILL_CHARS} kí tự**\n"
+                f"*(Số kí tự không tính dấu cách)*\n\n"
+                f"⚠️ **Lưu ý:** Sau khi gửi mỗi dòng, bạn không thể chỉnh sửa dòng đó được nữa."
             ),
             color=0x9b59b6
         )
+        embed.set_footer(text=f"Đã viết: 0/{MAX_WILL_LINES} dòng")
         await message.reply(embed=embed)
         return True
 
-    ws = get_will_state(game, uid)
+    # ── Đang trong chế độ ghi → mỗi tin nhắn = 1 dòng ───────────────────────
     if not ws.writing_will:
         return False
 
-    if content == "Xuống hàng":
-        if not ws.will_buffer.strip():
-            await message.reply("⚠ Chưa có nội dung.", delete_after=5)
-            return True
-        if len(ws.will_lines) >= MAX_WILL_LINES:
-            await message.reply(f"❌ Đã đạt tối đa {MAX_WILL_LINES} dòng.", delete_after=8)
-            return True
-        ws.will_lines.append(ws.will_buffer.strip())
-        ws.will_buffer = ""
-        await message.reply(f"✅ Dòng {len(ws.will_lines)}/{MAX_WILL_LINES}.", delete_after=6)
-        return True
-
-    if content == "Đã viết xong":
-        if ws.will_buffer.strip() and len(ws.will_lines) < MAX_WILL_LINES:
-            ws.will_lines.append(ws.will_buffer.strip())
+    # Kiểm tra giới hạn số dòng
+    if len(ws.will_lines) >= MAX_WILL_LINES:
+        line_num = len(ws.will_lines) + 1
+        await message.add_reaction("🚫")
+        await message.add_reaction(_num_to_emoji(line_num)[0] if line_num < 10 else "🔢")
+        await message.reply(
+            f"Bạn không được viết quá **{MAX_WILL_LINES} dòng**.",
+            delete_after=8
+        )
         ws.writing_will = False
         ws.locked = True
         game.wills[uid] = "\n".join(ws.will_lines)
-        await message.reply(f"🔒 Đã khóa ({len(ws.will_lines)} dòng).", delete_after=8)
         return True
 
-    if len(ws.will_lines) >= MAX_WILL_LINES:
-        await message.reply(f"❌ Đã đủ {MAX_WILL_LINES} dòng. Nói **Đã viết xong**.", delete_after=8)
+    # Đếm kí tự không tính dấu cách
+    char_count = len(content.replace(" ", ""))
+
+    if char_count > MAX_WILL_CHARS:
+        # Phản ứng 🚫 + số thứ tự dòng tiếp theo
+        next_line = len(ws.will_lines) + 1
+        await message.add_reaction("🚫")
+        for emoji in _num_to_emoji(next_line):
+            await message.add_reaction(emoji)
+        await message.reply(
+            f"Dòng đấy bạn ghi **{char_count}** kí tự, quá **{MAX_WILL_CHARS}** kí tự.",
+            delete_after=8
+        )
         return True
 
-    ws.will_buffer = (ws.will_buffer + " " + content).strip()
+    # Dòng hợp lệ → lưu vào
+    ws.will_lines.append(content)
+    current_line = len(ws.will_lines)
+    game.wills[uid] = "\n".join(ws.will_lines)   # lưu realtime
+
+    # Phản ứng ✅ + số thứ tự dòng
+    await message.add_reaction("✅")
+    for emoji in _num_to_emoji(current_line):
+        await message.add_reaction(emoji)
+
     return True
 
 
+# ── Embed + Select sáng: xem di chúc người đã chết ───────────────────────────
+
+class WillSelectView(discord.ui.View):
+    """View gửi vào text channel mỗi sáng để xem di chúc người chết."""
+
+    def __init__(self, game: "GameEngine", dead_with_wills: list):
+        super().__init__(timeout=120)
+        self._game = game
+        # dead_with_wills: list of (member_id, display_name)
+        if dead_with_wills:
+            self.add_item(WillSelectMenu(game, dead_with_wills))
+
+
+class WillSelectMenu(discord.ui.Select):
+    def __init__(self, game: "GameEngine", dead_with_wills: list):
+        self._game = game
+        options = [
+            discord.SelectOption(
+                label=name[:100],
+                value=str(mid),
+                emoji="📜"
+            )
+            for mid, name in dead_with_wills
+        ]
+        super().__init__(
+            placeholder="Chọn người để xem di chúc...",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        mid  = int(self.values[0])
+        name = next((n for m, n in [(o.value, o.label) for o in self.options] if int(m) == mid), str(mid))
+
+        # Tạo nội dung file .txt
+        will_text_raw = self._game.wills.get(mid, "")
+        lines         = will_text_raw.split("\n") if will_text_raw else []
+
+        if not lines:
+            return await interaction.response.send_message(
+                f"📜 **{name}** không để lại di chúc.",
+                ephemeral=True
+            )
+
+        file_content = (
+            f"Đây là di chúc của {name}\n"
+            f"\n"
+            + "\n".join(f"{i+1}. {l}" for i, l in enumerate(lines))
+            + f"\n\nMong rằng nó sẽ giúp bạn."
+        )
+
+        # Gửi DM kèm file .txt (không mã hóa đầu cuối — dùng discord.File với StringIO)
+        import io
+        file_bytes = file_content.encode("utf-8")
+        fp = io.BytesIO(file_bytes)
+        fp.seek(0)
+        filename = f"di_chuc_{name.replace(' ', '_')}.txt"
+        dfile    = discord.File(fp, filename=filename)
+
+        try:
+            await interaction.user.send(
+                content=f"📜 Di chúc của **{name}**:",
+                file=dfile
+            )
+            await interaction.response.send_message(
+                f"✅ Đã gửi di chúc của **{name}** vào DM của bạn!",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Không thể gửi DM cho bạn. Hãy bật cho phép nhận tin nhắn từ thành viên server.",
+                ephemeral=True
+            )
+
+
+async def send_morning_will_board(game: "GameEngine"):
+    """Gửi bảng di chúc mỗi sáng — chỉ hiện người đã chết và có di chúc."""
+    dead_ids = [pid for pid in game.players if not game.is_alive(pid)]
+    dead_with_wills = []
+
+    for pid in dead_ids:
+        will_text = game.wills.get(pid, "")
+        if will_text and will_text.strip():
+            member = game.players.get(pid)
+            name   = member.display_name if member else str(pid)
+            dead_with_wills.append((pid, name))
+
+    if not dead_with_wills:
+        return   # Không ai có di chúc → không gửi gì
+
+    view  = WillSelectView(game, dead_with_wills)
+    embed = discord.Embed(
+        title="📜 LÁ THƯ NGƯỜI CHẾT",
+        description="Các người còn sống muốn xem di chúc của ai?",
+        color=0x9b59b6
+    )
+    embed.set_footer(text=f"{len(dead_with_wills)} người đã để lại di chúc.")
+
+    await game.text_channel.send(embed=embed, view=view)
+
+
 async def publish_will(game: "GameEngine", member_id: int):
+    """Hiển thị di chúc ngay khi người chơi chết (dùng lại ở một số role đặc biệt)."""
     ws     = game.will_states.get(member_id)
     member = game.players.get(member_id)
     name   = member.display_name if member else str(member_id)
+
     if not ws or not ws.will_lines:
-        await game.text_channel.send(embed=discord.Embed(
-            title=f"📖 DI CHÚC CỦA {name}",
-            description="*Không có di chúc nào.*",
-            color=0x95a5a6
-        ))
-        return
-    content = "\n".join(f"{i+1}. {l}" for i, l in enumerate(ws.will_lines))
+        return   # Không có di chúc → im lặng
+
+    lines   = ws.will_lines
+    content = "\n".join(f"{i+1}. {l}" for i, l in enumerate(lines))
     if len(content) > 4000:
         content = content[:4000] + "\n*...(cắt bớt)*"
+
     await game.text_channel.send(embed=discord.Embed(
-        title=f"📖 DI CHÚC CỦA {name}",
+        title=f"📜 DI CHÚC CỦA {name}",
         description=content,
         color=0x9b59b6
     ))
@@ -2186,9 +2321,13 @@ class GameEngine:
             except Exception:
                 self.logger.error(f"on_death error [{role.name}]: {traceback.format_exc()}")
 
-        # Will publishing
-        if role and role.name == "The Sleeper":
-            await publish_will(self, pid)
+        # Khoá di chúc khi chết — nếu đang ghi dở thì flush luôn
+        _ws = self.will_states.get(pid)
+        if _ws and _ws.writing_will:
+            if _ws.will_lines:
+                self.wills[pid] = "\n".join(_ws.will_lines)
+            _ws.writing_will = False
+            _ws.locked = True
 
         # Dead Chat
         await self.dead_chat_mgr.add_dead_player(member)
@@ -2515,6 +2654,12 @@ class GameEngine:
               await self.log(f"💀 **{name}** ĐÃ CHẾT trong đêm qua.", color=0xe74c3c)
           self.pending_death_announcements.clear()
 
+      # ── Bảng di chúc sáng — cho người sống xem di chúc người đã chết ────
+      try:
+          await send_morning_will_board(self)
+      except Exception:
+          pass
+
       alive_members = self.get_alive_players()
 
       # Unmute tất cả người còn sống vào ban ngày
@@ -2706,7 +2851,7 @@ class GameEngine:
                 if groups.get(faction):
                     embed.add_field(name=label, value="\n".join(f"> {e}" for e in groups[faction]), inline=False)
 
-        embed.set_footer(text="📝 Nói 'Tôi muốn ghi di chúc!' để ghi chép.")
+        embed.set_footer(text="📝 Gõ 'Nhập di chúc' để bắt đầu viết di chúc.")
         await self.send_dm(sleeper.player, "", embed=embed)
 
     # ══════════════════════════════════════════════════

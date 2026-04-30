@@ -1272,6 +1272,7 @@ async def on_message(message):
             from game import handle_will_message
             if await handle_will_message(game, message):
                 return
+            # (send_morning_will_board được gọi từ phase_day trong game.py)
         except Exception as e:
             print(f"[on_message] handle_will_message lỗi: {e}")
 
