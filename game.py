@@ -1190,29 +1190,50 @@ class WillSelectMenu(discord.ui.Select):
 
 
 async def send_morning_will_board(game: "GameEngine"):
-    """Gửi bảng di chúc mỗi sáng — chỉ hiện người đã chết và có di chúc."""
+    """Gửi bảng danh sách người chết mỗi sáng — luôn hiện, kể cả khi không ai có di chúc."""
     dead_ids = [pid for pid in game.players if not game.is_alive(pid)]
+
+    if not dead_ids:
+        return  # Chưa có ai chết → không gửi gì
+
     dead_with_wills = []
+    dead_lines = []
 
     for pid in dead_ids:
+        member    = game.players.get(pid)
+        name      = member.display_name if member else str(pid)
+        role_obj  = game.roles.get(pid)
+        role_name = getattr(role_obj, "name", "Ẩn")
         will_text = game.wills.get(pid, "")
-        if will_text and will_text.strip():
-            member = game.players.get(pid)
-            name   = member.display_name if member else str(pid)
+        has_will  = bool(will_text and will_text.strip())
+
+        will_icon = "📜" if has_will else "🚫"
+        dead_lines.append(f"💀 **{name}** — *{role_name}* {will_icon}")
+
+        if has_will:
             dead_with_wills.append((pid, name))
 
-    if not dead_with_wills:
-        return   # Không ai có di chúc → không gửi gì
+    description = (
+        "Danh sách những người đã chết:\n\n"
+        + "\n".join(dead_lines)
+    )
+    if dead_with_wills:
+        description += "\n\n*📜 = có di chúc — chọn bên dưới để xem qua DM*"
+    else:
+        description += "\n\n*Không ai để lại di chúc.*"
 
-    view  = WillSelectView(game, dead_with_wills)
     embed = discord.Embed(
-        title="📜 LÁ THƯ NGƯỜI CHẾT",
-        description="Các người còn sống muốn xem di chúc của ai?",
+        title="📋 LÁ THƯ NGƯỜI CHẾT",
+        description=description,
         color=0x9b59b6
     )
-    embed.set_footer(text=f"{len(dead_with_wills)} người đã để lại di chúc.")
+    embed.set_footer(text=f"{len(dead_ids)} người đã chết | {len(dead_with_wills)} di chúc")
 
-    await game.text_channel.send(embed=embed, view=view)
+    if dead_with_wills:
+        view = WillSelectView(game, dead_with_wills)
+        await game.text_channel.send(embed=embed, view=view)
+    else:
+        await game.text_channel.send(embed=embed)
 
 
 async def publish_will(game: "GameEngine", member_id: int):
