@@ -1263,6 +1263,13 @@ async def on_message(message):
         return
 
     if not message.guild:
+        # ── DM: thử xử lý di chúc trước, nếu không phải thì owner DM ────────
+        try:
+            from game import handle_will_dm
+            if await handle_will_dm(active_games, message):
+                return
+        except Exception as e:
+            print(f"[on_message] handle_will_dm lỗi: {e}")
         await handle_owner_dm(bot, message)
         return
 
@@ -1272,7 +1279,6 @@ async def on_message(message):
             from game import handle_will_message
             if await handle_will_message(game, message):
                 return
-            # (send_morning_will_board được gọi từ phase_day trong game.py)
         except Exception as e:
             print(f"[on_message] handle_will_message lỗi: {e}")
 

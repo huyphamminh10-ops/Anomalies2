@@ -998,30 +998,50 @@ def get_will_state(game: "GameEngine", member_id: int) -> "WillState":
 
 
 async def handle_will_message(game: "GameEngine", message: discord.Message) -> bool:
-    """Xử lý tin nhắn liên quan đến di chúc trong text channel game.
-    Trả về True nếu đã xử lý (để on_message dừng sớm).
+    """STUB — di chúc nay được xử lý hoàn toàn qua DM (handle_will_dm).
+    Hàm này giữ nguyên để app.py không bị lỗi import, nhưng luôn trả False.
+    """
+    return False
+
+
+async def handle_will_dm(active_games: dict, message: discord.Message) -> bool:
+    """Xử lý toàn bộ cơ chế di chúc trong DM của bot.
+    Được gọi từ on_message khi message.guild is None.
+    Trả về True nếu đã xử lý (để on_message không gọi handle_owner_dm).
     """
     if message.author.bot:
         return False
-    if not game.text_channel or message.channel.id != game.text_channel.id:
+    # Chỉ xử lý DM (không có guild)
+    if message.guild is not None:
         return False
 
     uid     = message.author.id
     content = message.content.strip()
 
-    # ── Chỉ cho phép người đang chơi ─────────────────────────────────────────
-    if uid not in game.players:
-        return False
+    # Tìm game mà người này đang tham gia
+    game = None
+    for g in active_games.values():
+        if uid in g.players:
+            game = g
+            break
 
-    ws = get_will_state(game, uid)
-
-    # ── Trigger bắt đầu ghi di chúc ──────────────────────────────────────────
+    # ── Trigger: "Nhập di chúc" ──────────────────────────────────────────────
     if content == WILL_TRIGGER:
+        if game is None:
+            await message.channel.send("❌ Bạn không đang trong trận nào.")
+            return True
+
+        ws = get_will_state(game, uid)
+
         if ws.locked:
-            await message.reply("🔒 Di chúc của bạn đã bị khóa — không thể chỉnh sửa.", delete_after=6)
+            await message.channel.send("🔒 Di chúc của bạn đã bị khóa — không thể chỉnh sửa.")
             return True
         if ws.writing_will:
-            await message.reply("📖 Bạn đang trong chế độ ghi di chúc rồi. Hãy gửi từng dòng.", delete_after=6)
+            await message.channel.send(
+                f"📖 Bạn đang trong chế độ ghi di chúc rồi. "
+                f"Đã viết **{len(ws.will_lines)}/{MAX_WILL_LINES}** dòng. "
+                f"Tiếp tục gửi từng dòng."
+            )
             return True
 
         ws.writing_will = True
@@ -1029,28 +1049,30 @@ async def handle_will_message(game: "GameEngine", message: discord.Message) -> b
             title="📜 HỆ THỐNG DI CHÚC",
             description=(
                 f"Hãy viết di chúc của bạn, Tối đa **{MAX_WILL_LINES} dòng**. "
+                f"Hãy viết di chúc của bạn, Tối đa **{MAX_WILL_LINES} dòng**. "
                 f"Mỗi dòng tối đa **{MAX_WILL_CHARS} kí tự**\n"
-                f"*(Số kí tự không tính dấu cách)*\n\n"
-                f"⚠️ **Lưu ý:** Sau khi gửi mỗi dòng, bạn không thể chỉnh sửa dòng đó được nữa."
+                "*(Số kí tự không tính dấu cách)*\n\n"
+                "⚠️ **Lưu ý:** Sau khi gửi mỗi dòng, bạn không thể chỉnh sửa dòng đó được nữa."
             ),
             color=0x9b59b6
         )
         embed.set_footer(text=f"Đã viết: 0/{MAX_WILL_LINES} dòng")
-        await message.reply(embed=embed)
+        await message.channel.send(embed=embed)
         return True
 
-    # ── Đang trong chế độ ghi → mỗi tin nhắn = 1 dòng ───────────────────────
+    # ── Người đang ghi dở → tiếp nhận dòng mới ──────────────────────────────
+    if game is None:
+        return False   # Không phải trigger, không trong game → bỏ qua
+
+    ws = get_will_state(game, uid)
     if not ws.writing_will:
-        return False
+        return False   # Không trong chế độ ghi → không xử lý
 
     # Kiểm tra giới hạn số dòng
     if len(ws.will_lines) >= MAX_WILL_LINES:
-        line_num = len(ws.will_lines) + 1
         await message.add_reaction("🚫")
-        await message.add_reaction(_num_to_emoji(line_num)[0] if line_num < 10 else "🔢")
-        await message.reply(
-            f"Bạn không được viết quá **{MAX_WILL_LINES} dòng**.",
-            delete_after=8
+        await message.channel.send(
+            f"Bạn không được viết quá **{MAX_WILL_LINES} dòng**. Di chúc đã được khóa."
         )
         ws.writing_will = False
         ws.locked = True
@@ -1061,14 +1083,12 @@ async def handle_will_message(game: "GameEngine", message: discord.Message) -> b
     char_count = len(content.replace(" ", ""))
 
     if char_count > MAX_WILL_CHARS:
-        # Phản ứng 🚫 + số thứ tự dòng tiếp theo
         next_line = len(ws.will_lines) + 1
         await message.add_reaction("🚫")
         for emoji in _num_to_emoji(next_line):
             await message.add_reaction(emoji)
-        await message.reply(
-            f"Dòng đấy bạn ghi **{char_count}** kí tự, quá **{MAX_WILL_CHARS}** kí tự.",
-            delete_after=8
+        await message.channel.send(
+            f"Dòng đấy bạn ghi **{char_count}** kí tự, quá **{MAX_WILL_CHARS}** kí tự."
         )
         return True
 
@@ -1077,10 +1097,18 @@ async def handle_will_message(game: "GameEngine", message: discord.Message) -> b
     current_line = len(ws.will_lines)
     game.wills[uid] = "\n".join(ws.will_lines)   # lưu realtime
 
-    # Phản ứng ✅ + số thứ tự dòng
+    # React ✅ + số thứ tự dòng
     await message.add_reaction("✅")
     for emoji in _num_to_emoji(current_line):
         await message.add_reaction(emoji)
+
+    # Cập nhật footer embed nếu muốn (gửi thêm 1 dòng nhỏ)
+    if current_line == MAX_WILL_LINES:
+        await message.channel.send(
+            f"✅ Đã đạt tối đa **{MAX_WILL_LINES} dòng**. Di chúc đã được khóa tự động."
+        )
+        ws.writing_will = False
+        ws.locked = True
 
     return True
 
