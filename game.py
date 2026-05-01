@@ -1878,6 +1878,10 @@ class GameEngine:
                     color=0x9b59b6
                 )
                 await member.send(embed=embed)
+
+            # ── Gửi thêm danh sách vai trò toàn trận ─────────────────────
+            await member.send(embed=self._build_role_list_embed())
+
         except Exception as e:
             self.logger.warn(f"Cannot send role DM to {member}: {e}")
             if self.config.dm_fallback_to_public:
@@ -1888,6 +1892,50 @@ class GameEngine:
                     )
                 except Exception:
                     pass
+
+    def _build_role_list_embed(self) -> discord.Embed:
+        """Tạo embed danh sách vai trò xuất hiện trong trận này (không tiết lộ ai là ai)."""
+        # Đếm số lượng từng role
+        role_counts: dict[str, int] = {}
+        team_of:     dict[str, str] = {}
+        for role_obj in self.roles.values():
+            rname = role_obj.name
+            role_counts[rname] = role_counts.get(rname, 0) + 1
+            team_of[rname]     = getattr(role_obj, "team", "?")
+
+        # Phân nhóm theo phe
+        survivors = {}
+        anomalies = {}
+        unknowns  = {}
+        for rname, cnt in role_counts.items():
+            t = team_of[rname]
+            if t == "Survivors":
+                survivors[rname] = cnt
+            elif t == "Anomalies":
+                anomalies[rname] = cnt
+            else:
+                unknowns[rname]  = cnt
+
+        def fmt(d: dict) -> str:
+            if not d:
+                return "*Không có*"
+            return "\n".join(
+                f"• **{name}**" + (f" ×{cnt}" if cnt > 1 else "")
+                for name, cnt in sorted(d.items())
+            )
+
+        total = len(self.roles)
+        embed = discord.Embed(
+            title="📋 DANH SÁCH VAI TRÒ TRẬN NÀY",
+            description=f"Tổng cộng **{total} người chơi** với các vai trò sau:",
+            color=0x2c3e50
+        )
+        embed.add_field(name="🔵 Người Sống Sót",    value=fmt(survivors), inline=False)
+        embed.add_field(name="🔴 Dị Thể",            value=fmt(anomalies), inline=False)
+        if unknowns:
+            embed.add_field(name="⚫ Thực Thể Ẩn",   value=fmt(unknowns),  inline=False)
+        embed.set_footer(text="Danh sách này không tiết lộ ai đang giữ vai trò nào.")
+        return embed
 
     # ══════════════════════════════════════════════════
     # §12.7  PHASE: NIGHT
