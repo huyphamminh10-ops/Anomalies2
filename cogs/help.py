@@ -527,5 +527,5 @@ class HelpCog(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
-async def setup(bot: commands.Bot):
+def setup(bot: commands.Bot):
     bot.add_cog(HelpCog(bot))

@@ -483,6 +483,6 @@ class GeminiHost:
         return text or None
 
 
-async def setup(bot):
+def setup(bot):
     """No-op cog setup — class được khởi tạo trực tiếp bởi GameEngine."""
     return

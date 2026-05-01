@@ -535,5 +535,5 @@ class Setup(commands.Cog):
         await greet_owner_on_setup(self.bot)
 
 
-async def setup(bot: commands.Bot):
+def setup(bot: commands.Bot):
     bot.add_cog(Setup(bot))

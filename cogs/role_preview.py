@@ -1992,5 +1992,5 @@ class RoleCog(commands.Cog):
 # ══════════════════════════════════════════════════════════════════
 
 
-async def setup(bot: commands.Bot) -> None:
+def setup(bot: commands.Bot) -> None:
     bot.add_cog(RoleCog(bot))

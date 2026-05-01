@@ -1221,5 +1221,5 @@ class SettingsCog(commands.Cog):
         view.message = await interaction.original_response()
 
 
-async def setup(bot: commands.Bot):
+def setup(bot: commands.Bot):
     bot.add_cog(SettingsCog(bot))
