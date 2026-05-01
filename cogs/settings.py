@@ -741,22 +741,24 @@ class _UserManageView(View):
 
 
 class _AddUserModal(Modal):
-    user_id_input = TextInput(
-        label="User ID",
-        placeholder="Nhập User ID (số) hoặc @mention",
-        min_length=1, max_length=25, required=True,
-    )
-
     def __init__(self, bot, guild_id, lock, current_ids, parent_view: _UserManageView):
-        super().__init__(title="Thêm người dùng đặc quyền")
+        super().__init__(
+            title="Thêm người dùng đặc quyền",
+            components=[TextInput(
+                label="User ID",
+                placeholder="Nhập User ID (số) hoặc @mention",
+                min_length=1, max_length=25, required=True,
+                custom_id="user_id_input",
+            )],
+        )
         self.bot         = bot
         self.guild_id    = guild_id
         self.lock        = lock
         self.current_ids = current_ids
         self.parent_view = parent_view
 
-    async def on_submit(self, interaction: disnake.ModalInteraction):
-        raw = self.user_id_input.value.strip().replace("<@", "").replace(">", "").replace("!", "")
+    async def callback(self, interaction: disnake.ModalInteraction):
+        raw = interaction.text_values["user_id_input"].strip().replace("<@", "").replace(">", "").replace("!", "")
         try:
             uid = int(raw)
         except ValueError:
@@ -857,8 +859,8 @@ class ChannelsView(View):
 class _BaseModal(Modal):
     """Base modal — auto-refreshes parent SettingsView sau khi submit."""
 
-    def __init__(self, bot, guild_id, lock, parent_view: SettingsView | None = None, title: str = ""):
-        super().__init__(title=title)
+    def __init__(self, bot, guild_id, lock, parent_view: SettingsView | None = None, title: str = "", components=None):
+        super().__init__(title=title, components=components or [])
         self.bot         = bot
         self.guild_id    = guild_id
         self.lock        = lock
@@ -879,14 +881,13 @@ class _BaseModal(Modal):
 class MaxPlayersModal(_BaseModal):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("title", "Đặt số người chơi tối đa")
+        kwargs.setdefault("components", [TextInput(label="Số người tối đa", placeholder="5–65", min_length=1, max_length=2, required=True, custom_id="val")])
         super().__init__(*args, **kwargs)
 
-    val = TextInput(label="Số người tối đa", placeholder="5–65", min_length=1, max_length=2, required=True)
-
-    async def on_submit(self, interaction: disnake.ModalInteraction):
+    async def callback(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
-                v = int(self.val.value.strip())
+                v = int(interaction.text_values["val"].strip())
                 if not (5 <= v <= 65):
                     return await interaction.response.send_message(
                         embed=disnake.Embed(title="❌ Không hợp lệ", description="Phải từ 5 đến 65.", color=disnake.Color.red()),
@@ -916,14 +917,13 @@ class MaxPlayersModal(_BaseModal):
 class MinPlayersModal(_BaseModal):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("title", "Đặt số người tối thiểu để bắt đầu")
+        kwargs.setdefault("components", [TextInput(label="Số người tối thiểu", placeholder="5–64", min_length=1, max_length=2, required=True, custom_id="val")])
         super().__init__(*args, **kwargs)
 
-    val = TextInput(label="Số người tối thiểu", placeholder="5–64", min_length=1, max_length=2, required=True)
-
-    async def on_submit(self, interaction: disnake.ModalInteraction):
+    async def callback(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
-                v = int(self.val.value.strip())
+                v = int(interaction.text_values["val"].strip())
                 config = load_guild_config(self.guild_id)
                 max_p  = config.get("max_players", 65)
                 if v < 5 or v >= max_p:
@@ -949,14 +949,13 @@ class MinPlayersModal(_BaseModal):
 class CountdownModal(_BaseModal):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("title", "Đặt thời gian đếm ngược")
+        kwargs.setdefault("components", [TextInput(label="Thời gian đếm ngược (phút)", placeholder="1–3", min_length=1, max_length=1, required=True, custom_id="val")])
         super().__init__(*args, **kwargs)
 
-    val = TextInput(label="Thời gian đếm ngược (phút)", placeholder="1–3", min_length=1, max_length=1, required=True)
-
-    async def on_submit(self, interaction: disnake.ModalInteraction):
+    async def callback(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
-                v = int(self.val.value.strip())
+                v = int(interaction.text_values["val"].strip())
                 if not (1 <= v <= 3):
                     return await interaction.response.send_message(
                         embed=disnake.Embed(title="❌ Không hợp lệ", description="Phải từ 1 đến 3 phút.", color=disnake.Color.red()),
@@ -991,14 +990,13 @@ class CountdownModal(_BaseModal):
 class DayTimeModal(_BaseModal):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("title", "Đặt thời gian thảo luận")
+        kwargs.setdefault("components", [TextInput(label="Thời gian thảo luận (giây)", placeholder="30–120", min_length=2, max_length=3, required=True, custom_id="val")])
         super().__init__(*args, **kwargs)
 
-    val = TextInput(label="Thời gian thảo luận (giây)", placeholder="30–120", min_length=2, max_length=3, required=True)
-
-    async def on_submit(self, interaction: disnake.ModalInteraction):
+    async def callback(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
-                v = int(self.val.value.strip())
+                v = int(interaction.text_values["val"].strip())
                 if not (30 <= v <= 120):
                     return await interaction.response.send_message(
                         embed=disnake.Embed(title="❌ Không hợp lệ", description="Phải từ 30 đến 120 giây.", color=disnake.Color.red()),
@@ -1023,14 +1021,13 @@ class DayTimeModal(_BaseModal):
 class VoteTimeModal(_BaseModal):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("title", "Đặt thời gian bỏ phiếu")
+        kwargs.setdefault("components", [TextInput(label="Thời gian bỏ phiếu (giây)", placeholder="15–45", min_length=2, max_length=2, required=True, custom_id="val")])
         super().__init__(*args, **kwargs)
 
-    val = TextInput(label="Thời gian bỏ phiếu (giây)", placeholder="15–45", min_length=2, max_length=2, required=True)
-
-    async def on_submit(self, interaction: disnake.ModalInteraction):
+    async def callback(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
-                v = int(self.val.value.strip())
+                v = int(interaction.text_values["val"].strip())
                 if not (15 <= v <= 45):
                     return await interaction.response.send_message(
                         embed=disnake.Embed(title="❌ Không hợp lệ", description="Phải từ 15 đến 45 giây.", color=disnake.Color.red()),
@@ -1056,14 +1053,13 @@ class VoteTimeModal(_BaseModal):
 class SkipDelayModal(_BaseModal):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("title", "Đặt delay DM Skip")
+        kwargs.setdefault("components", [TextInput(label="Delay (giây)", placeholder="Số giây trước khi nhắc skip", min_length=1, max_length=3, required=True, custom_id="val")])
         super().__init__(*args, **kwargs)
 
-    val = TextInput(label="Delay (giây)", placeholder="Số giây trước khi nhắc skip", min_length=1, max_length=3, required=True)
-
-    async def on_submit(self, interaction: disnake.ModalInteraction):
+    async def callback(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
-                v = max(0, int(self.val.value.strip()))
+                v = max(0, int(interaction.text_values["val"].strip()))
                 config = load_guild_config(self.guild_id)
                 config["skip_discussion_delay"] = v
                 save_guild_config(self.guild_id, config)
@@ -1081,27 +1077,29 @@ class SkipDelayModal(_BaseModal):
 
 
 class RenameChannelModal(Modal):
-    new_name = TextInput(
-        label="Tên kênh mới",
-        placeholder="Nhập tên mới",
-        min_length=1, max_length=100,
-        required=True,
-    )
-
     def __init__(self, bot, guild_id, lock, channel_type: str):
         titles = {
             "category": "Đổi tên danh mục",
             "text":     "Đổi tên kênh văn bản",
             "voice":    "Đổi tên kênh thoại",
         }
-        super().__init__(title=titles.get(channel_type, "Đổi tên kênh"))
+        super().__init__(
+            title=titles.get(channel_type, "Đổi tên kênh"),
+            components=[TextInput(
+                label="Tên kênh mới",
+                placeholder="Nhập tên mới",
+                min_length=1, max_length=100,
+                required=True,
+                custom_id="new_name",
+            )],
+        )
         self.bot          = bot
         self.guild_id     = guild_id
         self.lock         = lock
         self.channel_type = channel_type
 
-    async def on_submit(self, interaction: disnake.ModalInteraction):
-        new_name = self.new_name.value.strip()
+    async def callback(self, interaction: disnake.ModalInteraction):
+        new_name = interaction.text_values["new_name"].strip()
 
         # Bước 1: Validate nhanh trong lock (không có I/O Discord nào ở đây)
         channel  = None
