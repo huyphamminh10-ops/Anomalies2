@@ -528,4 +528,4 @@ class HelpCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(HelpCog(bot))
+    bot.add_cog(HelpCog(bot))

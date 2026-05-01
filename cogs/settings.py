@@ -1222,4 +1222,4 @@ class SettingsCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(SettingsCog(bot))
+    bot.add_cog(SettingsCog(bot))

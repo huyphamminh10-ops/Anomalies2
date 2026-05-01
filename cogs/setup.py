@@ -521,8 +521,6 @@ class Setup(commands.Cog):
                 "❌ Bạn không có quyền dùng lệnh này.", ephemeral=True
             )
 
-        await greet_owner_on_setup(interaction)
-
         already = ""
         if config.get("text_channel_id"):
             already = "\n\n⚠️ **Server đã được setup trước đó.** Tiếp tục sẽ tạo thêm kênh/role mới."
@@ -534,6 +532,8 @@ class Setup(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+        await greet_owner_on_setup(self.bot)
+
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Setup(bot))
+    bot.add_cog(Setup(bot))

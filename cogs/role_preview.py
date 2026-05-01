@@ -1993,4 +1993,4 @@ class RoleCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(RoleCog(bot))
+    bot.add_cog(RoleCog(bot))
