@@ -1326,7 +1326,7 @@ async def on_ready():
                 cog_name = f"cogs.{filename[:-3]}"
                 try:
                     if cog_name not in bot.extensions:
-                        await bot.load_extension(cog_name)
+                        bot.load_extension(cog_name)
                         print(f"[Bot] Đã load: {cog_name}")
                 except Exception as e:
                     cog_load_errors.append(cog_name)
