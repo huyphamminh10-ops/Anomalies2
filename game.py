@@ -976,12 +976,13 @@ WILL_TRIGGER      = "Nhập di chúc"
 
 
 # ── Chuyển số thành emoji chữ số Discord ─────────────────────────────────────
-def _num_to_emoji(n: int) -> str:
+def _num_to_emoji(n: int) -> list:
+    """Trả về list các emoji số, mỗi phần tử là 1 emoji để add_reaction riêng."""
     digits = {
         "0": "0️⃣", "1": "1️⃣", "2": "2️⃣", "3": "3️⃣", "4": "4️⃣",
         "5": "5️⃣", "6": "6️⃣", "7": "7️⃣", "8": "8️⃣", "9": "9️⃣",
     }
-    return "".join(digits[d] for d in str(n))
+    return [digits[d] for d in str(n)]
 
 
 class WillState:
@@ -1070,7 +1071,10 @@ async def handle_will_dm(active_games: dict, message: discord.Message) -> bool:
 
     # Kiểm tra giới hạn số dòng
     if len(ws.will_lines) >= MAX_WILL_LINES:
+        over_line = len(ws.will_lines) + 1
         await message.add_reaction("🚫")
+        for emoji in _num_to_emoji(over_line):
+            await message.add_reaction(emoji)
         await message.channel.send(
             f"Bạn không được viết quá **{MAX_WILL_LINES} dòng**. Di chúc đã được khóa."
         )
