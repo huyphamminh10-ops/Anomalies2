@@ -19,10 +19,6 @@
 # 13. Anti-Abuse Protection
 # 14. Future-Proof System (season/event/ranked hooks)
 # 15. Event Role Integration (Blind, Pro Tester, Cipher Breaker)
-#     - blind_active flag trong night_effects
-#     - ProTester._claimed_targets reset mỗi đêm
-#     - death_reason mapping cho event role deaths
-#     - blind_active tắt tự động khi ngày kết thúc
 # ==============================
 
 from __future__ import annotations
@@ -201,21 +197,21 @@ class GameLogger:
 
     def __init__(self, game_id: str, debug: bool = False, log_dir: str = "logs"):
         self.game_id  = game_id
-        self.debug_mode = debug  # ✅ FIX: Đổi từ self.debug → self.debug_mode
+        self.debug_mode = debug
         self.log_dir  = log_dir
         self._entries: List[Tuple[str, str, str]] = []
 
     def _record(self, level: str, msg: str):
         ts = datetime.utcnow().strftime("%H:%M:%S.%f")[:-3]
         self._entries.append((ts, level, msg))
-        if self.debug_mode or level in ("ERROR", "FATAL"):  # ✅ FIX: self.debug_mode
+        if self.debug_mode or level in ("ERROR", "FATAL"):
             print(f"[{self.game_id}][{ts}][{level}] {msg}")
 
     def info(self, msg: str):  self._record("INFO",  msg)
     def warn(self, msg: str):  self._record("WARN",  msg)
     def error(self, msg: str): self._record("ERROR", msg)
-    def debug(self, msg: str):  # ✅ Method này giờ callable
-        if self.debug_mode:      # ✅ FIX: self.debug_mode
+    def debug(self, msg: str):
+        if self.debug_mode:
             self._record("DEBUG", msg)
 
     def dump_to_file(self):
@@ -245,6 +241,15 @@ class _PlayerWrapper:
 
     def __getattr__(self, item):
         return getattr(self._member, item)
+
+    # ✅ FIX: thêm property display_name để tránh lỗi hiển thị object
+    @property
+    def display_name(self):
+        return self._member.display_name
+
+    # ✅ FIX: __str__ để in ra tên thay vì object repr
+    def __str__(self):
+        return self.display_name
 
     @property
     def alive(self):   return self._game.is_alive(self._member.id)
@@ -470,7 +475,7 @@ class VoiceController:
             # Khi unmute: thử tất cả (Discord voice cache có thể cũ)
             targets = list(members)
 
-        in_voice = targets  # alias để không đổi code bên dưới
+        in_voice = targets
         if not in_voice:
             return
 
@@ -1046,13 +1051,13 @@ async def handle_will_dm(active_games: dict, message: discord.Message) -> bool:
             return True
 
         ws.writing_will = True
+        # ✅ FIX: tạo file sẽ có di chúc (rỗng ban đầu) để đánh dấu đã bắt đầu
+        game.wills[uid] = ""
         embed = discord.Embed(
             title="📜 HỆ THỐNG DI CHÚC",
             description=(
                 f"Hãy viết di chúc của bạn, Tối đa **{MAX_WILL_LINES} dòng**. "
-                f"Hãy viết di chúc của bạn, Tối đa **{MAX_WILL_LINES} dòng**. "
-                f"Mỗi dòng tối đa **{MAX_WILL_CHARS} kí tự**\n"
-                "*(Số kí tự không tính dấu cách)*\n\n"
+                f"Mỗi dòng tối đa **{MAX_WILL_CHARS} kí tự** (không tính dấu cách)\n\n"
                 "⚠️ **Lưu ý:** Sau khi gửi mỗi dòng, bạn không thể chỉnh sửa dòng đó được nữa."
             ),
             color=0x9b59b6
@@ -1100,6 +1105,7 @@ async def handle_will_dm(active_games: dict, message: discord.Message) -> bool:
     ws.will_lines.append(content)
     current_line = len(ws.will_lines)
     game.wills[uid] = "\n".join(ws.will_lines)   # lưu realtime
+    game.logger.debug(f"[Will] Saved line {current_line} for uid {uid}: {content[:50]}")
 
     # React ✅ + số thứ tự dòng
     await message.add_reaction("✅")
@@ -1195,21 +1201,24 @@ class WillSelectMenu(discord.ui.Select):
 
 async def send_morning_will_board(game: "GameEngine"):
     """Gửi bảng danh sách người chết mỗi sáng — luôn hiện, kể cả khi không ai có di chúc."""
-    dead_ids = [pid for pid in game.players if not game.is_alive(pid)]
+    dead_ids = list(game.dead_players)  # lấy từ dead_players chính xác
 
     if not dead_ids:
-        return  # Chưa có ai chết → không gửi gì
+        return
 
     dead_with_wills = []
     dead_lines = []
 
     for pid in dead_ids:
-        member    = game.players.get(pid)
-        name      = member.display_name if member else str(pid)
-        role_obj  = game.roles.get(pid)
+        # ✅ Lấy member thật từ _players_dict để tránh wrapper in ra object
+        member = game._players_dict.get(pid)
+        if not member:
+            continue
+        name = member.display_name
+        role_obj = game.roles.get(pid)
         role_name = getattr(role_obj, "name", "Ẩn")
         will_text = game.wills.get(pid, "")
-        has_will  = bool(will_text and will_text.strip())
+        has_will = bool(will_text and will_text.strip())
 
         will_icon = "📜" if has_will else "🚫"
         dead_lines.append(f"💀 **{name}** — *{role_name}* {will_icon}")
@@ -1243,7 +1252,7 @@ async def send_morning_will_board(game: "GameEngine"):
 async def publish_will(game: "GameEngine", member_id: int):
     """Hiển thị di chúc ngay khi người chơi chết (dùng lại ở một số role đặc biệt)."""
     ws     = game.will_states.get(member_id)
-    member = game.players.get(member_id)
+    member = game._players_dict.get(member_id)
     name   = member.display_name if member else str(member_id)
 
     if not ws or not ws.will_lines:
@@ -1488,7 +1497,6 @@ class GameEngine:
                 await member.remove_roles(*to_remove, reason="Anomalies — hết trận")
             except Exception as e:
                 self.logger.warn(f"Cannot cleanup roles for {member.display_name}: {e}")
-
 
     def get_member(self, pid: int) -> Optional[discord.Member]:
         return self._players_dict.get(pid)
@@ -2183,9 +2191,6 @@ class GameEngine:
             self.add_night_event("Survivors", "Camera an ninh đã ghi lại hoạt động đêm nay.")
 
         # ── THE GLITCH-STALKER (Kẻ Rình Rập) ──────────────────────
-        # FIX BUG: trước đây lookup bằng tên tiếng Anh "The Glitch-Stalker"
-        # nhưng class đặt name="Kẻ Rình Rập" → get_role_by_name trả None →
-        # block không chạy → người chơi kẹt ở "Đang theo dõi mục tiêu".
         stalker = self.get_role_by_name("Kẻ Rình Rập")
         if stalker and getattr(stalker, "target_id", None):
             target_role = self.roles.get(stalker.target_id)
@@ -2422,13 +2427,24 @@ class GameEngine:
             except Exception:
                 self.logger.error(f"on_death error [{role.name}]: {traceback.format_exc()}")
 
-        # Khoá di chúc khi chết — nếu đang ghi dở thì flush luôn
+        # ✅ FIX: Khoá di chúc khi chết — nếu đang ghi dở thì flush luôn
         _ws = self.will_states.get(pid)
-        if _ws and _ws.writing_will:
-            if _ws.will_lines:
+        if _ws:
+            if _ws.writing_will:
+                if _ws.will_lines:
+                    self.wills[pid] = "\n".join(_ws.will_lines)
+                    self.logger.debug(f"[Will] Flushed will for {member.display_name} (pid={pid}) with {len(_ws.will_lines)} lines")
+                _ws.writing_will = False
+                _ws.locked = True
+            elif _ws.will_lines:
+                # Trường hợp đã kết thúc ghi trước đó, vẫn đảm bảo wills có dữ liệu
+                if pid not in self.wills or not self.wills[pid]:
+                    self.wills[pid] = "\n".join(_ws.will_lines)
+
+        # Đảm bảo nếu có will_lines nhưng chưa kịp lưu do không ở writing_will (hiếm)
+        if pid not in self.wills or not self.wills[pid]:
+            if _ws and _ws.will_lines:
                 self.wills[pid] = "\n".join(_ws.will_lines)
-            _ws.writing_will = False
-            _ws.locked = True
 
         # Dead Chat
         await self.dead_chat_mgr.add_dead_player(member)
@@ -2726,109 +2742,108 @@ class GameEngine:
 
         self.logger.info(f"[emergency_force_end] Hủy trận {self.game_id}: {reason}")
 
-  
     async def phase_day(self):
-      # ── Nhạc ngày ────────────────────────────────────────────
-      if self.music_player:
-          await self.music_player.play_day()
-      self.phase      = "day"
-      self.day_count += 1
+        # ── Nhạc ngày ────────────────────────────────────────────
+        if self.music_player:
+            await self.music_player.play_day()
+        self.phase      = "day"
+        self.day_count += 1
 
-      day_time = 20 if self.fast_forward_next_day else self.config.day_time
+        day_time = 20 if self.fast_forward_next_day else self.config.day_time
 
-      await self._fire_hooks("on_day_start")
-      # Quản trò Gemini chào mừng + bắt đầu vòng 30s ở text channel
-      if self.gemini_host:
-          try:
-              await self.gemini_host.on_day_start(self.day_count)
-          except Exception as _e:
-              self.logger.warn(f"GeminiHost on_day_start lỗi: {_e}")
-      await self.log(
-          f"☀️ **NGÀY {self.day_count}** — Thảo luận bắt đầu! ({day_time}s)"
-          + (" ⏩ *(Rút ngắn!)*" if self.fast_forward_next_day else ""),
-          color=0xf39c12
-      )
+        await self._fire_hooks("on_day_start")
+        # Quản trò Gemini chào mừng + bắt đầu vòng 30s ở text channel
+        if self.gemini_host:
+            try:
+                await self.gemini_host.on_day_start(self.day_count)
+            except Exception as _e:
+                self.logger.warn(f"GeminiHost on_day_start lỗi: {_e}")
+        await self.log(
+            f"☀️ **NGÀY {self.day_count}** — Thảo luận bắt đầu! ({day_time}s)"
+            + (" ⏩ *(Rút ngắn!)*" if self.fast_forward_next_day else ""),
+            color=0xf39c12
+        )
 
-      # ── Thông báo xác chết từ đêm qua (defer đến sáng) ─────────────────
-      if self.pending_death_announcements:
-          for name in self.pending_death_announcements:
-              await self.log(f"💀 **{name}** ĐÃ CHẾT trong đêm qua.", color=0xe74c3c)
-          self.pending_death_announcements.clear()
+        # ── Thông báo xác chết từ đêm qua (defer đến sáng) ─────────────────
+        if self.pending_death_announcements:
+            for name in self.pending_death_announcements:
+                await self.log(f"💀 **{name}** ĐÃ CHẾT trong đêm qua.", color=0xe74c3c)
+            self.pending_death_announcements.clear()
 
-      # ── Bảng di chúc sáng — cho người sống xem di chúc người đã chết ────
-      try:
-          await send_morning_will_board(self)
-      except Exception:
-          pass
+        # ── Bảng di chúc sáng — cho người sống xem di chúc người đã chết ────
+        try:
+            await send_morning_will_board(self)
+        except Exception:
+            pass
 
-      alive_members = self.get_alive_players()
+        alive_members = self.get_alive_players()
 
-      # Unmute tất cả người còn sống vào ban ngày
-      if self.config.allow_voice and self._muting_enabled and self.config.voice_mode != "parliament":
-          if alive_members:
-              await self.voice_ctrl.set_mute(alive_members, False)
+        # Unmute tất cả người còn sống vào ban ngày
+        if self.config.allow_voice and self._muting_enabled and self.config.voice_mode != "parliament":
+            if alive_members:
+                await self.voice_ctrl.set_mute(alive_members, False)
 
-      if self.config.voice_mode == "parliament":
-          await self.voice_ctrl.start_parliament(alive_members, self.text_channel)
+        if self.config.voice_mode == "parliament":
+            await self.voice_ctrl.start_parliament(alive_members, self.text_channel)
 
-      if self.config.allow_skip:
-          skip_tracker = SkipTracker(self, day_time)
-          await self.text_channel.send(
-              embed=discord.Embed(
-                  title="⏩ Bỏ Phiếu Rút Ngắn",
-                  description=f"≥{int(self.config.skip_threshold*100)}% đồng ý → kết thúc sớm.",
-                  color=0x3498db
-              ),
-              view=skip_tracker
-          )
-      else:
-          skip_tracker = None
+        if self.config.allow_skip:
+            skip_tracker = SkipTracker(self, day_time)
+            await self.text_channel.send(
+                embed=discord.Embed(
+                    title="⏩ Bỏ Phiếu Rút Ngắn",
+                    description=f"≥{int(self.config.skip_threshold*100)}% đồng ý → kết thúc sớm.",
+                    color=0x3498db
+                ),
+                view=skip_tracker
+            )
+        else:
+            skip_tracker = None
 
-      # Đồng hồ đếm ngược ngày
-      day_timer_embed = discord.Embed(
-          title=f"☀️ NGÀY {self.day_count} — THẢO LUẬN",
-          description=f"⏱️ Còn lại: **{day_time}s**",
-          color=0xf39c12
-      )
-      day_timer_msg = None
-      try:
-          day_timer_msg = await self.text_channel.send(embed=day_timer_embed)
-      except Exception:
-          pass
-      for elapsed in range(day_time):
-          await asyncio.sleep(1)
-          # Kiểm tra skip vote — nếu đủ phiếu thì kết thúc sớm
-          if skip_tracker is not None and skip_tracker.skip_event.is_set():
-              break
-          remaining = day_time - elapsed - 1
-          if day_timer_msg and elapsed % 5 == 0:
-              try:
-                  day_timer_embed.description = f"⏱️ Còn lại: **{remaining}s**"
-                  await day_timer_msg.edit(embed=day_timer_embed)
-              except Exception:
-                  pass
-      if day_timer_msg:
-          try:
-              day_timer_embed.description = "⏱️ Hết thời gian thảo luận!"
-              await day_timer_msg.edit(embed=day_timer_embed)
-          except Exception:
-              pass
+        # Đồng hồ đếm ngược ngày
+        day_timer_embed = discord.Embed(
+            title=f"☀️ NGÀY {self.day_count} — THẢO LUẬN",
+            description=f"⏱️ Còn lại: **{day_time}s**",
+            color=0xf39c12
+        )
+        day_timer_msg = None
+        try:
+            day_timer_msg = await self.text_channel.send(embed=day_timer_embed)
+        except Exception:
+            pass
+        for elapsed in range(day_time):
+            await asyncio.sleep(1)
+            # Kiểm tra skip vote — nếu đủ phiếu thì kết thúc sớm
+            if skip_tracker is not None and skip_tracker.skip_event.is_set():
+                break
+            remaining = day_time - elapsed - 1
+            if day_timer_msg and elapsed % 5 == 0:
+                try:
+                    day_timer_embed.description = f"⏱️ Còn lại: **{remaining}s**"
+                    await day_timer_msg.edit(embed=day_timer_embed)
+                except Exception:
+                    pass
+        if day_timer_msg:
+            try:
+                day_timer_embed.description = "⏱️ Hết thời gian thảo luận!"
+                await day_timer_msg.edit(embed=day_timer_embed)
+            except Exception:
+                pass
 
-      self.voice_ctrl.stop_parliament()
+        self.voice_ctrl.stop_parliament()
 
-      # ── Event role: day end hooks ─────────────────────────────
-      # Blind: tắt hiệu ứng mù sau khi ngày kết thúc
-      if self.night_effects.get("blind_active"):
-          self.night_effects["blind_active"] = False
-          self.logger.info("[Event] blind_active reset sau khi ngày kết thúc.")
+        # ── Event role: day end hooks ─────────────────────────────
+        # Blind: tắt hiệu ứng mù sau khi ngày kết thúc
+        if self.night_effects.get("blind_active"):
+            self.night_effects["blind_active"] = False
+            self.logger.info("[Event] blind_active reset sau khi ngày kết thúc.")
 
-      await self._fire_hooks("on_day_end")
-      # Quản trò Gemini: dừng chat ngày, chuyển sang Anomalies/Dead Chat
-      if self.gemini_host:
-          try:
-              await self.gemini_host.on_day_end()
-          except Exception as _e:
-              self.logger.warn(f"GeminiHost on_day_end lỗi: {_e}")
+        await self._fire_hooks("on_day_end")
+        # Quản trò Gemini: dừng chat ngày, chuyển sang Anomalies/Dead Chat
+        if self.gemini_host:
+            try:
+                await self.gemini_host.on_day_end()
+            except Exception as _e:
+                self.logger.warn(f"GeminiHost on_day_end lỗi: {_e}")
 
     # ══════════════════════════════════════════════════
     # §12.12  PHASE: VOTING
@@ -2992,207 +3007,3 @@ class SkipTracker(discord.ui.View):
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
         if not self.game.abuse_tracker.is_allowed(uid):
-            await interaction.response.send_message("⏳ Bạn đang nhấn quá nhanh!", ephemeral=True)
-            return
-        if not self.game.is_alive(uid):
-            await interaction.response.send_message("Bạn đã chết!", ephemeral=True)
-            return
-        if uid in self.skippers:
-            await interaction.response.send_message("Bạn đã vote skip rồi!", ephemeral=True)
-            return
-
-        self.skippers.add(uid)
-        alive_count = len(self.game.get_alive_players())
-        needed      = math.ceil(alive_count * self.game.config.skip_threshold)
-
-        await interaction.response.send_message(f"⏩ Đã vote skip! ({len(self.skippers)}/{needed})", ephemeral=True)
-        if len(self.skippers) >= needed:
-            await self.game.log("⏩ Đủ phiếu! Thảo luận kết thúc sớm.", color=0x3498db)
-            self.skip_event.set()
-            self.stop()
-
-
-class VoteViewV2(discord.ui.View):
-    """
-    Upgraded vote view supporting anonymous/public mode,
-    skip vote, and anti-abuse.
-    """
-    def __init__(self, game: GameEngine, alive_members: List, timeout: int, session: VotingSession):
-        super().__init__(timeout=timeout)
-        self.game    = game
-        self.session = session
-
-        options = [
-            discord.SelectOption(label=m.display_name, value=str(m.id))
-            for m in alive_members
-        ]
-        self.add_item(VoteSelectV2(game, session, options))
-
-        if game.config.allow_skip:
-            self.add_item(SkipVoteButton(game, session))
-
-
-class VoteSelectV2(discord.ui.Select):
-    def __init__(self, game: GameEngine, session: VotingSession, options: List):
-        self.game    = game
-        self.session = session
-        super().__init__(
-            placeholder="Chọn người bạn muốn trục xuất...",
-            options=options[:25],
-            min_values=1,
-            max_values=1
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        uid = interaction.user.id
-
-        if not self.game.abuse_tracker.is_allowed(uid):
-            await interaction.response.send_message("⏳ Hành động quá nhanh! Chờ 2 giây.", ephemeral=True)
-            return
-
-        if not self.game.is_alive(uid):
-            await interaction.response.send_message("Bạn đã chết, không thể vote!", ephemeral=True)
-            return
-
-        # Check phase still active
-        if self.game.phase != "vote":
-            await interaction.response.send_message("⏰ Hết thời gian bỏ phiếu!", ephemeral=True)
-            return
-
-        target_id = int(self.values[0])
-        # Reset timer để record_vote không bị chặn bởi abuse check lần 2
-        self.game.abuse_tracker.reset(uid)
-        ok = self.session.record_vote(uid, target_id)
-
-        if not ok:
-            await interaction.response.send_message("❌ Không thể vote!", ephemeral=True)
-            return
-
-        target = self.game.players.get(target_id)
-        target_name = target.display_name if target else "?"
-
-        if self.game.config.anonymous_vote:
-            msg = f"✅ Đã ghi phiếu."
-        else:
-            msg = f"✅ Đã vote: **{target_name}**"
-
-        await interaction.response.send_message(msg, ephemeral=True)
-
-
-class SkipVoteButton(discord.ui.Button):
-    def __init__(self, game: GameEngine, session: VotingSession):
-        super().__init__(label="⏭️ Bỏ qua vote", style=discord.ButtonStyle.secondary)
-        self.game    = game
-        self.session = session
-
-    async def callback(self, interaction: discord.Interaction):
-        uid = interaction.user.id
-        if not self.game.abuse_tracker.is_allowed(uid):
-            await interaction.response.send_message("⏳ Quá nhanh!", ephemeral=True)
-            return
-        # Reset timer để record_skip không bị chặn bởi abuse check lần 2
-        self.game.abuse_tracker.reset(uid)
-        ok = self.session.record_skip(uid)
-        if ok:
-            alive  = len(self.game.get_alive_players())
-            needed = math.ceil(alive * self.game.config.skip_threshold)
-            await interaction.response.send_message(
-                f"⏭️ Đã vote bỏ qua ({len(self.session.skip_votes)}/{needed}).", ephemeral=True
-            )
-        else:
-            await interaction.response.send_message("❌ Không hợp lệ.", ephemeral=True)
-
-
-# ══════════════════════════════════════════════════════════════════════
-# §14  EXTENSIBLE BASE ROLE  (new framework)
-# ══════════════════════════════════════════════════════════════════════
-
-class ExtensibleBaseRole:
-    """
-    Drop-in replacement for BaseRole with full v2 framework support.
-
-    New fields:
-        priority    — action priority (lower = first)
-        max_uses    — None = unlimited; int = limited uses
-        cooldown    — turns to wait before next use
-        is_unique   — only 1 per game
-        tier        — "Core" | "Rare" | "Chaos"
-        win_type    — "team" | "solo" | "hidden"
-    """
-
-    name        = "Base"
-    faction     = "Unknown"
-    team        = "Unknown"
-    max_count   = 1
-    description = "No description"
-
-    # v2 framework fields
-    priority    = PRIORITY_KILL
-    max_uses    = None
-    is_unique   = False
-    tier        = "Core"    # Core / Rare / Chaos
-    win_type    = "team"    # team / solo / hidden
-
-    def __init__(self, player):
-        self.player          = player
-        self.alive           = True
-        self.uses_remaining  = self.max_uses
-        self._cooldown_timer = 0
-
-        # Sync faction ↔ team
-        if self.team == "Unknown" and self.faction != "Unknown":
-            self.team = self.faction
-        elif self.faction == "Unknown" and self.team != "Unknown":
-            self.faction = self.team
-
-    # ── Lifecycle hooks ───────────────────────────────────────────
-    async def on_game_start(self, game): pass
-    async def on_death(self, game): pass
-    async def on_new_day(self, game):
-        """Called at start of each day — tick cooldown."""
-        if self._cooldown_timer > 0:
-            self._cooldown_timer -= 1
-
-    async def night_action(self, game): pass
-    async def day_action(self, game): pass
-
-    # ── ActionQueue integration ───────────────────────────────────
-    def build_night_action(self, game, handler, target_id=None, **kwargs) -> Optional[NightAction]:
-        """
-        Helper to create and register a NightAction.
-        Returns None if on cooldown or out of uses.
-        """
-        if self._cooldown_timer > 0:
-            return None
-        if self.max_uses is not None and self.uses_remaining is not None and self.uses_remaining <= 0:
-            return None
-        action = NightAction(
-            actor_id  = self.player.id,
-            role_name = self.name,
-            priority  = self.priority,
-            handler   = handler,
-            target_id = target_id,
-            faction   = self.team,
-            **kwargs
-        )
-        game.register_action(action)
-        if self.uses_remaining is not None:
-            self.uses_remaining -= 1
-        return action
-
-    # ── Vote weight ───────────────────────────────────────────────
-    def vote_weight(self) -> float:
-        return 1.0
-
-    # ── Info ──────────────────────────────────────────────────────
-    def info_text(self) -> str:
-        return (
-            f"🎭 Vai trò: {self.name}\n"
-            f"🏳️ Phe: {self.team}\n"
-            f"⭐ Tier: {self.tier}\n"
-            f"📜 {self.description}"
-        )
-
-    def check_win_condition(self, game) -> bool:
-        """Override for solo-win roles."""
-        return False
