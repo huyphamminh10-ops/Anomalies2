@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -36,7 +36,7 @@ class TheHarbinger(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -47,7 +47,7 @@ class TheHarbinger(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -113,16 +113,16 @@ class TheHarbinger(BaseRole):
     # =========================================
     # VIEW CHỌN ĐÁNH DẤU
     # =========================================
-    class MarkView(discord.ui.View):
+    class MarkView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25]
             self.add_item(TheHarbinger.MarkSelect(game, role, options))
 
-    class MarkSelect(discord.ui.Select):
+    class MarkSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -134,7 +134,7 @@ class TheHarbinger(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             target_id = int(self.values[0])
 
@@ -154,14 +154,14 @@ class TheHarbinger(BaseRole):
     # =========================================
     # VIEW KÍCH HOẠT MASS KILL
     # =========================================
-    class ActivateView(discord.ui.View):
+    class ActivateView(disnake.ui.View):
         def __init__(self, game, role):
             super().__init__(timeout=60)
             self.game = game
             self.role = role
 
-        @discord.ui.button(label="☠️ Kích Hoạt", style=discord.ButtonStyle.danger)
-        async def activate(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="☠️ Kích Hoạt", style=disnake.ButtonStyle.danger)
+        async def activate(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
 
             alive_marked = [
                 pid for pid in self.role.marked

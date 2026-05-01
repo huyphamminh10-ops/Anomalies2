@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -54,7 +54,7 @@ class ThePsychopath(BaseRole):
         view = self.PsychopathView(self)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🩸 ĐÊM — KẺ THẦN KINH",
                     description=(
                         "Bạn không có hành động đặc biệt vào ban đêm.\n\n"
@@ -72,19 +72,19 @@ class ThePsychopath(BaseRole):
         except Exception:
             pass
 
-    class PsychopathView(discord.ui.View):
+    class PsychopathView(disnake.ui.View):
         def __init__(self, role):
             super().__init__(timeout=60)
             self.role = role
 
-        @discord.ui.button(label="🩸 Xem điều kiện thắng", style=discord.ButtonStyle.danger)
-        async def view_win_condition(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="🩸 Xem điều kiện thắng", style=disnake.ButtonStyle.danger)
+        async def view_win_condition(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
 
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🎯 ĐIỀU KIỆN THẮNG",
                     description=(
                         "✅ **Bị trục xuất bằng bỏ phiếu ban ngày**\n"
@@ -98,14 +98,14 @@ class ThePsychopath(BaseRole):
                 ephemeral=True
             )
 
-        @discord.ui.button(label="📖 Xem luật chơi", style=discord.ButtonStyle.secondary)
-        async def view_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="📖 Xem luật chơi", style=disnake.ButtonStyle.secondary)
+        async def view_rules(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
 
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="📖 LUẬT CHƠI — KẺ THẦN KINH",
                     description=(
                         "🔴 **Bạn trông như Anomaly** với tất cả Dị Thể.\n"

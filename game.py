@@ -37,7 +37,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-import discord
+import disnake
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -264,19 +264,19 @@ class _PlayerWrapper:
     def id(self):    return self._member.id
 
 
-class _ChoiceView(discord.ui.View):
+class _ChoiceView(disnake.ui.View):
     def __init__(self, members, timeout=30):
         super().__init__(timeout=timeout)
         self.chosen     = members[0] if members else None
         self.members_map = {m.id: m for m in members}
-        options = [discord.SelectOption(label=m.display_name, value=str(m.id)) for m in members]
+        options = [disnake.SelectOption(label=m.display_name, value=str(m.id)) for m in members]
         self.add_item(self._ChoiceSelect(self, options))
 
-    class _ChoiceSelect(discord.ui.Select):
+    class _ChoiceSelect(disnake.ui.Select):
         def __init__(self, view_ref, options):
             super().__init__(placeholder="Chọn mục tiêu...", options=options[:25], min_values=1, max_values=1)
             self.view_ref = view_ref
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             chosen_id = int(self.values[0])
             self.view_ref.chosen = self.view_ref.members_map.get(chosen_id)
             await interaction.response.send_message("✅ Đã chọn!", ephemeral=True)
@@ -463,7 +463,7 @@ class VoiceController:
         self.logger = logger
         self._parliament_task: Optional[asyncio.Task] = None
 
-    async def set_mute(self, members: List[discord.Member], muted: bool):
+    async def set_mute(self, members: List[disnake.Member], muted: bool):
         """Batch mute/unmute with small delay per batch."""
         if not self.config.allow_voice:
             return
@@ -494,15 +494,15 @@ class VoiceController:
         action = "muted" if muted else "unmuted"
         self.logger.debug(f"Voice: {action} {len(in_voice)} members in voice")
 
-    async def _try_mute(self, member: discord.Member, muted: bool, _retries: int = 3):
+    async def _try_mute(self, member: disnake.Member, muted: bool, _retries: int = 3):
         for attempt in range(_retries):
             try:
                 await member.edit(mute=muted)
                 return
-            except discord.Forbidden:
+            except disnake.Forbidden:
                 self.logger.warn(f"No permission to mute {member.display_name}")
                 return
-            except discord.HTTPException as e:
+            except disnake.HTTPException as e:
                 if e.status == 400:
                     return  # member not in voice — bỏ qua
                 if e.status == 429:
@@ -513,7 +513,7 @@ class VoiceController:
                 self.logger.warn(f"HTTP {e.status} muting {member.display_name}: {e}")
                 return
 
-    async def start_parliament(self, members: List[discord.Member], channel: discord.TextChannel):
+    async def start_parliament(self, members: List[disnake.Member], channel: disnake.TextChannel):
         """Parliament mode: each living member speaks for X seconds in order."""
         if self.config.voice_mode != "parliament":
             return
@@ -523,7 +523,7 @@ class VoiceController:
             self._parliament_loop(members, channel)
         )
 
-    async def _parliament_loop(self, members: List[discord.Member], channel: discord.TextChannel):
+    async def _parliament_loop(self, members: List[disnake.Member], channel: disnake.TextChannel):
         secs = self.config.parliament_seconds
         try:
             for member in members:
@@ -566,10 +566,10 @@ class AnomalyChatManager:
 
     def __init__(self, logger):
         self.logger  = logger
-        self.channel: Optional[discord.TextChannel] = None
+        self.channel: Optional[disnake.TextChannel] = None
 
     # ── Tạo kênh ──────────────────────────────────────────────────────────────
-    async def create(self, guild: discord.Guild, category=None, fallback_channel=None):
+    async def create(self, guild: disnake.Guild, category=None, fallback_channel=None):
         """
         Luôn tạo PRIVATE THREAD trong `fallback_channel` (text_channel chính của game),
         bất kể có hay không có category.
@@ -579,7 +579,7 @@ class AnomalyChatManager:
             try:
                 self.channel = await fallback_channel.create_thread(
                     name="🔴 Anomalies Chat",
-                    type=discord.ChannelType.private_thread,
+                    type=disnake.ChannelType.private_thread,
                     invitable=False,
                     auto_archive_duration=1440,
                     reason="Anomalies Game — Anomaly Chat",
@@ -644,7 +644,7 @@ class AnomalyChatManager:
 
         total_alive = len(game.get_alive_players())
 
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title=f"📊 BÁO CÁO ĐÊM {game.night_count} — ANOMALIES INTEL",
             description=(
                 "Thông tin tình hình trận đấu sau đêm vừa qua.\n"
@@ -714,13 +714,13 @@ class DeadChatManager:
 
     def __init__(self, logger: GameLogger):
         self.logger    = logger
-        self.channel: Optional[discord.TextChannel] = None
-        self._dead_overwrites: Dict[int, discord.PermissionOverwrite] = {}
+        self.channel: Optional[disnake.TextChannel] = None
+        self._dead_overwrites: Dict[int, disnake.PermissionOverwrite] = {}
 
     async def create(
         self,
-        guild: discord.Guild,
-        category: Optional[discord.CategoryChannel] = None,
+        guild: disnake.Guild,
+        category: Optional[disnake.CategoryChannel] = None,
         fallback_channel=None,
     ):
         """
@@ -732,7 +732,7 @@ class DeadChatManager:
             try:
                 self.channel = await fallback_channel.create_thread(
                     name="💀 Dead Chat",
-                    type=discord.ChannelType.private_thread,
+                    type=disnake.ChannelType.private_thread,
                     invitable=False,
                     auto_archive_duration=1440,
                     reason="Anomalies Game — Dead Chat",
@@ -745,7 +745,7 @@ class DeadChatManager:
         else:
             self.logger.error("Dead Chat: không có fallback_channel để tạo private thread.")
 
-    async def add_dead_player(self, member: discord.Member):
+    async def add_dead_player(self, member: disnake.Member):
         """Grant send permissions to a newly dead player."""
         if not self.channel:
             return
@@ -753,7 +753,7 @@ class DeadChatManager:
             if getattr(self, "is_thread", False):
                 await self.channel.add_user(member)
             else:
-                overwrite = discord.PermissionOverwrite(
+                overwrite = disnake.PermissionOverwrite(
                     read_messages=True,
                     send_messages=True,
                 )
@@ -765,7 +765,7 @@ class DeadChatManager:
         except Exception as e:
             self.logger.warn(f"Could not add {member.display_name} to Dead Chat: {e}")
 
-    async def add_spectator(self, member: discord.Member):
+    async def add_spectator(self, member: disnake.Member):
         """Spectators can read but not write."""
         if not self.channel:
             return
@@ -773,7 +773,7 @@ class DeadChatManager:
             if getattr(self, "is_thread", False):
                 await self.channel.add_user(member)
                 return
-            overwrite = discord.PermissionOverwrite(
+            overwrite = disnake.PermissionOverwrite(
                 read_messages=True,
                 send_messages=False,
             )
@@ -1003,14 +1003,14 @@ def get_will_state(game: "GameEngine", member_id: int) -> "WillState":
     return game.will_states[member_id]
 
 
-async def handle_will_message(game: "GameEngine", message: discord.Message) -> bool:
+async def handle_will_message(game: "GameEngine", message: disnake.Message) -> bool:
     """STUB — di chúc nay được xử lý hoàn toàn qua DM (handle_will_dm).
     Hàm này giữ nguyên để app.py không bị lỗi import, nhưng luôn trả False.
     """
     return False
 
 
-async def handle_will_dm(active_games: dict, message: discord.Message) -> bool:
+async def handle_will_dm(active_games: dict, message: disnake.Message) -> bool:
     """Xử lý toàn bộ cơ chế di chúc trong DM của bot.
     Được gọi từ on_message khi message.guild is None.
     Trả về True nếu đã xử lý (để on_message không gọi handle_owner_dm).
@@ -1053,7 +1053,7 @@ async def handle_will_dm(active_games: dict, message: discord.Message) -> bool:
         ws.writing_will = True
         # ✅ FIX: tạo file sẽ có di chúc (rỗng ban đầu) để đánh dấu đã bắt đầu
         game.wills[uid] = ""
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="📜 HỆ THỐNG DI CHÚC",
             description=(
                 f"Hãy viết di chúc của bạn, Tối đa **{MAX_WILL_LINES} dòng**. "
@@ -1125,7 +1125,7 @@ async def handle_will_dm(active_games: dict, message: discord.Message) -> bool:
 
 # ── Embed + Select sáng: xem di chúc người đã chết ───────────────────────────
 
-class WillSelectView(discord.ui.View):
+class WillSelectView(disnake.ui.View):
     """View gửi vào text channel mỗi sáng để xem di chúc người chết."""
 
     def __init__(self, game: "GameEngine", dead_with_wills: list):
@@ -1136,11 +1136,11 @@ class WillSelectView(discord.ui.View):
             self.add_item(WillSelectMenu(game, dead_with_wills))
 
 
-class WillSelectMenu(discord.ui.Select):
+class WillSelectMenu(disnake.ui.Select):
     def __init__(self, game: "GameEngine", dead_with_wills: list):
         self._game = game
         options = [
-            discord.SelectOption(
+            disnake.SelectOption(
                 label=name[:100],
                 value=str(mid),
                 emoji="📜"
@@ -1154,7 +1154,7 @@ class WillSelectMenu(discord.ui.Select):
             max_values=1
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         mid  = int(self.values[0])
         name = next((n for m, n in [(o.value, o.label) for o in self.options] if int(m) == mid), str(mid))
 
@@ -1175,13 +1175,13 @@ class WillSelectMenu(discord.ui.Select):
             + f"\n\nMong rằng nó sẽ giúp bạn."
         )
 
-        # Gửi DM kèm file .txt (không mã hóa đầu cuối — dùng discord.File với StringIO)
+        # Gửi DM kèm file .txt (không mã hóa đầu cuối — dùng disnake.File với StringIO)
         import io
         file_bytes = file_content.encode("utf-8")
         fp = io.BytesIO(file_bytes)
         fp.seek(0)
         filename = f"di_chuc_{name.replace(' ', '_')}.txt"
-        dfile    = discord.File(fp, filename=filename)
+        dfile    = disnake.File(fp, filename=filename)
 
         try:
             await interaction.user.send(
@@ -1192,7 +1192,7 @@ class WillSelectMenu(discord.ui.Select):
                 f"✅ Đã gửi di chúc của **{name}** vào DM của bạn!",
                 ephemeral=True
             )
-        except discord.Forbidden:
+        except disnake.Forbidden:
             await interaction.response.send_message(
                 "❌ Không thể gửi DM cho bạn. Hãy bật cho phép nhận tin nhắn từ thành viên server.",
                 ephemeral=True
@@ -1235,7 +1235,7 @@ async def send_morning_will_board(game: "GameEngine"):
     else:
         description += "\n\n*Không ai để lại di chúc.*"
 
-    embed = discord.Embed(
+    embed = disnake.Embed(
         title="📋 LÁ THƯ NGƯỜI CHẾT",
         description=description,
         color=0x9b59b6
@@ -1263,7 +1263,7 @@ async def publish_will(game: "GameEngine", member_id: int):
     if len(content) > 4000:
         content = content[:4000] + "\n*...(cắt bớt)*"
 
-    await game.text_channel.send(embed=discord.Embed(
+    await game.text_channel.send(embed=disnake.Embed(
         title=f"📜 DI CHÚC CỦA {name}",
         description=content,
         color=0x9b59b6
@@ -1288,11 +1288,11 @@ class GameEngine:
 
     def __init__(
         self,
-        guild: discord.Guild,
-        members: List[discord.Member],
-        text_channel: discord.TextChannel,
+        guild: disnake.Guild,
+        members: List[disnake.Member],
+        text_channel: disnake.TextChannel,
         config: Optional[GameConfig] = None,
-        voice_channel: Optional[discord.VoiceChannel] = None,
+        voice_channel: Optional[disnake.VoiceChannel] = None,
     ):
         # ── IDs & Identity ────────────────────────────────────────
         self.game_id  = f"ANOMALIES-{uuid.uuid4().hex[:8].upper()}"
@@ -1369,7 +1369,7 @@ class GameEngine:
         self.harbinger_mass_kill   = False
         self.anomaly_chat          = None
         self.log_channel           = text_channel
-        self.dead_chat: Optional[discord.TextChannel] = None
+        self.dead_chat: Optional[disnake.TextChannel] = None
 
         # ── Voice state ───────────────────────────────────────────
         self._muting_enabled: bool = True  # tắt khi end_game để tránh race condition
@@ -1432,17 +1432,17 @@ class GameEngine:
     # §12.2b  DISCORD ROLE & VOICE HELPERS
     # ══════════════════════════════════════════════════
 
-    def _get_dead_role(self) -> "discord.Role | None":
+    def _get_dead_role(self) -> "disnake.Role | None":
         if not self.config.dead_role_id:
             return None
         return self.guild.get_role(self.config.dead_role_id)
 
-    def _get_alive_role(self) -> "discord.Role | None":
+    def _get_alive_role(self) -> "disnake.Role | None":
         if not self.config.alive_role_id:
             return None
         return self.guild.get_role(self.config.alive_role_id)
 
-    async def _assign_alive_role(self, member: discord.Member):
+    async def _assign_alive_role(self, member: disnake.Member):
         """Gán Alive role khi game bắt đầu."""
         if self.config.no_remove_roles:
             return
@@ -1455,7 +1455,7 @@ class GameEngine:
         except Exception as e:
             self.logger.warn(f"Cannot add Alive role to {member.display_name}: {e}")
 
-    async def _apply_dead_role(self, member: discord.Member, force_mute: bool = False):
+    async def _apply_dead_role(self, member: disnake.Member, force_mute: bool = False):
         """
         Khi chết: gỡ Alive role, gán Dead role, mute nếu cần.
         force_mute=True: bỏ qua config.mute_dead (dùng cho vote-out — luôn mute).
@@ -1485,7 +1485,7 @@ class GameEngine:
             # Nếu không trong voice → đánh dấu để mute khi vào lại
             self._force_muted.add(member.id)
 
-    async def _cleanup_discord_roles(self, member: discord.Member):
+    async def _cleanup_discord_roles(self, member: disnake.Member):
         """Hết trận: tháo Dead/Alive role, unmute."""
         if self.config.no_remove_roles:
             return
@@ -1498,7 +1498,7 @@ class GameEngine:
             except Exception as e:
                 self.logger.warn(f"Cannot cleanup roles for {member.display_name}: {e}")
 
-    def get_member(self, pid: int) -> Optional[discord.Member]:
+    def get_member(self, pid: int) -> Optional[disnake.Member]:
         return self._players_dict.get(pid)
 
     def get_player_wrapper(self, pid: int) -> Optional[_PlayerWrapper]:
@@ -1526,12 +1526,12 @@ class GameEngine:
     # §NICK REGISTRY — lưu & trả lại nick khi đổi tên
     # ══════════════════════════════════════════════════
 
-    def save_nick(self, member: discord.Member) -> None:
+    def save_nick(self, member: disnake.Member) -> None:
         """Lưu nick gốc của member nếu chưa lưu. Gọi TRƯỚC khi edit(nick=...)."""
         if member.id not in self.nick_registry:
             self.nick_registry[member.id] = member.nick  # None nếu chưa có nick
 
-    async def restore_nick(self, member: discord.Member) -> None:
+    async def restore_nick(self, member: disnake.Member) -> None:
         """Trả lại nick gốc đã lưu cho member."""
         original = self.nick_registry.pop(member.id, "NOT_SAVED")
         if original == "NOT_SAVED":
@@ -1593,19 +1593,19 @@ class GameEngine:
     broadcast = send
 
     async def log(self, text: str, color: int = 0x95a5a6):
-        embed = discord.Embed(description=text, color=color)
+        embed = disnake.Embed(description=text, color=color)
         await self.send(embed=embed)
 
     add_log = log   # backward compat
 
-    async def send_dm(self, member: discord.Member, text: str, embed=None):
+    async def send_dm(self, member: disnake.Member, text: str, embed=None):
         """Send DM with fallback to public channel if DMs disabled."""
         try:
             if embed:
                 await member.send(embed=embed)
             else:
                 await member.send(text)
-        except (discord.Forbidden, discord.HTTPException) as e:
+        except (disnake.Forbidden, disnake.HTTPException) as e:
             self.logger.warn(f"DM failed for {member.display_name}: {e}")
             if self.config.dm_fallback_to_public:
                 try:
@@ -1704,7 +1704,7 @@ class GameEngine:
         if not warnings:
             return
         lines = "\n".join(warnings)
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="⚖️ CẢNH BÁO CÂN BẰNG",
             description=lines,
             color=0xe67e22
@@ -1729,7 +1729,7 @@ class GameEngine:
                 _cat_id = getattr(self.config, "category_id", None)
                 if _cat_id:
                     _cat = self.guild.get_channel(int(_cat_id))
-                    if _cat is not None and not isinstance(_cat, discord.CategoryChannel):
+                    if _cat is not None and not isinstance(_cat, disnake.CategoryChannel):
                         _cat = None
             except Exception:
                 _cat = None
@@ -1756,7 +1756,7 @@ class GameEngine:
             # Gửi lời chào mừng
             if self.anomaly_chat:
                 await self.anomaly_chat_mgr.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title='🔴 ANOMALIES — KÊNH BÍ MẬT',
                         description=(
                             'Chào mừng các Dị Thể!\n\n'
@@ -1822,7 +1822,7 @@ class GameEngine:
             # Thông báo lỗi ra kênh
             try:
                 err_msg = await self.text_channel.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="❌ TRẬN BỊ HUỶ — LỖI HỆ THỐNG",
                         description=f"```{tb[-500:]}```",
                         color=0xe74c3c
@@ -1871,7 +1871,7 @@ class GameEngine:
         await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(self.config.role_distribute_time)
 
-    async def _send_role_dm(self, member: discord.Member, role):
+    async def _send_role_dm(self, member: disnake.Member, role):
         try:
             team = getattr(role, "team", None) or getattr(role, "faction", "?")
             dm_msg = getattr(role, "dm_message", None)
@@ -1880,7 +1880,7 @@ class GameEngine:
                 await member.send(dm_msg)
             else:
                 # Fallback: embed mặc định từ description
-                embed = discord.Embed(
+                embed = disnake.Embed(
                     title=f"🎭 Vai Trò: {role.name}",
                     description=f"**Phe:** {team}\n\n{getattr(role, 'description', '')}",
                     color=0x9b59b6
@@ -1901,7 +1901,7 @@ class GameEngine:
                 except Exception:
                     pass
 
-    def _build_role_list_embed(self) -> discord.Embed:
+    def _build_role_list_embed(self) -> disnake.Embed:
         """Tạo embed danh sách vai trò xuất hiện trong trận này (không tiết lộ ai là ai)."""
         # Đếm số lượng từng role
         role_counts: dict[str, int] = {}
@@ -1933,7 +1933,7 @@ class GameEngine:
             )
 
         total = len(self.roles)
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="📋 DANH SÁCH VAI TRÒ TRẬN NÀY",
             description=f"Tổng cộng **{total} người chơi** với các vai trò sau:",
             color=0x2c3e50
@@ -2031,7 +2031,7 @@ class GameEngine:
 
         # Đồng hồ đếm ngược đêm
         night_time = self.config.night_time
-        timer_embed = discord.Embed(
+        timer_embed = disnake.Embed(
             title=f"🌙 ĐÊM {self.night_count} — HÀNH ĐỘNG",
             description=f"⏱️ Còn lại: **{night_time}s**",
             color=0x2c3e50
@@ -2174,7 +2174,7 @@ class GameEngine:
                 self.add_night_event("Survivors", "Một Điệp Viên đã thu thập tín hiệu.")
                 # Cảnh báo Anomalies: có Spy đang theo dõi mục tiêu của họ
                 await self.anomaly_chat_mgr.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="👁️ CẢNH BÁO ĐIỆP VIÊN",
                         description=(
                             "**ĐIỆP VIÊN** đang theo dõi hành động của phe Dị Thể!\n\n"
@@ -2197,7 +2197,7 @@ class GameEngine:
             if target_role:
                 stalker.discovered_roles = getattr(stalker, "discovered_roles", {})
                 stalker.discovered_roles[stalker.target_id] = target_role.name
-                await self.send_dm(stalker.player, "", embed=discord.Embed(
+                await self.send_dm(stalker.player, "", embed=disnake.Embed(
                     title="👁️ KẾT QUẢ THEO DÕI",
                     description=f"Vai trò của mục tiêu: **{target_role.name}**",
                     color=0xe74c3c
@@ -2503,7 +2503,7 @@ class GameEngine:
             self.logger.error(f"[{label}] {e}")
             return False
 
-    async def revive_player(self, member: discord.Member):
+    async def revive_player(self, member: disnake.Member):
         pid = member.id
         if pid not in self.dead_players:
             return
@@ -2570,7 +2570,7 @@ class GameEngine:
             deleted = []
             try:
                 deleted = await self.text_channel.purge(limit=300, check=check, bulk=True)
-            except discord.Forbidden:
+            except disnake.Forbidden:
                 async for msg in self.text_channel.history(limit=300):
                     if keep_id and msg.id == keep_id:
                         continue
@@ -2609,7 +2609,7 @@ class GameEngine:
         colors = {TEAM_SURVIVOR: 0x2ecc71, TEAM_ANOMALY: 0xe74c3c, "Draw": 0x95a5a6}
         color  = colors.get(winner, 0x9b59b6)
 
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="🏁 TRẬN ĐẤU KẾT THÚC",
             description=f"**Người chiến thắng: {winner}**",
             color=color
@@ -2686,7 +2686,7 @@ class GameEngine:
 
         # 1. Thông báo
         try:
-            embed = discord.Embed(
+            embed = disnake.Embed(
                 title="⚠️ TRẬN ĐẤU BỊ HỦY",
                 description=(
                     f"**Lý do:** {reason}\n\n"
@@ -2789,7 +2789,7 @@ class GameEngine:
         if self.config.allow_skip:
             skip_tracker = SkipTracker(self, day_time)
             await self.text_channel.send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⏩ Bỏ Phiếu Rút Ngắn",
                     description=f"≥{int(self.config.skip_threshold*100)}% đồng ý → kết thúc sớm.",
                     color=0x3498db
@@ -2800,7 +2800,7 @@ class GameEngine:
             skip_tracker = None
 
         # Đồng hồ đếm ngược ngày
-        day_timer_embed = discord.Embed(
+        day_timer_embed = disnake.Embed(
             title=f"☀️ NGÀY {self.day_count} — THẢO LUẬN",
             description=f"⏱️ Còn lại: **{day_time}s**",
             color=0xf39c12
@@ -2869,7 +2869,7 @@ class GameEngine:
             session = VotingSession(self, alive, revote=is_revote)
             vote_time = self.config.vote_time
             view    = VoteViewV2(self, alive, vote_time, session)
-            vote_timer_embed = discord.Embed(
+            vote_timer_embed = disnake.Embed(
                 title="🗳️ BỎ PHIẾU" + (" — REVOTE" if is_revote else ""),
                 description="Nhấn nút để chọn người bị trục xuất."
                 + (" *(Ẩn danh)*" if self.config.anonymous_vote else "")
@@ -2955,7 +2955,7 @@ class GameEngine:
         for faction, text in self.night_events:
             groups.setdefault(faction, []).append(text)
 
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title=f"🌙 CHỈ THỊ HỆ THỐNG — NGÀY {self.day_count + 1}",
             description=f"*Báo cáo Đêm {self.night_count}*",
             color=0x2c3e50
@@ -2996,14 +2996,14 @@ class GameEngine:
 # §13  UI COMPONENTS
 # ══════════════════════════════════════════════════════════════════════
 
-class SkipTracker(discord.ui.View):
+class SkipTracker(disnake.ui.View):
     def __init__(self, game: GameEngine, day_time: int):
         super().__init__(timeout=day_time)
         self.game     = game
         self.skippers: Set[int] = set()
         self.skip_event: asyncio.Event = asyncio.Event()
 
-    @discord.ui.button(label="⏩ Bỏ qua thảo luận", style=discord.ButtonStyle.secondary)
-    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="⏩ Bỏ qua thảo luận", style=disnake.ButtonStyle.secondary)
+    async def skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         uid = interaction.user.id
         if not self.game.abuse_tracker.is_allowed(uid):

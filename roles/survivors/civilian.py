@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -29,7 +29,7 @@ class Civilian(BaseRole):
     async def send_ui(self, game):
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🌙 ĐÊM — NGỦ NGON",
                     description=(
                         "Bạn là Dân Thường — không có hành động đặc biệt đêm nay.\n\n"

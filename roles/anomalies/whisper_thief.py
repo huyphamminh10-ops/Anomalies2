@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -27,7 +27,7 @@ class TheWhisperThief(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -38,7 +38,7 @@ class TheWhisperThief(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -58,7 +58,7 @@ class TheWhisperThief(BaseRole):
 
         if len(alive_targets) < 2:
             try:
-                await self.safe_send(embed=discord.Embed(
+                await self.safe_send(embed=disnake.Embed(
                     title="🤫 ĐÊM — KẺ TRỘM THẦM THÌ",
                     description="❌ Không đủ 2 người còn sống để nghe lén.",
                     color=0x7f8c8d
@@ -74,7 +74,7 @@ class TheWhisperThief(BaseRole):
         view = self.WhisperView(game, self, alive_targets)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🤫 ĐÊM — KẺ TRỘM THẦM THÌ",
                     description=(
                         "Chọn **2 người** để nghe lén — nếu họ có tương tác bí mật với nhau, "
@@ -88,15 +88,15 @@ class TheWhisperThief(BaseRole):
         except Exception:
             pass
 
-    class WhisperView(discord.ui.View):
+    class WhisperView(disnake.ui.View):
         def __init__(self, game, role, target_list):
             super().__init__(timeout=60)
             self.game   = game
             self.role   = role
             self.add_item(TheWhisperThief.WhisperSelect(game, role, target_list))
 
-        @discord.ui.button(label="💤 Bỏ qua đêm nay", style=discord.ButtonStyle.secondary, row=1)
-        async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="💤 Bỏ qua đêm nay", style=disnake.ButtonStyle.secondary, row=1)
+        async def skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -105,12 +105,12 @@ class TheWhisperThief(BaseRole):
             await interaction.message.edit(view=self)
             await interaction.response.send_message("Bạn bỏ qua đêm nay.", ephemeral=True)
 
-    class WhisperSelect(discord.ui.Select):
+    class WhisperSelect(disnake.ui.Select):
         def __init__(self, game, role, target_list):
             self.game = game
             self.role = role
             options   = [
-                discord.SelectOption(label=p.display_name, value=str(p.id), emoji="🤫")
+                disnake.SelectOption(label=p.display_name, value=str(p.id), emoji="🤫")
                 for p in target_list
             ][:25]
             super().__init__(
@@ -120,7 +120,7 @@ class TheWhisperThief(BaseRole):
                 max_values=2
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -136,7 +136,7 @@ class TheWhisperThief(BaseRole):
 
             if ok:
                 await interaction.response.send_message(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         description=(
                             f"🤫 Đang nghe lén cuộc trò chuyện giữa:\n"
                             f"• **{p1.display_name if p1 else '?'}**\n"

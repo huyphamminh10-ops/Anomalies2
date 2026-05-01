@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -27,7 +27,7 @@ class Investigator(BaseRole):
     async def send_ui(self, game):
         view = InvestigatorView(game, self)
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="🔎 ĐÊM — THÁM TỬ",
                 description="Chọn 1 người để điều tra phe của họ:",
                 color=0x3498db
@@ -36,13 +36,13 @@ class Investigator(BaseRole):
         )
 
 
-class InvestigatorSelect(discord.ui.Select):
+class InvestigatorSelect(disnake.ui.Select):
     def __init__(self, game, role):
         self.game = game
         self.role = role
 
         options = [
-            discord.SelectOption(label=p.display_name, value=str(p.id))
+            disnake.SelectOption(label=p.display_name, value=str(p.id))
             for p in game.get_alive_players()
             if p != role.player
         ][:25]
@@ -54,7 +54,7 @@ class InvestigatorSelect(discord.ui.Select):
             max_values=1
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message(
                 "Đây không phải lượt của bạn.", ephemeral=True
@@ -77,7 +77,7 @@ class InvestigatorSelect(discord.ui.Select):
             if not already_warned and hasattr(self.game, "anomaly_chat_mgr"):
                 self.game.night_effects["investigator_warning_sent"] = True
                 await self.game.anomaly_chat_mgr.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="🔎 CẢNH BÁO TRINH SÁT",
                         description=(
                             "**THÁM TỬ** đã điều tra đêm nay và phát hiện "
@@ -96,7 +96,7 @@ class InvestigatorSelect(discord.ui.Select):
             color  = 0x95a5a6
 
         await interaction.response.send_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="🔎 KẾT QUẢ ĐIỀU TRA",
                 description=result,
                 color=color
@@ -114,7 +114,7 @@ class InvestigatorSelect(discord.ui.Select):
             pass
 
 
-class InvestigatorView(discord.ui.View):
+class InvestigatorView(disnake.ui.View):
     def __init__(self, game, role):
         super().__init__(timeout=60)
         self.add_item(InvestigatorSelect(game, role))

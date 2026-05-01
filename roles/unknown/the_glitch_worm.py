@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -37,7 +37,7 @@ class TheGlitchWorm(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -48,7 +48,7 @@ class TheGlitchWorm(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -85,16 +85,16 @@ class TheGlitchWorm(BaseRole):
     # ================================
     # VIEW
     # ================================
-    class GlitchView(discord.ui.View):
+    class GlitchView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25]
             self.add_item(TheGlitchWorm.GlitchSelect(game, role, options))
 
-    class GlitchSelect(discord.ui.Select):
+    class GlitchSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -106,7 +106,7 @@ class TheGlitchWorm(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             target_id = int(self.values[0])
 

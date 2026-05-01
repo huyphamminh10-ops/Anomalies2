@@ -37,7 +37,7 @@ import random
 from collections import deque
 from typing import Deque, Dict, List, Optional, Set
 
-import discord
+import disnake
 
 try:
     from google import genai
@@ -226,7 +226,7 @@ class GeminiHost:
     def enabled(self) -> bool:
         return self._enabled and self._client is not None
 
-    def _channel_for(self, key: str) -> Optional[discord.TextChannel]:
+    def _channel_for(self, key: str) -> Optional[disnake.TextChannel]:
         if key == CH_MAIN:
             return getattr(self.game, "text_channel", None)
         if key == CH_DEAD:
@@ -429,10 +429,10 @@ class GeminiHost:
 
     async def _fetch_recent(
         self,
-        channel: discord.TextChannel,
+        channel: disnake.TextChannel,
         replied_ids: Set[int],
-    ) -> List[discord.Message]:
-        out: List[discord.Message] = []
+    ) -> List[disnake.Message]:
+        out: List[disnake.Message] = []
         try:
             async for m in channel.history(limit=_HISTORY_LIMIT):
                 if m.author and getattr(m.author, "bot", False):

@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -28,7 +28,7 @@ class Sheriff(BaseRole):
         self.used_tonight = False  # reset mỗi đêm
         view = SheriffView(game, self)
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="👮 ĐÊM — CẢNH SÁT TRƯỞNG",
                 description="Chọn 1 người để kiểm tra danh tính chính xác:",
                 color=0x2ecc71
@@ -37,13 +37,13 @@ class Sheriff(BaseRole):
         )
 
 
-class SheriffSelect(discord.ui.Select):
+class SheriffSelect(disnake.ui.Select):
     def __init__(self, game, role):
         self.game = game
         self.role = role
 
         options = [
-            discord.SelectOption(label=p.display_name, value=str(p.id))
+            disnake.SelectOption(label=p.display_name, value=str(p.id))
             for p in game.get_alive_players()
             if p != role.player
         ][:25]
@@ -55,7 +55,7 @@ class SheriffSelect(discord.ui.Select):
             max_values=1
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         # Chặn dùng lại trong cùng một đêm
         if getattr(self.role, "used_tonight", False):
             await interaction.response.send_message(
@@ -83,7 +83,7 @@ class SheriffSelect(discord.ui.Select):
             if getattr(target_role, "team", "") == "Anomalies":
                 if hasattr(self.game, "anomaly_chat_mgr"):
                     await self.game.anomaly_chat_mgr.send(
-                        embed=discord.Embed(
+                        embed=disnake.Embed(
                             title="👮 CẢNH BÁO CẢNH SÁT",
                             description=(
                                 "**CẢNH SÁT TRƯỞNG** đã điều tra và xác định được "
@@ -102,7 +102,7 @@ class SheriffSelect(discord.ui.Select):
 
         await interaction.response.edit_message(view=self.view)
         await interaction.followup.send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="👮 KẾT QUẢ KIỂM TRA",
                 description=result,
                 color=color
@@ -111,7 +111,7 @@ class SheriffSelect(discord.ui.Select):
         )
 
 
-class SheriffView(discord.ui.View):
+class SheriffView(disnake.ui.View):
     def __init__(self, game, role):
         super().__init__(timeout=60)
         self.add_item(SheriffSelect(game, role))

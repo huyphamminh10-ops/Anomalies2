@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -28,7 +28,7 @@ class TheStaticEmitter(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -39,7 +39,7 @@ class TheStaticEmitter(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -65,7 +65,7 @@ class TheStaticEmitter(BaseRole):
         view = self.StaticView(game, self, alive_targets)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="📻 ĐÊM — BỘ PHÁT NHIỄU",
                     description=(
                         "Chọn 1 người để **phát nhiễu** — mọi tin nhắn hệ thống gửi đến họ đêm nay sẽ bị biến dạng.\n\n"
@@ -79,13 +79,13 @@ class TheStaticEmitter(BaseRole):
         except Exception:
             pass
 
-    class StaticView(discord.ui.View):
+    class StaticView(disnake.ui.View):
         def __init__(self, game, role, target_list):
             super().__init__(timeout=60)
             self.add_item(TheStaticEmitter.StaticSelect(game, role, target_list))
 
-        @discord.ui.button(label="💤 Bỏ qua đêm nay", style=discord.ButtonStyle.secondary, row=1)
-        async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="💤 Bỏ qua đêm nay", style=disnake.ButtonStyle.secondary, row=1)
+        async def skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             role = self.children[0].role
             if interaction.user.id != role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
@@ -95,12 +95,12 @@ class TheStaticEmitter(BaseRole):
             await interaction.message.edit(view=self)
             await interaction.response.send_message("Bạn bỏ qua đêm nay.", ephemeral=True)
 
-    class StaticSelect(discord.ui.Select):
+    class StaticSelect(disnake.ui.Select):
         def __init__(self, game, role, target_list):
             self.game = game
             self.role = role
             options   = [
-                discord.SelectOption(label=p.display_name, value=str(p.id), emoji="📻")
+                disnake.SelectOption(label=p.display_name, value=str(p.id), emoji="📻")
                 for p in target_list
             ][:25]
             super().__init__(
@@ -110,7 +110,7 @@ class TheStaticEmitter(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -124,7 +124,7 @@ class TheStaticEmitter(BaseRole):
                 item.disabled = True
             await interaction.message.edit(view=self.view)
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     description=f"📻 Nhiễu đã phát đến **{target.display_name if target else '?'}** — thông tin của họ sẽ bị bóp méo đêm nay.",
                     color=0x9b59b6
                 ),

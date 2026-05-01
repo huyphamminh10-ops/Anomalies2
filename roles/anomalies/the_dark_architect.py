@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -31,7 +31,7 @@ class TheDarkArchitect(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -42,7 +42,7 @@ class TheDarkArchitect(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -78,16 +78,16 @@ class TheDarkArchitect(BaseRole):
     # =====================================
     # VIEW
     # =====================================
-    class ArchitectView(discord.ui.View):
+    class ArchitectView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25]
             self.add_item(TheDarkArchitect.ArchitectSelect(game, role, options))
 
-    class ArchitectSelect(discord.ui.Select):
+    class ArchitectSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -100,7 +100,7 @@ class TheDarkArchitect(BaseRole):
                 max_values=n
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             targets = {int(v) for v in self.values}
 

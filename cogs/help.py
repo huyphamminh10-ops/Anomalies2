@@ -3,9 +3,8 @@ cogs/help.py — Lệnh /help cho Anomalies
 Gồm 2 tab chính: Lệnh & Gameplay
 """
 from __future__ import annotations
-import discord
-from discord import app_commands
-from discord.ext import commands
+import disnake
+from disnake.ext import commands
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -277,8 +276,8 @@ COLOR_COMMANDS = 0x3498db   # xanh dương
 COLOR_GAMEPLAY = 0x9b59b6   # tím
 
 
-def build_main_embed() -> discord.Embed:
-    embed = discord.Embed(
+def build_main_embed() -> disnake.Embed:
+    embed = disnake.Embed(
         title="📖 ANOMALIES — TRỢ GIÚP",
         description=(
             "Chào mừng bạn đến với **Anomalies** — trò chơi nhập vai suy luận xã hội!\n\n"
@@ -300,8 +299,8 @@ def build_main_embed() -> discord.Embed:
     return embed
 
 
-def build_commands_embed() -> discord.Embed:
-    embed = discord.Embed(
+def build_commands_embed() -> disnake.Embed:
+    embed = disnake.Embed(
         title="📋 DANH SÁCH LỆNH",
         description="Tất cả lệnh slash có trong bot Anomalies:",
         color=COLOR_COMMANDS,
@@ -316,8 +315,8 @@ def build_commands_embed() -> discord.Embed:
     return embed
 
 
-def build_gameplay_menu_embed() -> discord.Embed:
-    embed = discord.Embed(
+def build_gameplay_menu_embed() -> disnake.Embed:
+    embed = disnake.Embed(
         title="🎮 GAMEPLAY — CÂU HỎI THƯỜNG GẶP",
         description="Bạn muốn tra cứu gì về gameplay?\nChọn từ menu bên dưới:",
         color=COLOR_GAMEPLAY,
@@ -332,9 +331,9 @@ def build_gameplay_menu_embed() -> discord.Embed:
     return embed
 
 
-def build_faq_embed(index: int) -> discord.Embed:
+def build_faq_embed(index: int) -> disnake.Embed:
     faq   = GAMEPLAY_FAQ[index]
-    embed = discord.Embed(
+    embed = disnake.Embed(
         title=f"{faq['emoji']} {faq['q']}",
         description=faq["a"],
         color=COLOR_GAMEPLAY,
@@ -347,21 +346,21 @@ def build_faq_embed(index: int) -> discord.Embed:
 # VIEWS
 # ══════════════════════════════════════════════════════════════════
 
-class HelpMainView(discord.ui.View):
+class HelpMainView(disnake.ui.View):
     """View chính: 2 nút — Lệnh và Gameplay."""
 
-    def __init__(self, interaction: discord.Interaction):
+    def __init__(self, interaction: disnake.ApplicationCommandInteraction):
         super().__init__(timeout=180)
         self._origin = interaction
 
-    @discord.ui.button(label="📋 Lệnh", style=discord.ButtonStyle.primary, row=0)
-    async def btn_commands(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="📋 Lệnh", style=disnake.ButtonStyle.primary, row=0)
+    async def btn_commands(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         embed = build_commands_embed()
         view  = CommandsBackView(self._origin)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @discord.ui.button(label="🎮 Gameplay", style=discord.ButtonStyle.secondary, row=0)
-    async def btn_gameplay(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="🎮 Gameplay", style=disnake.ButtonStyle.secondary, row=0)
+    async def btn_gameplay(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         embed = build_gameplay_menu_embed()
         view  = GameplayMenuView(self._origin)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -375,15 +374,15 @@ class HelpMainView(discord.ui.View):
             pass
 
 
-class CommandsBackView(discord.ui.View):
+class CommandsBackView(disnake.ui.View):
     """Đứng sau màn Lệnh — có nút Quay lại."""
 
-    def __init__(self, origin: discord.Interaction):
+    def __init__(self, origin: disnake.ApplicationCommandInteraction):
         super().__init__(timeout=180)
         self._origin = origin
 
-    @discord.ui.button(label="← Quay lại", style=discord.ButtonStyle.secondary, row=0)
-    async def btn_back(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="← Quay lại", style=disnake.ButtonStyle.secondary, row=0)
+    async def btn_back(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         embed = build_main_embed()
         view  = HelpMainView(self._origin)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -397,16 +396,16 @@ class CommandsBackView(discord.ui.View):
             pass
 
 
-class GameplayMenuView(discord.ui.View):
+class GameplayMenuView(disnake.ui.View):
     """Menu chọn câu hỏi gameplay + nút Quay lại."""
 
-    def __init__(self, origin: discord.Interaction):
+    def __init__(self, origin: disnake.ApplicationCommandInteraction):
         super().__init__(timeout=180)
         self._origin = origin
         self.add_item(GameplaySelect(origin))
 
-    @discord.ui.button(label="← Quay lại", style=discord.ButtonStyle.secondary, row=1)
-    async def btn_back(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="← Quay lại", style=disnake.ButtonStyle.secondary, row=1)
+    async def btn_back(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         embed = build_main_embed()
         view  = HelpMainView(self._origin)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -420,13 +419,13 @@ class GameplayMenuView(discord.ui.View):
             pass
 
 
-class GameplaySelect(discord.ui.Select):
+class GameplaySelect(disnake.ui.Select):
     """Select menu chọn câu hỏi."""
 
-    def __init__(self, origin: discord.Interaction):
+    def __init__(self, origin: disnake.ApplicationCommandInteraction):
         self._origin = origin
         options = [
-            discord.SelectOption(
+            disnake.SelectOption(
                 label=f"{i+1}. {faq['q']}"[:100],
                 value=str(i),
                 emoji=faq["emoji"],
@@ -441,17 +440,17 @@ class GameplaySelect(discord.ui.Select):
             row=0,
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         idx   = int(self.values[0])
         embed = build_faq_embed(idx)
         view  = FAQDetailView(self._origin, idx)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
-class FAQDetailView(discord.ui.View):
+class FAQDetailView(disnake.ui.View):
     """Chi tiết 1 câu hỏi — có nút ◀ ▶ và Quay lại menu."""
 
-    def __init__(self, origin: discord.Interaction, idx: int):
+    def __init__(self, origin: disnake.ApplicationCommandInteraction, idx: int):
         super().__init__(timeout=180)
         self._origin = origin
         self._idx    = idx
@@ -461,25 +460,25 @@ class FAQDetailView(discord.ui.View):
         self.clear_items()
         total = len(GAMEPLAY_FAQ)
 
-        btn_prev = discord.ui.Button(
+        btn_prev = disnake.ui.Button(
             label="◀ Trước",
-            style=discord.ButtonStyle.secondary,
+            style=disnake.ButtonStyle.secondary,
             disabled=(self._idx == 0),
             row=0,
         )
         btn_prev.callback = self._prev
 
-        btn_next = discord.ui.Button(
+        btn_next = disnake.ui.Button(
             label="Tiếp ▶",
-            style=discord.ButtonStyle.secondary,
+            style=disnake.ButtonStyle.secondary,
             disabled=(self._idx >= total - 1),
             row=0,
         )
         btn_next.callback = self._next
 
-        btn_menu = discord.ui.Button(
+        btn_menu = disnake.ui.Button(
             label="📋 Danh sách câu hỏi",
-            style=discord.ButtonStyle.primary,
+            style=disnake.ButtonStyle.primary,
             row=1,
         )
         btn_menu.callback = self._back_menu
@@ -488,17 +487,17 @@ class FAQDetailView(discord.ui.View):
         self.add_item(btn_next)
         self.add_item(btn_menu)
 
-    async def _prev(self, interaction: discord.Interaction):
+    async def _prev(self, interaction: disnake.ApplicationCommandInteraction):
         self._idx -= 1
         self._rebuild()
         await interaction.response.edit_message(embed=build_faq_embed(self._idx), view=self)
 
-    async def _next(self, interaction: discord.Interaction):
+    async def _next(self, interaction: disnake.ApplicationCommandInteraction):
         self._idx += 1
         self._rebuild()
         await interaction.response.edit_message(embed=build_faq_embed(self._idx), view=self)
 
-    async def _back_menu(self, interaction: discord.Interaction):
+    async def _back_menu(self, interaction: disnake.ApplicationCommandInteraction):
         embed = build_gameplay_menu_embed()
         view  = GameplayMenuView(self._origin)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -521,8 +520,8 @@ class HelpCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="help", description="Xem hướng dẫn sử dụng bot Anomalies")
-    async def help_command(self, interaction: discord.Interaction):
+    @commands.slash_command(name="help", description="Xem hướng dẫn sử dụng bot Anomalies")
+    async def help_command(self, interaction: disnake.ApplicationCommandInteraction):
         embed = build_main_embed()
         view  = HelpMainView(interaction)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)

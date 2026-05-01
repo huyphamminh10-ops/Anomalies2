@@ -1,5 +1,5 @@
 """
-role_preview.py — discord.py 2.x
+role_preview.py — disnake.py 2.x
 Role info catalogue is built at startup by scanning the roles/ folder via AST.
 No hardcoded descriptions. Tips are derived from each role's own description text.
 All 4 buttons are fully functional.
@@ -14,10 +14,9 @@ import traceback
 from collections import Counter
 from typing import Optional
 
-import discord
-from discord import app_commands
-from discord.ext import commands
-from discord.ui import Button, Select, View
+import disnake
+from disnake.ext import commands
+from disnake.ui import Button, Select, View
 
 from role_distributor import (
     ANOMALIES_META,
@@ -920,11 +919,11 @@ _FACTION_EMOJI: dict[str, str] = {
     "Event Roles":      "🎪",
 }
 
-_FACTION_COLOR: dict[str, discord.Color] = {
-    "Survivors":        discord.Color.blue(),
-    "Anomalies":        discord.Color.red(),
-    "Unknown Entities": discord.Color.purple(),
-    "Event Roles":      discord.Color.gold(),
+_FACTION_COLOR: dict[str, disnake.Color] = {
+    "Survivors":        disnake.Color.blue(),
+    "Anomalies":        disnake.Color.red(),
+    "Unknown Entities": disnake.Color.purple(),
+    "Event Roles":      disnake.Color.gold(),
 }
 
 _FACTION_SELECT_VALUES: dict[str, str] = {
@@ -941,7 +940,7 @@ _VALUE_TO_FACTION: dict[str, str] = {v: k for k, v in _FACTION_SELECT_VALUES.ite
 # HELPERS
 # ══════════════════════════════════════════════════════════════════
 
-def _get_voice_members(interaction: discord.Interaction) -> list[discord.Member]:
+def _get_voice_members(interaction: disnake.ApplicationCommandInteraction) -> list[disnake.Member]:
     """Return non-bot members in the interaction user's current voice channel."""
     member = interaction.guild.get_member(interaction.user.id)
     if member and member.voice and member.voice.channel:
@@ -974,7 +973,7 @@ def _run_preview_distribution(
     return role_names, role_map
 
 
-def _build_preview_embed(role_names: list[str], player_count: int) -> discord.Embed:
+def _build_preview_embed(role_names: list[str], player_count: int) -> disnake.Embed:
     """Build 'roles that WILL be distributed' embed — grouped by team with counts."""
     name_to_team: dict[str, str] = {}
     for n in SURVIVORS_META:
@@ -993,7 +992,7 @@ def _build_preview_embed(role_names: list[str], player_count: int) -> discord.Em
         by_team[name_to_team.get(rn, "Unknown Entities")][rn] += 1
 
     total = len(role_names)
-    embed = discord.Embed(title="🎭 VAI TRÒ SẼ ĐƯỢC PHÂN BỐ", color=discord.Color.blurple())
+    embed = disnake.Embed(title="🎭 VAI TRÒ SẼ ĐƯỢC PHÂN BỐ", color=disnake.Color.blurple())
 
     for team_key, field_label in (
         ("Survivors",        "👥 Những Người Sống Sót"),
@@ -1016,10 +1015,10 @@ def _build_preview_embed(role_names: list[str], player_count: int) -> discord.Em
     return embed
 
 
-def _build_role_info_embed(faction: str, page: int, roles: list[str]) -> discord.Embed:
+def _build_role_info_embed(faction: str, page: int, roles: list[str]) -> disnake.Embed:
     """Build the role info embed for Button 3 — one role per page."""
     if not roles:
-        return discord.Embed(title="📖 Không có vai trò nào", color=discord.Color.greyple())
+        return disnake.Embed(title="📖 Không có vai trò nào", color=disnake.Color.greyple())
 
     role_name = roles[page]
     cat       = _ROLE_CATALOGUE.get(role_name, {})
@@ -1037,10 +1036,10 @@ def _build_role_info_embed(faction: str, page: int, roles: list[str]) -> discord
         meta = EVENT_META.get(role_name, {"min_players": 5, "max_count": 1, "core": False, "event": True})
     else:
         meta = meta_table.get(role_name, {})
-    color = _FACTION_COLOR.get(faction, discord.Color.blurple())
+    color = _FACTION_COLOR.get(faction, disnake.Color.blurple())
     emoji = _FACTION_EMOJI.get(faction, "❓")
 
-    embed = discord.Embed(title=f"{emoji} {role_name}", color=color)
+    embed = disnake.Embed(title=f"{emoji} {role_name}", color=color)
     embed.add_field(name="🏳️ Phe",     value=faction,                                          inline=True)
     embed.add_field(name="🎖️ Loại",    value="⭐ Cốt lõi" if meta.get("core") else "💎 Đặc biệt", inline=True)
     embed.add_field(name="👤 Tối thiểu", value=f"{meta.get('min_players', '?')} người",          inline=True)
@@ -1058,7 +1057,7 @@ def _build_role_info_embed(faction: str, page: int, roles: list[str]) -> discord
     return embed
 
 
-def _build_event_embed() -> discord.Embed:
+def _build_event_embed() -> disnake.Embed:
     """Hiển thị event role đang active, countdown, và toàn bộ pool."""
     try:
         from event_roles_loader import get_loader as _get_loader  # type: ignore[import]
@@ -1073,9 +1072,9 @@ def _build_event_embed() -> discord.Embed:
         queue   = []
         secs    = 0
 
-    embed = discord.Embed(
+    embed = disnake.Embed(
         title       = "🎪 EVENT ROLE HIỆN TẠI",
-        color       = discord.Color.gold(),
+        color       = disnake.Color.gold(),
     )
 
     if not pool:
@@ -1090,7 +1089,7 @@ def _build_event_embed() -> discord.Embed:
         cat     = _ROLE_CATALOGUE.get(current, {})
         faction = cat.get("faction", "Unknown")
         ability = cat.get("ability", "Thông tin đang được cập nhật.")
-        color   = _FACTION_COLOR.get(faction, discord.Color.gold())
+        color   = _FACTION_COLOR.get(faction, disnake.Color.gold())
         embed.color = color
         embed.add_field(
             name  = f"✨ {current}",
@@ -1146,12 +1145,12 @@ def _build_event_embed() -> discord.Embed:
     return embed
 
 
-def _build_stats_embed() -> discord.Embed:
+def _build_stats_embed() -> disnake.Embed:
     """Build the role statistics embed for Button 2."""
-    embed = discord.Embed(
+    embed = disnake.Embed(
         title       = "📊 THỐNG KÊ VAI TRÒ",
         description = "Tổng quan tất cả vai trò trong hệ thống.",
-        color       = discord.Color.blurple(),
+        color       = disnake.Color.blurple(),
     )
     for meta, label, emoji in (
         (SURVIVORS_META, "Những Người Sống Sót", "👥"),
@@ -1273,7 +1272,7 @@ def _faction_total(draft: dict[str, list[tuple[str, int]]], faction: str) -> int
 
 def _build_overflow_error_embed(
     totals: dict[str, int], total: int, max_lobby: int
-) -> discord.Embed:
+) -> disnake.Embed:
     """
     totals : {faction: số role} của bản nháp đã chiếu (sau khi cộng role mới).
     total  : tổng tất cả vai trò.
@@ -1302,7 +1301,7 @@ def _build_overflow_error_embed(
             "ván sẽ mất cân bằng nghiêm trọng."
         )
 
-    embed = discord.Embed(title="❌ Lỗi", description=desc, color=discord.Color.red())
+    embed = disnake.Embed(title="❌ Lỗi", description=desc, color=disnake.Color.red())
     embed.add_field(
         name  = "❓",
         value = _pick_overflow_joke(dominant, dom_count),
@@ -1316,7 +1315,7 @@ def _build_editor_overview_embed(
     max_lobby: int,
     draft: dict[str, list[tuple[str, int]]] | None = None,
     dirty: bool = False,
-) -> discord.Embed:
+) -> disnake.Embed:
     """
     draft : nội dung đang xem (chưa hoặc đã lưu).
     dirty : True  → embed CAM,  trạng thái 🟠 Chưa Lưu
@@ -1325,10 +1324,10 @@ def _build_editor_overview_embed(
     if draft is None:
         draft = _pending_role_overrides.get(guild_id, {})
 
-    color  = discord.Color.orange() if dirty else discord.Color.green()
+    color  = disnake.Color.orange() if dirty else disnake.Color.green()
     status = "🟠 Trạng thái: **Chưa Lưu**" if dirty else "🟢 Trạng thái: **Đã Lưu**"
 
-    embed = discord.Embed(
+    embed = disnake.Embed(
         title="🛠 CHỈNH SỬA VAI TRÒ — Ván tiếp theo",
         color=color,
     )
@@ -1366,7 +1365,7 @@ def _editor_role_options(
     guild_id: str,
     pending: str,
     draft: dict[str, list[tuple[str, int]]] | None = None,
-) -> list[discord.SelectOption]:
+) -> list[disnake.SelectOption]:
     """Tạo options cho role select — luôn trả về ít nhất 1 option."""
     if faction == "Survivors":
         meta = SURVIVORS_META
@@ -1385,12 +1384,12 @@ def _editor_role_options(
     ]
 
     if not eligible:
-        return [discord.SelectOption(label="(Không có vai trò phù hợp)", value="__none__")]
+        return [disnake.SelectOption(label="(Không có vai trò phù hợp)", value="__none__")]
 
     options = []
     for name in eligible[:25]:
         m = _ALL_META.get(name, {})
-        options.append(discord.SelectOption(
+        options.append(disnake.SelectOption(
             label       = name,
             value       = name,
             description = f"Tối thiểu {m.get('min_players',5)} người • Tối đa ×{m.get('max_count',1)}",
@@ -1400,11 +1399,11 @@ def _editor_role_options(
     return options
 
 
-def _editor_qty_options(role_name: str) -> list[discord.SelectOption]:
+def _editor_qty_options(role_name: str) -> list[disnake.SelectOption]:
     m         = _ALL_META.get(role_name, {})
     max_count = max(1, min(m.get("max_count", 1), 9))
     return [
-        discord.SelectOption(label=f"×{i}", value=str(i), description=f"Thêm {i} {role_name}")
+        disnake.SelectOption(label=f"×{i}", value=str(i), description=f"Thêm {i} {role_name}")
         for i in range(1, max_count + 1)
     ]
 
@@ -1444,7 +1443,7 @@ class RoleEditorView(View):
             custom_id   = "editor_faction",
             placeholder = "📂 Chọn phe...",
             options     = [
-                discord.SelectOption(
+                disnake.SelectOption(
                     emoji   = _EDITOR_FACTION_EMOJI[f],
                     label   = f,
                     value   = f,
@@ -1469,7 +1468,7 @@ class RoleEditorView(View):
         self._sel_qty = Select(
             custom_id   = "editor_qty",
             placeholder = "🔢 Chọn số lượng (chọn vai trò trước)",
-            options     = [discord.SelectOption(label="—", value="__disabled__")],
+            options     = [disnake.SelectOption(label="—", value="__disabled__")],
             disabled    = True,
             row         = 2,
         )
@@ -1479,7 +1478,7 @@ class RoleEditorView(View):
         self._btn_save = Button(
             custom_id = "editor_save",
             label     = "💾 Lưu",
-            style     = discord.ButtonStyle.success,
+            style     = disnake.ButtonStyle.success,
             row       = 3,
             disabled  = True,
         )
@@ -1488,7 +1487,7 @@ class RoleEditorView(View):
         self._btn_remove = Button(
             custom_id = "editor_remove",
             label     = "⬅ Xoá cuối",
-            style     = discord.ButtonStyle.secondary,
+            style     = disnake.ButtonStyle.secondary,
             row       = 3,
         )
         self._btn_remove.callback = self._on_remove  # type: ignore[method-assign]
@@ -1496,7 +1495,7 @@ class RoleEditorView(View):
         self._btn_clear = Button(
             custom_id = "editor_clear",
             label     = "🗑 Xoá tất cả",
-            style     = discord.ButtonStyle.danger,
+            style     = disnake.ButtonStyle.danger,
             row       = 3,
         )
         self._btn_clear.callback = self._on_clear  # type: ignore[method-assign]
@@ -1516,7 +1515,7 @@ class RoleEditorView(View):
 
     def _sync_faction_select(self) -> None:
         self._sel_faction.options = [
-            discord.SelectOption(
+            disnake.SelectOption(
                 emoji   = _EDITOR_FACTION_EMOJI[f],
                 label   = f,
                 value   = f,
@@ -1548,7 +1547,7 @@ class RoleEditorView(View):
                 self._sel_qty.placeholder = f"🔢 Số lượng — {self._pending_role}"
             self._sel_qty.disabled    = False
         else:
-            self._sel_qty.options     = [discord.SelectOption(label="—", value="__disabled__")]
+            self._sel_qty.options     = [disnake.SelectOption(label="—", value="__disabled__")]
             self._sel_qty.placeholder = "🔢 Chọn số lượng (chọn vai trò trước)"
             self._sel_qty.disabled    = True
 
@@ -1559,7 +1558,7 @@ class RoleEditorView(View):
 
     # ── Callbacks ─────────────────────────────────────────────────
 
-    async def _refresh(self, interaction: discord.Interaction) -> None:
+    async def _refresh(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         self._sync_faction_select()
         self._sync_role_select()
         self._sync_qty_select()
@@ -1573,13 +1572,13 @@ class RoleEditorView(View):
             view  = self,
         )
 
-    async def _on_faction(self, interaction: discord.Interaction) -> None:
+    async def _on_faction(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         self._faction      = self._sel_faction.values[0]
         self._pending_role = None
         self._pending_qty  = None
         await self._refresh(interaction)
 
-    async def _on_role(self, interaction: discord.Interaction) -> None:
+    async def _on_role(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         chosen = self._sel_role.values[0]
         if chosen == "__none__":
             await interaction.response.defer()
@@ -1589,7 +1588,7 @@ class RoleEditorView(View):
         self._pending_role = chosen
         await self._refresh(interaction)
 
-    async def _on_qty(self, interaction: discord.Interaction) -> None:
+    async def _on_qty(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         chosen = self._sel_qty.values[0]
         if chosen == "__disabled__" or not self._pending_role:
             await interaction.response.defer()
@@ -1646,7 +1645,7 @@ class RoleEditorView(View):
         self._pending_qty  = None
         await self._refresh(interaction)
 
-    async def _on_save(self, interaction: discord.Interaction) -> None:
+    async def _on_save(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         if not self._dirty:
             await interaction.response.defer()
             return
@@ -1668,7 +1667,7 @@ class RoleEditorView(View):
         self._pending_qty  = None
         await self._refresh(interaction)
 
-    async def _on_remove(self, interaction: discord.Interaction) -> None:
+    async def _on_remove(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         entries = self._draft.get(self._faction, [])
         if entries:
             entries.pop()
@@ -1677,7 +1676,7 @@ class RoleEditorView(View):
         self._pending_qty  = None
         await self._refresh(interaction)
 
-    async def _on_clear(self, interaction: discord.Interaction) -> None:
+    async def _on_clear(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         had_any = any(self._draft.get(f) for f in _EDITOR_FACTIONS)
         for f in _EDITOR_FACTIONS:
             self._draft[f] = []
@@ -1734,17 +1733,17 @@ class RoleMainView(View):
             custom_id   = "main_action",
             placeholder = "🎭 Chọn thao tác...",
             options     = [
-                discord.SelectOption(emoji="👥", label=current_label,
+                disnake.SelectOption(emoji="👥", label=current_label,
                                      value="current", description=current_desc),
-                discord.SelectOption(emoji="📊", label="Thống kê vai trò",
+                disnake.SelectOption(emoji="📊", label="Thống kê vai trò",
                                      value="stats",   description="Xem thống kê & tỉ lệ xuất hiện"),
-                discord.SelectOption(emoji="📖", label="Thông tin vai trò",
+                disnake.SelectOption(emoji="📖", label="Thông tin vai trò",
                                      value="info",    description="Tra cứu chi tiết từng vai trò"),
-                discord.SelectOption(emoji="🎪", label="Event Role",
+                disnake.SelectOption(emoji="🎪", label="Event Role",
                                      value="event",   description="Xem danh sách vai trò sự kiện"),
-                discord.SelectOption(emoji="🔄", label="Quay lại vai trò mới",
+                disnake.SelectOption(emoji="🔄", label="Quay lại vai trò mới",
                                      value="reroll",  description="Roll lại danh sách mới"),
-                discord.SelectOption(emoji="🛠", label="Chỉnh sửa vai trò",
+                disnake.SelectOption(emoji="🛠", label="Chỉnh sửa vai trò",
                                      value="edit",    description=edit_desc),
             ],
             row = 0,
@@ -1756,7 +1755,7 @@ class RoleMainView(View):
         for item in self.children:
             item.disabled = True  # type: ignore[attr-defined]
 
-    async def _on_select(self, interaction: discord.Interaction) -> None:
+    async def _on_select(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         try:
             choice = interaction.data["values"][0]  # type: ignore[index]
             if choice == "current":
@@ -1790,7 +1789,7 @@ class RoleMainView(View):
             except Exception:
                 pass
 
-    async def _action_current(self, interaction: discord.Interaction) -> None:
+    async def _action_current(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         await interaction.response.defer(ephemeral=True)
 
         # ── Nếu có danh sách tuỳ chỉnh đã LƯU, hiển thị ngay (Thủ Công) ──
@@ -1802,7 +1801,7 @@ class RoleMainView(View):
                     ovr_names.extend([name] * count)
             embed = _build_preview_embed(ovr_names, len(ovr_names))
             embed.title = "🛠 VAI TRÒ HIỆN TẠI ( Thủ Công )"
-            embed.color = discord.Color.green()
+            embed.color = disnake.Color.green()
             embed.set_footer(
                 text="Đang dùng danh sách tuỳ chỉnh đã lưu  •  /role → 🛠 để chỉnh sửa"
             )
@@ -1844,14 +1843,14 @@ class RoleMainView(View):
             embed=_build_preview_embed(role_names, player_count), ephemeral=True
         )
 
-    async def _action_reroll(self, interaction: discord.Interaction) -> None:
+    async def _action_reroll(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         await interaction.response.defer(ephemeral=True)
         members      = _get_voice_members(interaction)
         player_count = len(members)
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="🎭 QUẢN LÝ VAI TRÒ",
             description="Chọn thao tác bạn muốn thực hiện.",
-            color=discord.Color.blurple(),
+            color=disnake.Color.blurple(),
         )
         if player_count >= 5:
             try:
@@ -1873,7 +1872,7 @@ class RoleMainView(View):
         new_view._cached_role_map = self._cached_role_map
         await interaction.followup.send(embed=embed, view=new_view, ephemeral=True)
 
-    async def _action_edit(self, interaction: discord.Interaction) -> None:
+    async def _action_edit(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         # ── Permission gate: dùng cùng quy tắc với /setting, /clear, /setup ──
         try:
             from cogs.settings import check_command_permission  # type: ignore[import]
@@ -1919,7 +1918,7 @@ class RoleInfoView(View):
             if isinstance(item, Select):
                 self.remove_item(item)
         options = [
-            discord.SelectOption(
+            disnake.SelectOption(
                 label   = name,
                 value   = value,
                 emoji   = _FACTION_EMOJI[name],
@@ -1931,7 +1930,7 @@ class RoleInfoView(View):
         sel.callback = self._faction_callback  # type: ignore[method-assign]
         self.add_item(sel)
 
-    async def _faction_callback(self, interaction: discord.Interaction) -> None:
+    async def _faction_callback(self, interaction: disnake.ApplicationCommandInteraction) -> None:
         self.faction = _VALUE_TO_FACTION[interaction.data["values"][0]]  # type: ignore[index]
         self.roles   = list(_FACTION_ROLES[self.faction])
         self.page    = 0
@@ -1940,8 +1939,8 @@ class RoleInfoView(View):
             embed=_build_role_info_embed(self.faction, self.page, self.roles), view=self
         )
 
-    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, row=1)
-    async def btn_prev(self, interaction: discord.Interaction, button: Button) -> None:
+    @disnake.ui.button(label="◀", style=disnake.ButtonStyle.secondary, row=1)
+    async def btn_prev(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction) -> None:
         if not self.roles:
             await interaction.response.defer()
             return
@@ -1950,8 +1949,8 @@ class RoleInfoView(View):
             embed=_build_role_info_embed(self.faction, self.page, self.roles), view=self
         )
 
-    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, row=1)
-    async def btn_next(self, interaction: discord.Interaction, button: Button) -> None:
+    @disnake.ui.button(label="▶", style=disnake.ButtonStyle.secondary, row=1)
+    async def btn_next(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction) -> None:
         if not self.roles:
             await interaction.response.defer()
             return
@@ -1972,16 +1971,16 @@ class RoleCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(
+    @commands.slash_command(
         name        = "role",
         description = "Quản lý và xem phân bổ vai trò cho trò chơi",
     )
-    @app_commands.guild_only()
-    async def role_command(self, interaction: discord.Interaction) -> None:
-        embed = discord.Embed(
+    
+    async def role_command(self, interaction: disnake.ApplicationCommandInteraction) -> None:
+        embed = disnake.Embed(
             title       = "🎭 VAI TRÒ CỦA GAME",
             description = "Chọn thao tác bạn muốn thực hiện.",
-            color       = discord.Color.blurple(),
+            color       = disnake.Color.blurple(),
         )
         await interaction.response.send_message(
             embed=embed, view=RoleMainView(self.bot, str(interaction.guild_id))

@@ -16,7 +16,7 @@ except ImportError:
     import json as _json_lib  # type: ignore
 
 import aiohttp
-import discord
+import disnake
 import asyncio
 import certifi
 import os
@@ -30,8 +30,7 @@ import threading as _threading
 import builtins as _builtins
 import socket
 import atexit
-from discord.ext import commands, tasks
-from discord import app_commands
+from disnake.ext import commands, tasks
 from cogs.settings import check_command_permission as _check_cmd_perm
 from config_manager import (
     load_guild_config, save_guild_config,
@@ -87,8 +86,13 @@ else:
     print("[Env] Đang chạy môi trường local/khác.")
 
 # ── Intents + Bot ─────────────────────────────────────────────────
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+intents = disnake.Intents.all()
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents,
+    # disnake: sync_commands=True tự động sync slash commands khi bot khởi động
+    # sync_commands_debug=True để log chi tiết khi dev
+)
 
 session: aiohttp.ClientSession | None = None
 _shutting_down: bool = False
@@ -317,16 +321,16 @@ def build_embed(gs, guild_id=None):
     players        = gs["players_join_order"]
     total_pages    = max(1, (len(players) - 1) // 11 + 1)
 
-    embed = discord.Embed()
+    embed = disnake.Embed()
 
     if state == GameState.WAITING:
         embed.title       = "🔴 》ANOMALIES《"
         embed.description = f"Đang chờ đủ {min_p} người..."
-        embed.color       = discord.Color.green()
+        embed.color       = disnake.Color.green()
 
     elif state in (GameState.COUNTDOWN, GameState.FULL_FAST):
         embed.title = "🔴 》ANOMALIES《"
-        embed.color = discord.Color.gold()
+        embed.color = disnake.Color.gold()
         embed.add_field(
             name="⏳ Thời Gian",
             value=f"{format_time(countdown_time)}\n{progress_bar(countdown_time, countdown_max)}",
@@ -338,7 +342,7 @@ def build_embed(gs, guild_id=None):
     elif state == GameState.IN_GAME:
         embed.title       = "🔥 TRẬN ĐẤU ĐANG DIỄN RA"
         embed.description = "Vui lòng chờ trận này kết thúc."
-        embed.color       = discord.Color.purple()
+        embed.color       = disnake.Color.purple()
 
     players_page = paginate_players(players, current_page)
     if players_page:
@@ -397,7 +401,7 @@ async def _flush_lobby(gs, guild_id=None):
 
     try:
         await gs["lobby_message"].edit(embed=build_embed(gs, guild_id=guild_id))
-    except discord.errors.HTTPException as e:
+    except disnake.errors.HTTPException as e:
         if e.status == 429:
             retry_after = getattr(e, "retry_after", None) or 2.5
             gs["_backoff_until"] = _time.monotonic() + retry_after
@@ -455,7 +459,7 @@ async def _purge_channel(guild_id: str, reason: str = "Tự Động Dọn Dẹp"
                 check=lambda m: (lobby_id is None or m.id != lobby_id),
                 bulk=True
             )
-        except discord.Forbidden:
+        except disnake.Forbidden:
             async for msg in channel.history(limit=200):
                 if lobby_id and msg.id == lobby_id:
                     continue
@@ -903,7 +907,7 @@ async def init_guild(guild_id: str, text_channel):
             gs["state"]          = saved.get("state", GameState.WAITING)
             gs["countdown_time"] = saved.get("countdown_time", COUNTDOWN_DEFAULT)
             print(f"  [{gid}] Restored lobby message {msg.id}")
-        except discord.NotFound:
+        except disnake.NotFound:
             gs["lobby_message"] = None
         except Exception as e:
             print(f"  [{gid}] Lỗi fetch lobby message: {e}")
@@ -1068,7 +1072,7 @@ async def _emergency_cleanup_all_games(reason: str):
             text_ch = getattr(engine, "text_channel", None)
             if text_ch:
                 await text_ch.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="🔧 TRẬN ĐẤU BỊ HỦY DO CẬP NHẬT",
                         description=(
                             f"**{reason}**\n\n"
@@ -1217,9 +1221,9 @@ async def on_voice_state_update(member, before, after):
 # SLASH COMMAND: /clear
 # ==============================
 
-@bot.tree.command(name="clear", description="Xóa tất cả tin nhắn trong kênh (trừ bảng lobby)")
-@app_commands.guild_only()
-async def clear_command(interaction: discord.Interaction):
+@bot.slash_command(name="clear", description="Xóa tất cả tin nhắn trong kênh (trừ bảng lobby)")
+
+async def clear_command(interaction: disnake.ApplicationCommandInteraction):
     guild_id = str(interaction.guild_id)
     cfg      = get_cached_config(guild_id)
     gs       = get_guild_state(guild_id)
@@ -1337,8 +1341,9 @@ async def on_ready():
         print(f"[Bot] Bỏ qua sync slash commands vì còn lỗi load cogs: {cog_load_errors}")
     else:
         try:
-            synced = await bot.tree.sync()
-            print(f"[Bot] Đã sync {len(synced)} slash commands.")
+            # disnake tự động sync slash commands khi load cogs
+            # Không cần gọi bot.tree.sync() như discord.py
+            print("[Bot] Slash commands đã được sync tự động bởi disnake.")
         except Exception as e:
             print(f"[Bot] Lỗi sync commands: {e}")
             traceback.print_exc()
@@ -1372,7 +1377,7 @@ async def on_ready():
 
     # Đặt trạng thái "Đang Chơi"
     await bot.change_presence(
-        activity=discord.Game(name="Made by Nang5Gram ( a.k.a Huy Ph. )")
+        activity=disnake.Game(name="Made by Nang5Gram ( a.k.a Huy Ph. )")
     )
 
     _READY_BOOTSTRAPPED = True
@@ -1431,7 +1436,7 @@ def _run_bot_in_thread():
                 # Chạy bot với reconnect=True (tự reconnect khi Discord ngắt kết nối)
                 loop.run_until_complete(bot.start(TOKEN, reconnect=True))
 
-            except discord.LoginFailure:
+            except disnake.LoginFailure:
                 print("[BotThread] FATAL: Token Discord không hợp lệ! Kiểm tra DISCORD_TOKEN.")
                 break
 

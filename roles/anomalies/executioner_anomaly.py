@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -32,7 +32,7 @@ class TheExecutionerAnomaly(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -43,7 +43,7 @@ class TheExecutionerAnomaly(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -60,7 +60,7 @@ class TheExecutionerAnomaly(BaseRole):
 
         if uses_left <= 0:
             try:
-                await self.safe_send(embed=discord.Embed(
+                await self.safe_send(embed=disnake.Embed(
                     title="⚔️ ĐÊM — KẺ HÀNH QUYẾT",
                     description="❌ Bạn đã dùng hết **2 lượt** hành quyết. Không thể hành động.",
                     color=0x7f8c8d
@@ -71,7 +71,7 @@ class TheExecutionerAnomaly(BaseRole):
 
         if self.cooldown > 0:
             try:
-                await self.safe_send(embed=discord.Embed(
+                await self.safe_send(embed=disnake.Embed(
                     title="⚔️ ĐÊM — KẺ HÀNH QUYẾT",
                     description=f"⏳ Đang hồi chiêu — còn **{self.cooldown} đêm** nữa mới có thể hành quyết.\n\nLượt còn lại: **{uses_left}/{self.max_uses}**",
                     color=0x7f8c8d
@@ -93,7 +93,7 @@ class TheExecutionerAnomaly(BaseRole):
         view = self.ExecutionView(game, self, alive_targets)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⚔️ ĐÊM — KẺ HÀNH QUYẾT",
                     description=(
                         f"🗡️ Lượt còn lại: **{uses_left}/{self.max_uses}**\n\n"
@@ -107,13 +107,13 @@ class TheExecutionerAnomaly(BaseRole):
         except Exception:
             pass
 
-    class ExecutionView(discord.ui.View):
+    class ExecutionView(disnake.ui.View):
         def __init__(self, game, role, target_list):
             super().__init__(timeout=60)
             self.add_item(TheExecutionerAnomaly.ExecuteSelect(game, role, target_list))
 
-        @discord.ui.button(label="💤 Bỏ qua / Hồi chiêu", style=discord.ButtonStyle.secondary, row=1)
-        async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="💤 Bỏ qua / Hồi chiêu", style=disnake.ButtonStyle.secondary, row=1)
+        async def skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             role = self.children[0].role
             if interaction.user.id != role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
@@ -123,12 +123,12 @@ class TheExecutionerAnomaly(BaseRole):
             await interaction.message.edit(view=self)
             await interaction.response.send_message("Bạn bỏ qua đêm nay để hồi chiêu.", ephemeral=True)
 
-    class ExecuteSelect(discord.ui.Select):
+    class ExecuteSelect(disnake.ui.Select):
         def __init__(self, game, role, target_list):
             self.game = game
             self.role = role
             options   = [
-                discord.SelectOption(label=p.display_name, value=str(p.id), emoji="⚔️")
+                disnake.SelectOption(label=p.display_name, value=str(p.id), emoji="⚔️")
                 for p in target_list
             ][:25]
             super().__init__(
@@ -138,7 +138,7 @@ class TheExecutionerAnomaly(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -153,7 +153,7 @@ class TheExecutionerAnomaly(BaseRole):
             target = self.game.players.get(target_id)
             if ok:
                 await interaction.response.send_message(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         description=f"⚔️ Lệnh hành quyết đã được ban ra cho **{target.display_name if target else '?'}**.",
                         color=0xe74c3c
                     ),

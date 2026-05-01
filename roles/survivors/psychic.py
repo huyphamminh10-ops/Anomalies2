@@ -9,7 +9,7 @@ on_game_start: DM bảng danh sách vai trò trận (không tiết lộ ai - vai
 """
 from __future__ import annotations
 import random
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 # ── Nhãn phe hiển thị ────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ class Psychic(BaseRole):
                 if entry not in survivor_roles:
                     survivor_roles.append(entry)
 
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="📋 DANH SÁCH VAI TRÒ TRẬN NÀY",
             description=(
                 "Đây là tất cả các vai trò xuất hiện trong trận.\n"
@@ -144,7 +144,7 @@ class Psychic(BaseRole):
                 return f"✅ Còn **{uses}** lần"
             return "❌ Đã hết"
 
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="🔮 ĐÊM — NGƯỜI TIÊN TRI",
             color=0x9b59b6
         )
@@ -163,7 +163,7 @@ class Psychic(BaseRole):
 # VIEW CHÍNH — chọn kỹ năng
 # ════════════════════════════════════════════════════════════════════════════
 
-class PsychicMainView(discord.ui.View):
+class PsychicMainView(disnake.ui.View):
     def __init__(self, game, role: Psychic):
         super().__init__(timeout=90)
         self._game = game
@@ -173,38 +173,38 @@ class PsychicMainView(discord.ui.View):
     def _rebuild(self):
         self.clear_items()
 
-        btn1 = discord.ui.Button(
+        btn1 = disnake.ui.Button(
             label=f"🔮 Tiên Đoán ({self._role.skill1_uses} lần)",
-            style=discord.ButtonStyle.primary,
+            style=disnake.ButtonStyle.primary,
             disabled=(self._role.skill1_uses <= 0),
             row=0
         )
         btn1.callback = self._use_skill1
         self.add_item(btn1)
 
-        btn2 = discord.ui.Button(
+        btn2 = disnake.ui.Button(
             label=f"👁️ Kiểm Tra Ba ({self._role.skill2_uses} lần)",
-            style=discord.ButtonStyle.secondary,
+            style=disnake.ButtonStyle.secondary,
             disabled=(self._role.skill2_uses <= 0),
             row=0
         )
         btn2.callback = self._use_skill2
         self.add_item(btn2)
 
-        btn3 = discord.ui.Button(
+        btn3 = disnake.ui.Button(
             label=f"🛡️ Bảo Hộ ({self._role.skill3_uses} lần)",
-            style=discord.ButtonStyle.success,
+            style=disnake.ButtonStyle.success,
             disabled=(self._role.skill3_uses <= 0),
             row=0
         )
         btn3.callback = self._use_skill3
         self.add_item(btn3)
 
-    def _is_owner(self, interaction: discord.Interaction) -> bool:
+    def _is_owner(self, interaction: disnake.ApplicationCommandInteraction) -> bool:
         return interaction.user.id == self._role.player.id
 
     # ── KN1: Tiên Đoán ───────────────────────────────────────────────────────
-    async def _use_skill1(self, interaction: discord.Interaction):
+    async def _use_skill1(self, interaction: disnake.ApplicationCommandInteraction):
         if not self._is_owner(interaction):
             return await interaction.response.send_message(
                 "❌ Đây không phải lượt của bạn.", ephemeral=True
@@ -216,7 +216,7 @@ class PsychicMainView(discord.ui.View):
         await interaction.response.send_modal(ProphecyModal(self._game, self._role, self))
 
     # ── KN2: Kiểm Tra Ba ─────────────────────────────────────────────────────
-    async def _use_skill2(self, interaction: discord.Interaction):
+    async def _use_skill2(self, interaction: disnake.ApplicationCommandInteraction):
         if not self._is_owner(interaction):
             return await interaction.response.send_message(
                 "❌ Đây không phải lượt của bạn.", ephemeral=True
@@ -234,13 +234,13 @@ class PsychicMainView(discord.ui.View):
             )
 
         options = [
-            discord.SelectOption(label=p.display_name, value=str(p.id))
+            disnake.SelectOption(label=p.display_name, value=str(p.id))
             for p in alive
         ][:25]
 
         view = TrioCheckView(self._game, self._role, self, options)
         await interaction.response.send_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="👁️ KIỂM TRA BA",
                 description=(
                     "Chọn đúng **3 người** để cảm nhận phe của họ.\n\n"
@@ -253,7 +253,7 @@ class PsychicMainView(discord.ui.View):
         )
 
     # ── KN3: Bảo Hộ Linh Hồn ────────────────────────────────────────────────
-    async def _use_skill3(self, interaction: discord.Interaction):
+    async def _use_skill3(self, interaction: disnake.ApplicationCommandInteraction):
         if not self._is_owner(interaction):
             return await interaction.response.send_message(
                 "❌ Đây không phải lượt của bạn.", ephemeral=True
@@ -277,7 +277,7 @@ class PsychicMainView(discord.ui.View):
             pass
 
         await interaction.followup.send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="🛡️ BẢO HỘ LINH HỒN — ĐÃ KÍCH HOẠT",
                 description=(
                     "✨ Bạn đã bao phủ linh hồn mình bằng một lớp **năng lượng hộ vệ**.\n\n"
@@ -294,15 +294,19 @@ class PsychicMainView(discord.ui.View):
 # KN1 — MODAL TIÊN ĐOÁN
 # ════════════════════════════════════════════════════════════════════════════
 
-class ProphecyModal(discord.ui.Modal, title="🔮 Tiên Đoán Tương Lai"):
-    prediction = discord.ui.TextInput(
+class ProphecyModal(disnake.ui.Modal):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("title", "🔮 Tiên Đoán Tương Lai")
+        super().__init__(*args, **kwargs)
+
+    prediction = disnake.ui.TextInput(
         label="Dự đoán của bạn về đêm nay",
         placeholder=(
             "VD: Đêm nay Kẻ Trừng Phạt bắn chết Hunt\n"
             "     Đêm nay Thám Tử Soi trúng Dị Thể\n"
             "     Đêm nay Sói giết Cá Mập"
         ),
-        style=discord.TextStyle.paragraph,
+        style=disnake.TextStyle.paragraph,
         max_length=300,
         required=True
     )
@@ -313,11 +317,11 @@ class ProphecyModal(discord.ui.Modal, title="🔮 Tiên Đoán Tương Lai"):
         self._role        = role
         self._parent_view = parent_view
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         pred_text = self.prediction.value.strip()
 
         await interaction.response.send_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="🔮 Đang hỏi Gemini A.I...",
                 description=(
                     f"📜 Dự đoán: *\"{pred_text}\"*\n\n"
@@ -334,7 +338,7 @@ class ProphecyModal(discord.ui.Modal, title="🔮 Tiên Đoán Tương Lai"):
         if is_correct:
             # Đúng → không mất KN1, hồi KN3 +1
             self._role.skill3_uses += 1
-            outcome_embed = discord.Embed(
+            outcome_embed = disnake.Embed(
                 title="🔮 TIÊN ĐOÁN — ✅ ĐÚNG!",
                 description=(
                     f"📜 *\"{pred_text}\"*\n\n"
@@ -347,7 +351,7 @@ class ProphecyModal(discord.ui.Modal, title="🔮 Tiên Đoán Tương Lai"):
         else:
             # Sai → mất KN1 vĩnh viễn
             self._role.skill1_uses = 0
-            outcome_embed = discord.Embed(
+            outcome_embed = disnake.Embed(
                 title="🔮 TIÊN ĐOÁN — ❌ SAI!",
                 description=(
                     f"📜 *\"{pred_text}\"*\n\n"
@@ -422,7 +426,7 @@ class ProphecyModal(discord.ui.Modal, title="🔮 Tiên Đoán Tương Lai"):
 # KN2 — TRIO CHECK VIEW & SELECT
 # ════════════════════════════════════════════════════════════════════════════
 
-class TrioCheckView(discord.ui.View):
+class TrioCheckView(disnake.ui.View):
     def __init__(self, game, role: Psychic, parent_view: PsychicMainView, options: list):
         super().__init__(timeout=60)
         self._game        = game
@@ -431,7 +435,7 @@ class TrioCheckView(discord.ui.View):
         self.add_item(TrioCheckSelect(game, role, parent_view, options))
 
 
-class TrioCheckSelect(discord.ui.Select):
+class TrioCheckSelect(disnake.ui.Select):
     def __init__(self, game, role: Psychic, parent_view: PsychicMainView, options: list):
         self._game        = game
         self._role        = role
@@ -443,7 +447,7 @@ class TrioCheckSelect(discord.ui.Select):
             max_values=3
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self._role.player.id:
             return await interaction.response.send_message(
                 "❌ Đây không phải lượt của bạn.", ephemeral=True
@@ -493,7 +497,7 @@ class TrioCheckSelect(discord.ui.Select):
         await interaction.response.edit_message(view=self.view)
 
         await interaction.followup.send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="👁️ KẾT QUẢ — KIỂM TRA BA",
                 description=desc,
                 color=0x8e44ad

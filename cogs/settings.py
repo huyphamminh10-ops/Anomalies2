@@ -1,7 +1,6 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-from discord.ui import View, Select, Modal, TextInput
+import disnake
+from disnake.ext import commands
+from disnake.ui import View, Select, Modal, TextInput
 import asyncio
 import traceback
 import sys
@@ -22,7 +21,7 @@ def _invalidate(guild_id: str):
         pass
 
 
-def check_command_permission(interaction: discord.Interaction, config: dict) -> bool:
+def check_command_permission(interaction: disnake.ApplicationCommandInteraction, config: dict) -> bool:
     """
     Kiểm tra quyền dùng /setting, /clear, /setup theo 4 cấp:
       1. owner       — Chỉ chủ server
@@ -222,7 +221,7 @@ def _get_settings_list(config: dict, bot) -> list[dict]:
     ]
 
 
-def _build_setting_embed(setting: dict, idx: int, total: int) -> discord.Embed:
+def _build_setting_embed(setting: dict, idx: int, total: int) -> disnake.Embed:
     s_type = setting["type"]
     if s_type == "time":
         color = 0x3498db
@@ -233,7 +232,7 @@ def _build_setting_embed(setting: dict, idx: int, total: int) -> discord.Embed:
     else:
         color = 0x595858
 
-    embed = discord.Embed(title="⚙️ CÀI ĐẶT ANOMALIES", color=color)
+    embed = disnake.Embed(title="⚙️ CÀI ĐẶT ANOMALIES", color=color)
     embed.add_field(
         name=f"{setting['emoji']} {setting['label']}",
         value=(
@@ -261,7 +260,7 @@ class SettingsView(View):
         self.guild_id = guild_id
         self.lock     = lock
         self.idx      = idx
-        self.message: discord.Message | None = None
+        self.message: disnake.Message | None = None
         self._refresh()
 
     def _settings(self) -> list[dict]:
@@ -276,47 +275,47 @@ class SettingsView(View):
         s_type   = setting["type"]
 
         if s_type == "time":
-            btn_action = discord.ui.Button(
+            btn_action = disnake.ui.Button(
                 label="⏱️ Chọn Thời Gian",
-                style=discord.ButtonStyle.primary,
+                style=disnake.ButtonStyle.primary,
                 row=0,
             )
             btn_action.callback = self._action_callback
         elif s_type == "toggle":
-            btn_action = discord.ui.Button(
+            btn_action = disnake.ui.Button(
                 label="🔄 Bật / Tắt",
-                style=discord.ButtonStyle.success,
+                style=disnake.ButtonStyle.success,
                 row=0,
             )
             btn_action.callback = self._action_callback
         elif s_type == "other":
-            btn_action = discord.ui.Button(
+            btn_action = disnake.ui.Button(
                 label="⚙️ Cài đặt",
-                style=discord.ButtonStyle.secondary,
+                style=disnake.ButtonStyle.secondary,
                 row=0,
             )
             btn_action.callback = self._action_callback
         elif s_type == "number":
-            btn_action = discord.ui.Button(
+            btn_action = disnake.ui.Button(
                 label="▶️ Chọn Số",
-                style=discord.ButtonStyle.secondary,
+                style=disnake.ButtonStyle.secondary,
                 row=0,
             )
             btn_action.callback = self._action_callback
 
         self.add_item(btn_action)
 
-        btn_prev = discord.ui.Button(
+        btn_prev = disnake.ui.Button(
             label="◀ Trang trước",
-            style=discord.ButtonStyle.secondary,
+            style=disnake.ButtonStyle.secondary,
             disabled=(self.idx == 0),
             row=1,
         )
         btn_prev.callback = self._prev
 
-        btn_next = discord.ui.Button(
+        btn_next = disnake.ui.Button(
             label="Trang sau ▶",
-            style=discord.ButtonStyle.secondary,
+            style=disnake.ButtonStyle.secondary,
             disabled=(self.idx >= total - 1),
             row=1,
         )
@@ -325,16 +324,16 @@ class SettingsView(View):
         self.add_item(btn_prev)
         self.add_item(btn_next)
 
-    def _build_embed(self) -> discord.Embed:
+    def _build_embed(self) -> disnake.Embed:
         settings = self._settings()
         return _build_setting_embed(settings[self.idx], self.idx, len(settings))
 
-    async def _prev(self, interaction: discord.Interaction):
+    async def _prev(self, interaction: disnake.ApplicationCommandInteraction):
         self.idx -= 1
         self._refresh()
         await interaction.response.edit_message(embed=self._build_embed(), view=self)
 
-    async def _next(self, interaction: discord.Interaction):
+    async def _next(self, interaction: disnake.ApplicationCommandInteraction):
         self.idx += 1
         self._refresh()
         await interaction.response.edit_message(embed=self._build_embed(), view=self)
@@ -348,7 +347,7 @@ class SettingsView(View):
             except Exception:
                 pass
 
-    async def _action_callback(self, interaction: discord.Interaction):
+    async def _action_callback(self, interaction: disnake.ApplicationCommandInteraction):
         settings = self._settings()
         setting  = settings[self.idx]
         s_type   = setting["type"]
@@ -362,10 +361,10 @@ class SettingsView(View):
                 new_value = not current
                 if tk == "mute_dead" and new_value and config.get("no_remove_roles", False):
                     await interaction.response.send_message(
-                        embed=discord.Embed(
+                        embed=disnake.Embed(
                             title="⚠️ Không thể bật",
                             description="**Mute Khi Chết** không thể bật khi **Không gỡ role** đang bật.\nHãy tắt **Không gỡ role** trước nếu muốn dùng lại Mute Khi Chết.",
-                            color=discord.Color.orange(),
+                            color=disnake.Color.orange(),
                         ),
                         ephemeral=True,
                     )
@@ -382,10 +381,10 @@ class SettingsView(View):
             self._refresh()
             await interaction.response.edit_message(embed=self._build_embed(), view=self)
             await interaction.followup.send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="✅ Đã cập nhật",
                     description=f"**{setting['label']}:** {new_label}{extra_desc}",
-                    color=discord.Color.green(),
+                    color=disnake.Color.green(),
                 ),
                 ephemeral=True,
             )
@@ -448,7 +447,7 @@ _MODE_DESCS = {
 }
 
 
-def _build_permission_embed(config: dict) -> discord.Embed:
+def _build_permission_embed(config: dict) -> disnake.Embed:
     mode    = config.get("setting_permission_mode", "owner")
     current = _MODE_LABELS.get(mode, "👑 Chỉ Chủ Server")
     desc_parts = [f"**Hiện tại:** {current}", f"> {_MODE_DESCS.get(mode, '')}"]
@@ -469,10 +468,10 @@ def _build_permission_embed(config: dict) -> discord.Embed:
         else:
             desc_parts.append("  *(Chưa có ai)*")
 
-    embed = discord.Embed(
+    embed = disnake.Embed(
         title="🔐 QUYỀN SỬ DỤNG LỆNH",
         description="\n".join(desc_parts),
-        color=discord.Color.gold(),
+        color=disnake.Color.gold(),
     )
     embed.set_footer(text="Áp dụng cho /setting • /clear • /setup  |  Chỉ Chủ Server mới thay đổi được.")
     return embed
@@ -484,7 +483,7 @@ class PermissionView(View):
         self.bot      = bot
         self.guild_id = guild_id
         self.lock     = lock
-        self.message: discord.Message | None = None
+        self.message: disnake.Message | None = None
         self._build()
 
     def _build(self):
@@ -496,28 +495,28 @@ class PermissionView(View):
             placeholder="Chọn cấp quyền...",
             min_values=1, max_values=1,
             options=[
-                discord.SelectOption(
+                disnake.SelectOption(
                     label="1. Chủ server",
                     value="owner",
                     description="Chỉ chủ server",
                     emoji="👑",
                     default=(mode == "owner"),
                 ),
-                discord.SelectOption(
+                disnake.SelectOption(
                     label="2. Quản trị viên",
                     value="admin",
                     description="Chủ server + roles Quản lý máy chủ",
                     emoji="🛡️",
                     default=(mode == "admin"),
                 ),
-                discord.SelectOption(
+                disnake.SelectOption(
                     label="3. Vai trò đặc biệt",
                     value="role",
                     description="Cấp Admin + 12 roles tùy chọn",
                     emoji="🎭",
                     default=(mode == "role"),
                 ),
-                discord.SelectOption(
+                disnake.SelectOption(
                     label="4. Người chơi đặc quyền",
                     value="player",
                     description="Cấp Vai trò + 6 người dùng tùy chọn",
@@ -531,18 +530,18 @@ class PermissionView(View):
         self.add_item(select)
 
         if mode in ("role", "player"):
-            btn_roles = discord.ui.Button(
+            btn_roles = disnake.ui.Button(
                 label="🎭 Quản lý Roles (12)",
-                style=discord.ButtonStyle.secondary,
+                style=disnake.ButtonStyle.secondary,
                 row=1,
             )
             btn_roles.callback = self._manage_roles
             self.add_item(btn_roles)
 
         if mode == "player":
-            btn_users = discord.ui.Button(
+            btn_users = disnake.ui.Button(
                 label="👤 Quản lý Người dùng (6)",
-                style=discord.ButtonStyle.secondary,
+                style=disnake.ButtonStyle.secondary,
                 row=1,
             )
             btn_users.callback = self._manage_users
@@ -557,7 +556,7 @@ class PermissionView(View):
             except Exception:
                 pass
 
-    async def _mode_select(self, interaction: discord.Interaction):
+    async def _mode_select(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.response.send_message("❌ Chỉ Chủ Server.", ephemeral=True)
             return
@@ -574,7 +573,7 @@ class PermissionView(View):
         config = load_guild_config(self.guild_id)
         await interaction.response.edit_message(embed=_build_permission_embed(config), view=self)
 
-    async def _manage_roles(self, interaction: discord.Interaction):
+    async def _manage_roles(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.response.send_message("❌ Chỉ Chủ Server.", ephemeral=True)
             return
@@ -588,28 +587,28 @@ class PermissionView(View):
             return
         current_ids = config.get("setting_allowed_roles", [])
         view = _RoleManageView(self.bot, self.guild_id, self.lock, roles, current_ids, parent=self)
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="🎭 QUẢN LÝ ROLES (tối đa 12)",
             description="Chọn các role được phép dùng lệnh.\n*Roles đang chọn sẽ được đánh dấu.*",
-            color=discord.Color.gold(),
+            color=disnake.Color.gold(),
         )
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         view.message = await interaction.original_response()
 
-    async def _manage_users(self, interaction: discord.Interaction):
+    async def _manage_users(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.response.send_message("❌ Chỉ Chủ Server.", ephemeral=True)
             return
         config      = load_guild_config(self.guild_id)
         current_ids = config.get("setting_allowed_users", [])
         view  = _UserManageView(self.bot, self.guild_id, self.lock, current_ids, parent=self)
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="👤 QUẢN LÝ NGƯỜI DÙNG ĐẶC QUYỀN (tối đa 6)",
             description=(
                 "Dùng nút bên dưới để thêm/xóa người dùng.\n"
                 + ("**Đã chọn:** " + ", ".join(f"<@{u}>" for u in current_ids) if current_ids else "*Chưa có ai*")
             ),
-            color=discord.Color.gold(),
+            color=disnake.Color.gold(),
         )
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         view.message = await interaction.original_response()
@@ -622,10 +621,10 @@ class _RoleManageView(View):
         self.guild_id   = guild_id
         self.lock       = lock
         self.parent     = parent
-        self.message: discord.Message | None = None
+        self.message: disnake.Message | None = None
 
         options = [
-            discord.SelectOption(
+            disnake.SelectOption(
                 label=r.name[:100],
                 value=str(r.id),
                 default=(r.id in current_ids),
@@ -650,7 +649,7 @@ class _RoleManageView(View):
             except Exception:
                 pass
 
-    async def _callback(self, interaction: discord.Interaction):
+    async def _callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.response.send_message("❌ Chỉ Chủ Server.", ephemeral=True)
             return
@@ -663,10 +662,10 @@ class _RoleManageView(View):
         self.parent._build()
         config = load_guild_config(self.guild_id)
         await interaction.response.edit_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="✅ Đã cập nhật roles",
                 description=f"Đã lưu **{len(selected)}** role.",
-                color=discord.Color.green(),
+                color=disnake.Color.green(),
             ),
             view=None,
         )
@@ -685,11 +684,11 @@ class _UserManageView(View):
         self.lock     = lock
         self.parent   = parent
         self.current  = list(current_ids)
-        self.message: discord.Message | None = None
+        self.message: disnake.Message | None = None
 
-        btn_add = discord.ui.Button(label="➕ Thêm người dùng", style=discord.ButtonStyle.success, row=0)
+        btn_add = disnake.ui.Button(label="➕ Thêm người dùng", style=disnake.ButtonStyle.success, row=0)
         btn_add.callback = self._add
-        btn_clr = discord.ui.Button(label="🗑️ Xóa tất cả", style=discord.ButtonStyle.danger, row=0)
+        btn_clr = disnake.ui.Button(label="🗑️ Xóa tất cả", style=disnake.ButtonStyle.danger, row=0)
         btn_clr.callback = self._clear
         self.add_item(btn_add)
         self.add_item(btn_clr)
@@ -703,7 +702,7 @@ class _UserManageView(View):
             except Exception:
                 pass
 
-    async def _add(self, interaction: discord.Interaction):
+    async def _add(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.response.send_message("❌ Chỉ Chủ Server.", ephemeral=True)
             return
@@ -714,7 +713,7 @@ class _UserManageView(View):
             _AddUserModal(self.bot, self.guild_id, self.lock, self.current, parent_view=self)
         )
 
-    async def _clear(self, interaction: discord.Interaction):
+    async def _clear(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != interaction.guild.owner_id:
             await interaction.response.send_message("❌ Chỉ Chủ Server.", ephemeral=True)
             return
@@ -727,10 +726,10 @@ class _UserManageView(View):
         self.parent._build()
         config = load_guild_config(self.guild_id)
         await interaction.response.edit_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="✅ Đã xóa tất cả",
                 description="Danh sách người dùng đặc quyền đã được xóa.",
-                color=discord.Color.green(),
+                color=disnake.Color.green(),
             ),
             view=None,
         )
@@ -741,7 +740,7 @@ class _UserManageView(View):
                 pass
 
 
-class _AddUserModal(Modal, title="Thêm người dùng đặc quyền"):
+class _AddUserModal(Modal):
     user_id_input = TextInput(
         label="User ID",
         placeholder="Nhập User ID (số) hoặc @mention",
@@ -749,14 +748,14 @@ class _AddUserModal(Modal, title="Thêm người dùng đặc quyền"):
     )
 
     def __init__(self, bot, guild_id, lock, current_ids, parent_view: _UserManageView):
-        super().__init__()
+        super().__init__(title="Thêm người dùng đặc quyền")
         self.bot         = bot
         self.guild_id    = guild_id
         self.lock        = lock
         self.current_ids = current_ids
         self.parent_view = parent_view
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         raw = self.user_id_input.value.strip().replace("<@", "").replace(">", "").replace("!", "")
         try:
             uid = int(raw)
@@ -775,10 +774,10 @@ class _AddUserModal(Modal, title="Thêm người dùng đặc quyền"):
         self.parent_view.parent._build()
         config = load_guild_config(self.guild_id)
         await interaction.response.send_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="✅ Đã thêm",
                 description=f"<@{uid}> đã được thêm vào danh sách đặc quyền.",
-                color=discord.Color.green(),
+                color=disnake.Color.green(),
             ),
             ephemeral=True,
         )
@@ -796,7 +795,7 @@ class _AddUserModal(Modal, title="Thêm người dùng đặc quyền"):
 # CHANNELS VIEW
 # ══════════════════════════════════════════════════════════════════
 
-def _build_channels_embed(bot, config: dict) -> discord.Embed:
+def _build_channels_embed(bot, config: dict) -> disnake.Embed:
     cat_name = tc_name = vc_name = "Chưa đặt"
     if bot:
         if cid := config.get("category_id"):
@@ -808,10 +807,10 @@ def _build_channels_embed(bot, config: dict) -> discord.Embed:
         if cid := config.get("voice_channel_id"):
             ch = bot.get_channel(cid)
             if ch: vc_name = ch.name
-    embed = discord.Embed(
+    embed = disnake.Embed(
         title="🏷️ QUẢN LÝ KÊNH",
         description="Chọn kênh muốn đổi tên từ menu bên dưới.",
-        color=discord.Color.blurple(),
+        color=disnake.Color.blurple(),
     )
     embed.add_field(name="📂 Danh mục",     value=f"`{cat_name}`", inline=False)
     embed.add_field(name="💬 Kênh văn bản", value=f"`{tc_name}`",  inline=False)
@@ -825,7 +824,7 @@ class ChannelsView(View):
         self.bot      = bot
         self.guild_id = guild_id
         self.lock     = lock
-        self.message: discord.Message | None = None
+        self.message: disnake.Message | None = None
 
     async def on_timeout(self):
         for item in self.children:
@@ -836,16 +835,16 @@ class ChannelsView(View):
             except Exception:
                 pass
 
-    @discord.ui.select(
+    @disnake.ui.string_select(
         placeholder="Chọn kênh để đổi tên...",
         min_values=1, max_values=1,
         options=[
-            discord.SelectOption(label="Đổi tên danh mục",     value="category", emoji="📂"),
-            discord.SelectOption(label="Đổi tên kênh văn bản", value="text",     emoji="💬"),
-            discord.SelectOption(label="Đổi tên kênh thoại",   value="voice",    emoji="🔊"),
+            disnake.SelectOption(label="Đổi tên danh mục",     value="category", emoji="📂"),
+            disnake.SelectOption(label="Đổi tên kênh văn bản", value="text",     emoji="💬"),
+            disnake.SelectOption(label="Đổi tên kênh thoại",   value="voice",    emoji="🔊"),
         ],
     )
-    async def channel_select(self, interaction: discord.Interaction, select: Select):
+    async def channel_select(self, select: disnake.ui.Select, interaction: disnake.MessageInteraction):
         await interaction.response.send_modal(
             RenameChannelModal(self.bot, self.guild_id, self.lock, select.values[0])
         )
@@ -858,14 +857,14 @@ class ChannelsView(View):
 class _BaseModal(Modal):
     """Base modal — auto-refreshes parent SettingsView sau khi submit."""
 
-    def __init__(self, bot, guild_id, lock, parent_view: SettingsView | None = None):
-        super().__init__()
+    def __init__(self, bot, guild_id, lock, parent_view: SettingsView | None = None, title: str = ""):
+        super().__init__(title=title)
         self.bot         = bot
         self.guild_id    = guild_id
         self.lock        = lock
         self.parent_view = parent_view
 
-    async def _refresh_parent(self, interaction: discord.Interaction):
+    async def _refresh_parent(self, interaction):
         if self.parent_view and self.parent_view.message:
             try:
                 self.parent_view._refresh()
@@ -877,43 +876,51 @@ class _BaseModal(Modal):
                 pass
 
 
-class MaxPlayersModal(_BaseModal, title="Đặt số người chơi tối đa"):
+class MaxPlayersModal(_BaseModal):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("title", "Đặt số người chơi tối đa")
+        super().__init__(*args, **kwargs)
+
     val = TextInput(label="Số người tối đa", placeholder="5–65", min_length=1, max_length=2, required=True)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
                 v = int(self.val.value.strip())
                 if not (5 <= v <= 65):
                     return await interaction.response.send_message(
-                        embed=discord.Embed(title="❌ Không hợp lệ", description="Phải từ 5 đến 65.", color=discord.Color.red()),
+                        embed=disnake.Embed(title="❌ Không hợp lệ", description="Phải từ 5 đến 65.", color=disnake.Color.red()),
                         ephemeral=True,
                     )
                 config = load_guild_config(self.guild_id)
                 if v < config.get("min_players_to_start", 5):
                     return await interaction.response.send_message(
-                        embed=discord.Embed(title="❌ Không hợp lệ", description="Tối đa phải lớn hơn tối thiểu.", color=discord.Color.red()),
+                        embed=disnake.Embed(title="❌ Không hợp lệ", description="Tối đa phải lớn hơn tối thiểu.", color=disnake.Color.red()),
                         ephemeral=True,
                     )
                 config["max_players"] = v
                 save_guild_config(self.guild_id, config)
                 _invalidate(self.guild_id)
             await interaction.response.send_message(
-                embed=discord.Embed(title="✅ Đã cập nhật", description=f"Số người tối đa: **{v}**", color=discord.Color.green()),
+                embed=disnake.Embed(title="✅ Đã cập nhật", description=f"Số người tối đa: **{v}**", color=disnake.Color.green()),
                 ephemeral=True,
             )
             await self._refresh_parent(interaction)
         except ValueError:
             await interaction.response.send_message(
-                embed=discord.Embed(title="❌", description="Nhập số hợp lệ.", color=discord.Color.red()),
+                embed=disnake.Embed(title="❌", description="Nhập số hợp lệ.", color=disnake.Color.red()),
                 ephemeral=True,
             )
 
 
-class MinPlayersModal(_BaseModal, title="Đặt số người tối thiểu để bắt đầu"):
+class MinPlayersModal(_BaseModal):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("title", "Đặt số người tối thiểu để bắt đầu")
+        super().__init__(*args, **kwargs)
+
     val = TextInput(label="Số người tối thiểu", placeholder="5–64", min_length=1, max_length=2, required=True)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
                 v = int(self.val.value.strip())
@@ -921,34 +928,38 @@ class MinPlayersModal(_BaseModal, title="Đặt số người tối thiểu đ�
                 max_p  = config.get("max_players", 65)
                 if v < 5 or v >= max_p:
                     return await interaction.response.send_message(
-                        embed=discord.Embed(title="❌ Không hợp lệ", description=f"Phải từ 5 đến {max_p - 1}.", color=discord.Color.red()),
+                        embed=disnake.Embed(title="❌ Không hợp lệ", description=f"Phải từ 5 đến {max_p - 1}.", color=disnake.Color.red()),
                         ephemeral=True,
                     )
                 config["min_players_to_start"] = v
                 save_guild_config(self.guild_id, config)
                 _invalidate(self.guild_id)
             await interaction.response.send_message(
-                embed=discord.Embed(title="✅ Đã cập nhật", description=f"Số người tối thiểu: **{v}**", color=discord.Color.green()),
+                embed=disnake.Embed(title="✅ Đã cập nhật", description=f"Số người tối thiểu: **{v}**", color=disnake.Color.green()),
                 ephemeral=True,
             )
             await self._refresh_parent(interaction)
         except ValueError:
             await interaction.response.send_message(
-                embed=discord.Embed(title="❌", description="Nhập số hợp lệ.", color=discord.Color.red()),
+                embed=disnake.Embed(title="❌", description="Nhập số hợp lệ.", color=disnake.Color.red()),
                 ephemeral=True,
             )
 
 
-class CountdownModal(_BaseModal, title="Đặt thời gian đếm ngược"):
+class CountdownModal(_BaseModal):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("title", "Đặt thời gian đếm ngược")
+        super().__init__(*args, **kwargs)
+
     val = TextInput(label="Thời gian đếm ngược (phút)", placeholder="1–3", min_length=1, max_length=1, required=True)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
                 v = int(self.val.value.strip())
                 if not (1 <= v <= 3):
                     return await interaction.response.send_message(
-                        embed=discord.Embed(title="❌ Không hợp lệ", description="Phải từ 1 đến 3 phút.", color=discord.Color.red()),
+                        embed=disnake.Embed(title="❌ Không hợp lệ", description="Phải từ 1 đến 3 phút.", color=disnake.Color.red()),
                         ephemeral=True,
                     )
                 secs = v * 60
@@ -966,27 +977,31 @@ class CountdownModal(_BaseModal, title="Đặt thời gian đếm ngược"):
                 except Exception:
                     pass
             await interaction.response.send_message(
-                embed=discord.Embed(title="✅ Đã cập nhật", description=f"Đếm ngược: **{v} phút** ({secs}s)", color=discord.Color.green()),
+                embed=disnake.Embed(title="✅ Đã cập nhật", description=f"Đếm ngược: **{v} phút** ({secs}s)", color=disnake.Color.green()),
                 ephemeral=True,
             )
             await self._refresh_parent(interaction)
         except ValueError:
             await interaction.response.send_message(
-                embed=discord.Embed(title="❌", description="Nhập số hợp lệ.", color=discord.Color.red()),
+                embed=disnake.Embed(title="❌", description="Nhập số hợp lệ.", color=disnake.Color.red()),
                 ephemeral=True,
             )
 
 
-class DayTimeModal(_BaseModal, title="Đặt thời gian thảo luận"):
+class DayTimeModal(_BaseModal):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("title", "Đặt thời gian thảo luận")
+        super().__init__(*args, **kwargs)
+
     val = TextInput(label="Thời gian thảo luận (giây)", placeholder="30–120", min_length=2, max_length=3, required=True)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
                 v = int(self.val.value.strip())
                 if not (30 <= v <= 120):
                     return await interaction.response.send_message(
-                        embed=discord.Embed(title="❌ Không hợp lệ", description="Phải từ 30 đến 120 giây.", color=discord.Color.red()),
+                        embed=disnake.Embed(title="❌ Không hợp lệ", description="Phải từ 30 đến 120 giây.", color=disnake.Color.red()),
                         ephemeral=True,
                     )
                 config = load_guild_config(self.guild_id)
@@ -994,27 +1009,31 @@ class DayTimeModal(_BaseModal, title="Đặt thời gian thảo luận"):
                 save_guild_config(self.guild_id, config)
                 _invalidate(self.guild_id)
             await interaction.response.send_message(
-                embed=discord.Embed(title="✅ Đã cập nhật", description=f"Thời gian thảo luận: **{v}s**", color=discord.Color.green()),
+                embed=disnake.Embed(title="✅ Đã cập nhật", description=f"Thời gian thảo luận: **{v}s**", color=disnake.Color.green()),
                 ephemeral=True,
             )
             await self._refresh_parent(interaction)
         except ValueError:
             await interaction.response.send_message(
-                embed=discord.Embed(title="❌", description="Nhập số hợp lệ.", color=discord.Color.red()),
+                embed=disnake.Embed(title="❌", description="Nhập số hợp lệ.", color=disnake.Color.red()),
                 ephemeral=True,
             )
 
 
-class VoteTimeModal(_BaseModal, title="Đặt thời gian bỏ phiếu"):
+class VoteTimeModal(_BaseModal):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("title", "Đặt thời gian bỏ phiếu")
+        super().__init__(*args, **kwargs)
+
     val = TextInput(label="Thời gian bỏ phiếu (giây)", placeholder="15–45", min_length=2, max_length=2, required=True)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
                 v = int(self.val.value.strip())
                 if not (15 <= v <= 45):
                     return await interaction.response.send_message(
-                        embed=discord.Embed(title="❌ Không hợp lệ", description="Phải từ 15 đến 45 giây.", color=discord.Color.red()),
+                        embed=disnake.Embed(title="❌ Không hợp lệ", description="Phải từ 15 đến 45 giây.", color=disnake.Color.red()),
                         ephemeral=True,
                     )
                 config = load_guild_config(self.guild_id)
@@ -1023,21 +1042,25 @@ class VoteTimeModal(_BaseModal, title="Đặt thời gian bỏ phiếu"):
                 _invalidate(self.guild_id)
             label = "36 Thanh Hóa giây" if v == 36 else f"{v}s"
             await interaction.response.send_message(
-                embed=discord.Embed(title="✅ Đã cập nhật", description=f"Thời gian bỏ phiếu: **{label}**", color=discord.Color.green()),
+                embed=disnake.Embed(title="✅ Đã cập nhật", description=f"Thời gian bỏ phiếu: **{label}**", color=disnake.Color.green()),
                 ephemeral=True,
             )
             await self._refresh_parent(interaction)
         except ValueError:
             await interaction.response.send_message(
-                embed=discord.Embed(title="❌", description="Nhập số hợp lệ.", color=discord.Color.red()),
+                embed=disnake.Embed(title="❌", description="Nhập số hợp lệ.", color=disnake.Color.red()),
                 ephemeral=True,
             )
 
 
-class SkipDelayModal(_BaseModal, title="Đặt delay DM Skip"):
+class SkipDelayModal(_BaseModal):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("title", "Đặt delay DM Skip")
+        super().__init__(*args, **kwargs)
+
     val = TextInput(label="Delay (giây)", placeholder="Số giây trước khi nhắc skip", min_length=1, max_length=3, required=True)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         try:
             async with self.lock:
                 v = max(0, int(self.val.value.strip()))
@@ -1046,13 +1069,13 @@ class SkipDelayModal(_BaseModal, title="Đặt delay DM Skip"):
                 save_guild_config(self.guild_id, config)
                 _invalidate(self.guild_id)
             await interaction.response.send_message(
-                embed=discord.Embed(title="✅ Đã cập nhật", description=f"Delay DM Skip: **{v}s**", color=discord.Color.green()),
+                embed=disnake.Embed(title="✅ Đã cập nhật", description=f"Delay DM Skip: **{v}s**", color=disnake.Color.green()),
                 ephemeral=True,
             )
             await self._refresh_parent(interaction)
         except ValueError:
             await interaction.response.send_message(
-                embed=discord.Embed(title="❌", description="Nhập số hợp lệ.", color=discord.Color.red()),
+                embed=disnake.Embed(title="❌", description="Nhập số hợp lệ.", color=disnake.Color.red()),
                 ephemeral=True,
             )
 
@@ -1077,7 +1100,7 @@ class RenameChannelModal(Modal):
         self.lock         = lock
         self.channel_type = channel_type
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: disnake.ModalInteraction):
         new_name = self.new_name.value.strip()
 
         # Bước 1: Validate nhanh trong lock (không có I/O Discord nào ở đây)
@@ -1106,10 +1129,10 @@ class RenameChannelModal(Modal):
         # Bước 2: Nếu lỗi validate → trả lời ngay (vẫn trong 3 giây)
         if error:
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="❌ Không thể đổi tên",
                     description=error,
-                    color=discord.Color.red(),
+                    color=disnake.Color.red(),
                 ),
                 ephemeral=True,
             )
@@ -1122,32 +1145,32 @@ class RenameChannelModal(Modal):
         # Bước 4: Thực sự đổi tên (ngoài lock)
         try:
             await channel.edit(name=new_name)
-        except discord.Forbidden:
+        except disnake.Forbidden:
             await interaction.followup.send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="❌ Không có quyền",
                     description="Bot cần quyền **Quản lý kênh** để đổi tên.",
-                    color=discord.Color.red(),
+                    color=disnake.Color.red(),
                 ),
                 ephemeral=True,
             )
             return
-        except discord.HTTPException as e:
+        except disnake.HTTPException as e:
             await interaction.followup.send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="❌ Discord trả lỗi",
                     description=f"HTTP {e.status}: {e.text}",
-                    color=discord.Color.red(),
+                    color=disnake.Color.red(),
                 ),
                 ephemeral=True,
             )
             return
         except Exception as e:
             await interaction.followup.send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="❌ Lỗi không xác định",
                     description=str(e),
-                    color=discord.Color.red(),
+                    color=disnake.Color.red(),
                 ),
                 ephemeral=True,
             )
@@ -1155,10 +1178,10 @@ class RenameChannelModal(Modal):
 
         # Bước 5: Thông báo thành công
         await interaction.followup.send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="✅ Đã đổi tên thành công",
                 description=f"`{old_name}` → `{new_name}`",
-                color=discord.Color.green(),
+                color=disnake.Color.green(),
             ),
             ephemeral=True,
         )
@@ -1178,9 +1201,9 @@ class SettingsCog(commands.Cog):
             self.edit_locks[guild_id] = asyncio.Lock()
         return self.edit_locks[guild_id]
 
-    @app_commands.command(name="setting", description="Cấu hình cài đặt trò chơi Anomalies")
-    @app_commands.guild_only()
-    async def setting_command(self, interaction: discord.Interaction):
+    @commands.slash_command(name="setting", description="Cấu hình cài đặt trò chơi Anomalies")
+    
+    async def setting_command(self, interaction: disnake.ApplicationCommandInteraction):
         guild_id = str(interaction.guild.id)
         config   = load_guild_config(guild_id)
 

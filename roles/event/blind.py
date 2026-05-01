@@ -4,7 +4,7 @@
 # Người Sống Sót và Unknown khi họ dùng kỹ năng trong đêm.
 # ══════════════════════════════════════════════════════════════════
 
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 # ── Tên hiển thị thay thế khi bị mù ─────────────────────────────
@@ -12,10 +12,10 @@ BLIND_LABEL = "👁 : ĐÃ BỊ MÙ"
 BLIND_VALUE_PREFIX = "blind_"   # value của SelectOption bị mù: "blind_0", "blind_1"...
 
 
-def make_blind_options(count: int) -> list[discord.SelectOption]:
+def make_blind_options(count: int) -> list[disnake.SelectOption]:
     """Tạo danh sách SelectOption giả — toàn bộ là '👁 : ĐÃ BỊ MÙ'."""
     return [
-        discord.SelectOption(
+        disnake.SelectOption(
             label = BLIND_LABEL,
             value = f"{BLIND_VALUE_PREFIX}{i}",
             description = "Bạn không thể nhận diện mục tiêu này."
@@ -72,7 +72,7 @@ class Blind(BaseRole):
 
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title       = "👁 BLIND — SỨ GIẢ CỦA BÓNG TỐI",
                     description = self.dm_message,
                     color       = 0x2c3e50
@@ -95,7 +95,7 @@ class Blind(BaseRole):
         if self.blind_remaining_uses <= 0:
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title       = "🌙 ĐÊM — BLIND",
                         description = "Bạn đã dùng hết **3 lượt** gây mù.\n\n💤 Nghỉ ngơi đêm nay.",
                         color       = 0x95a5a6
@@ -108,7 +108,7 @@ class Blind(BaseRole):
         view = BlindView(game, self)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title       = "🌙 ĐÊM — BLIND",
                     description = (
                         f"👁 Lượt gây mù còn lại: **{self.blind_remaining_uses}/3**\n\n"
@@ -141,7 +141,7 @@ class Blind(BaseRole):
         try:
             if game.text_channel:
                 await game.text_channel.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title       = "🌫 HIỆN TƯỢNG DỊ THƯỜNG",
                         description = (
                             "Một hiện tượng dị thường đã xảy ra…\n\n"
@@ -169,14 +169,14 @@ class Blind(BaseRole):
 # DISCORD UI
 # ══════════════════════════════════════════════════════════════════
 
-class BlindView(discord.ui.View):
+class BlindView(disnake.ui.View):
     def __init__(self, game, role: Blind):
         super().__init__(timeout=60)
         self.game = game
         self.role = role
 
-    @discord.ui.button(label="👁 Kích hoạt Gây Mù", style=discord.ButtonStyle.danger, emoji="🌫")
-    async def btn_activate(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="👁 Kích hoạt Gây Mù", style=disnake.ButtonStyle.danger, emoji="🌫")
+    async def btn_activate(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
             return
@@ -188,7 +188,7 @@ class BlindView(discord.ui.View):
         success, msg = await self.role.activate_blind(self.game)
         color = 0x2c3e50 if success else 0xe74c3c
         await interaction.response.send_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title       = "👁 GÂY MÙ" if success else "❌ Thất bại",
                 description = msg,
                 color       = color
@@ -197,8 +197,8 @@ class BlindView(discord.ui.View):
         )
         self.stop()
 
-    @discord.ui.button(label="💤 Bỏ qua đêm nay", style=discord.ButtonStyle.secondary)
-    async def btn_skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="💤 Bỏ qua đêm nay", style=disnake.ButtonStyle.secondary)
+    async def btn_skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
             return

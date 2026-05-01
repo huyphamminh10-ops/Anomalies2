@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -62,14 +62,14 @@ class SerialKiller(BaseRole):
     # VIEW
     # ==============================
 
-    class SerialKillerView(discord.ui.View):
+    class SerialKillerView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             self.game = game
             self.role = role
 
             options = [
-                discord.SelectOption(
+                disnake.SelectOption(
                     label=p.display_name,
                     value=str(p.id)
                 )
@@ -83,7 +83,7 @@ class SerialKiller(BaseRole):
     # SELECT
     # ==============================
 
-    class SerialKillerSelect(discord.ui.Select):
+    class SerialKillerSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -95,7 +95,7 @@ class SerialKiller(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             if self.role.has_killed_tonight:
                 await interaction.response.send_message(

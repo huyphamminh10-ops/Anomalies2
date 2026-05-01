@@ -26,8 +26,8 @@ try:
 except ImportError:
     import json  # type: ignore
 
-import discord
-from discord.ext import commands
+import disnake
+from disnake.ext import commands
 
 BOT_OWNER_ID = 1306441206296875099
 
@@ -141,8 +141,8 @@ def _build_execv_args() -> tuple[str, list[str]]:
 # EMBED BUILDERS
 # ══════════════════════════════════════════════════════════════════
 
-def _build_update_embed(content: str) -> discord.Embed:
-    return discord.Embed(
+def _build_update_embed(content: str) -> disnake.Embed:
+    return disnake.Embed(
         title="🔄 CẬP NHẬT MỚI ĐÃ HOÀN TẤT",
         description=(
             "Cảm ơn bạn đã kiên nhẫn 🙏\n\n"
@@ -156,8 +156,8 @@ def _build_update_embed(content: str) -> discord.Embed:
     ).set_footer(text="Have a nice day 🍀🍀")
 
 
-def _build_warning_embed(seconds_left: int) -> discord.Embed:
-    return discord.Embed(
+def _build_warning_embed(seconds_left: int) -> disnake.Embed:
+    return disnake.Embed(
         title="📢 CẢNH BÁO ⚠️",
         description=(
             "**Dev chuẩn bị Update mới**\n\n"
@@ -171,8 +171,8 @@ def _build_warning_embed(seconds_left: int) -> discord.Embed:
     )
 
 
-def _build_preview_embed(content: str) -> discord.Embed:
-    return discord.Embed(
+def _build_preview_embed(content: str) -> disnake.Embed:
+    return disnake.Embed(
         title="👀 PREVIEW EMBED CẬP NHẬT",
         description=(
             "───────────────────────────────\n"
@@ -360,7 +360,7 @@ async def send_post_update_embeds(bot: commands.Bot):
 # DM CONVERSATION HANDLER
 # ══════════════════════════════════════════════════════════════════
 
-async def handle_owner_dm(bot: commands.Bot, message: discord.Message) -> bool:
+async def handle_owner_dm(bot: commands.Bot, message: disnake.Message) -> bool:
     if message.author.id != BOT_OWNER_ID:
         return False
     if message.guild is not None:
@@ -430,7 +430,7 @@ async def greet_owner_on_setup(bot: commands.Bot):
                 "5. Bot hủy tất cả trận, đếm ngược 30s và restart.\n\n"
                 "📌 Sau khi restart, bot tự gửi embed thông báo đến tất cả server."
             )
-    except discord.Forbidden:
+    except disnake.Forbidden:
         pass
     except Exception as e:
         print(f"[Updater] greet_owner_on_setup lỗi: {e}")

@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -42,7 +42,7 @@ class Vigilante(BaseRole):
         if self.bullets <= 0:
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="🔫 ĐÊM — CẢNH BINH TỰ PHÁT",
                         description="❌ Bạn đã hết đạn. Không thể hành động đêm nay.",
                         color=0x7f8c8d
@@ -63,7 +63,7 @@ class Vigilante(BaseRole):
         view = self.VigilanteView(game, self, alive_targets)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🔫 ĐÊM — CẢNH BINH TỰ PHÁT",
                     description=(
                         f"🔫 Đạn còn lại: **{self.bullets}/3**\n\n"
@@ -81,18 +81,18 @@ class Vigilante(BaseRole):
     # VIEW
     # ==============================
 
-    class VigilanteView(discord.ui.View):
+    class VigilanteView(disnake.ui.View):
         def __init__(self, game, role, target_list):
             super().__init__(timeout=60)
             self.add_item(Vigilante.ShootSelect(game, role, target_list))
             self.add_item(Vigilante.SkipButton(role))
 
-    class ShootSelect(discord.ui.Select):
+    class ShootSelect(disnake.ui.Select):
         def __init__(self, game, role, target_list):
             self.game = game
             self.role = role
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id), emoji="🎯")
+                disnake.SelectOption(label=p.display_name, value=str(p.id), emoji="🎯")
                 for p in target_list
             ][:25]
             super().__init__(
@@ -102,7 +102,7 @@ class Vigilante(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -121,19 +121,19 @@ class Vigilante(BaseRole):
             await self.role.shoot(self.game, target, is_day=False)
 
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     description=f"🔫 Bạn đã bắn **{target.display_name}** — đạn còn lại: {self.role.bullets}/3",
                     color=0xc0392b
                 ),
                 ephemeral=True
             )
 
-    class SkipButton(discord.ui.Button):
+    class SkipButton(disnake.ui.Button):
         def __init__(self, role):
-            super().__init__(label="💤 Bỏ qua đêm nay", style=discord.ButtonStyle.secondary)
+            super().__init__(label="💤 Bỏ qua đêm nay", style=disnake.ButtonStyle.secondary)
             self.role = role
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -178,7 +178,7 @@ class Vigilante(BaseRole):
                 pass
 
             await game.log_channel.send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     description="🔫 Một Cảnh Binh Tự Phát đã nổ súng!",
                     color=0xc0392b
                 )
@@ -188,7 +188,7 @@ class Vigilante(BaseRole):
         if target_role and getattr(target_role, "team", "") == "Survivors":
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="💀 LƯƠNG TÂM CẮN RỨT",
                         description=(
                             "Bạn đã bắn nhầm một **Survivor vô tội**!\n"

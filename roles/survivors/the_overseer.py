@@ -1,4 +1,4 @@
-import discord
+import disnake
 import random
 from roles.base_role import BaseRole
 
@@ -39,7 +39,7 @@ class TheOverseer(BaseRole):
         self.used_tonight = False
 
         if self.camera_uses <= 0:
-            await self.safe_send(embed=discord.Embed(
+            await self.safe_send(embed=disnake.Embed(
                 title="📷 CAMERA HẾT LƯỢT",
                 description="Bạn đã hết lượt dùng Camera trong trận này.",
                 color=0x7f8c8d
@@ -48,7 +48,7 @@ class TheOverseer(BaseRole):
 
         view = self.OverseerView(game, self)
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="📷 ĐÊM — NGƯỜI GIÁM SÁT",
                 description=(
                     f"🎯 Còn **{self.camera_uses}** lượt Camera.\n\n"
@@ -62,14 +62,14 @@ class TheOverseer(BaseRole):
     # ==================================
     # VIEW
     # ==================================
-    class OverseerView(discord.ui.View):
+    class OverseerView(disnake.ui.View):
         def __init__(self, game, role):
             super().__init__(timeout=60)
             self.game = game
             self.role = role
 
-        @discord.ui.button(label="📷 Xem Camera", style=discord.ButtonStyle.primary)
-        async def use_camera(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="📷 Xem Camera", style=disnake.ButtonStyle.primary)
+        async def use_camera(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             if self.role.used_tonight:
                 await interaction.response.send_message(
                     "Bạn đã dùng Camera đêm nay rồi.", ephemeral=True
@@ -110,7 +110,7 @@ class TheOverseer(BaseRole):
             # ── Cảnh báo kênh Dị Thể (không tiết lộ tên người) ──
             if anomaly_found and hasattr(self.game, "anomaly_chat_mgr"):
                 await self.game.anomaly_chat_mgr.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="🚨 CẢNH BÁO AN NINH",
                         description=(
                             "**NGƯỜI GIÁM SÁT** đã kích hoạt camera an ninh và phát hiện "
@@ -122,7 +122,7 @@ class TheOverseer(BaseRole):
                 )
 
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="📷 BÁO CÁO CAMERA",
                     description=result_text,
                     color=0x3498db
@@ -134,8 +134,8 @@ class TheOverseer(BaseRole):
                 item.disabled = True
             await interaction.message.edit(view=self)
 
-        @discord.ui.button(label="⏭ Bỏ Qua", style=discord.ButtonStyle.secondary)
-        async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="⏭ Bỏ Qua", style=disnake.ButtonStyle.secondary)
+        async def skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             self.role.used_tonight = True
             for item in self.children:
                 item.disabled = True

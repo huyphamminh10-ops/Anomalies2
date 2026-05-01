@@ -1,5 +1,5 @@
 import asyncio
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -39,7 +39,7 @@ class TheAvenger(BaseRole):
     async def send_ui(self, game):
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⚔️ ĐÊM — KẺ BÁO THÙ",
                     description=(
                         "Bạn không có hành động đặc biệt vào ban đêm.\n\n"
@@ -146,7 +146,7 @@ class TheAvenger(BaseRole):
 
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⚔️ CHỌN MỤC TIÊU BÁO THÙ",
                     description=(
                         f"{prompt}\n\n"
@@ -166,7 +166,7 @@ class TheAvenger(BaseRole):
             import random
             return random.choice(candidates) if candidates else None
 
-    class RevengeView(discord.ui.View):
+    class RevengeView(disnake.ui.View):
         def __init__(self, role, candidates, prompt, future):
             super().__init__(timeout=30)
             self.role    = role
@@ -179,13 +179,13 @@ class TheAvenger(BaseRole):
             for item in self.children:
                 item.disabled = True
 
-    class RevengeSelect(discord.ui.Select):
+    class RevengeSelect(disnake.ui.Select):
         def __init__(self, role, candidates, future):
             self.role    = role
             self.future  = future
             self.game_players = {str(p.id): p for p in candidates}
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id), emoji="💀")
+                disnake.SelectOption(label=p.display_name, value=str(p.id), emoji="💀")
                 for p in candidates
             ][:25]
             super().__init__(
@@ -195,7 +195,7 @@ class TheAvenger(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -208,7 +208,7 @@ class TheAvenger(BaseRole):
                 item.disabled = True
             await interaction.message.edit(view=self.view)
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     description=f"⚔️ Bạn đã chọn **{target.display_name}** — lời nguyền đã được gửi đi.",
                     color=0x8e44ad
                 ),

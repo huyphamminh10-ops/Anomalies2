@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -50,7 +50,7 @@ class Anomaly(BaseRole):
 
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="👥 ĐỒNG ĐỘI DỊ THỂ",
                     description=f"Đồng đội của bạn:\n{names}",
                     color=0xe74c3c
@@ -72,7 +72,7 @@ class Anomaly(BaseRole):
         if has_overlord and game.overlord_alive and game.is_alive(overlord.player.id):
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="🌙 ĐÊM — CHỜ LỆNH",
                         description="Lãnh Chúa đang quyết định mục tiêu đêm nay.\nBạn không cần hành động.",
                         color=0xe74c3c
@@ -103,7 +103,7 @@ class Anomaly(BaseRole):
 
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🗳️ VOTE MỤC TIÊU ĐÊM NAY",
                     description=desc,
                     color=0xe74c3c
@@ -116,16 +116,16 @@ class Anomaly(BaseRole):
     # =========================================
     # VIEW VOTE MỤC TIÊU
     # =========================================
-    class AnomalyVoteView(discord.ui.View):
+    class AnomalyVoteView(disnake.ui.View):
         def __init__(self, game, role, target_list):
             super().__init__(timeout=game.config.night_time + 30)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in target_list
             ][:25]
             self.add_item(Anomaly.AnomalyVoteSelect(game, role, options))
 
-    class AnomalyVoteSelect(discord.ui.Select):
+    class AnomalyVoteSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -137,7 +137,7 @@ class Anomaly(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message(
                     "Đây không phải lượt của bạn.",

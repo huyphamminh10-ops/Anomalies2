@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -55,11 +55,11 @@ class TheArchitect(BaseRole):
     # ==================================
     # VIEW
     # ==================================
-    class ArchitectView(discord.ui.View):
+    class ArchitectView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(
+                disnake.SelectOption(
                     label=p.display_name,
                     value=str(p.id)
                 )
@@ -71,7 +71,7 @@ class TheArchitect(BaseRole):
     # ==================================
     # SELECT
     # ==================================
-    class ArchitectSelect(discord.ui.Select):
+    class ArchitectSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -83,7 +83,7 @@ class TheArchitect(BaseRole):
                 max_values=5
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             if self.role.used_tonight:
                 await interaction.response.send_message(

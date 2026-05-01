@@ -1,5 +1,5 @@
-import discord
-from discord.ui import View, Select
+import disnake
+from disnake.ui import View, Select
 from roles.base_role import BaseRole
 
 
@@ -24,7 +24,7 @@ class ReviveView(View):
             return
 
         options = [
-            discord.SelectOption(label=p.display_name, value=str(p.id))
+            disnake.SelectOption(label=p.display_name, value=str(p.id))
             for p in dead_survivors
         ][:25]
 
@@ -36,7 +36,7 @@ class ReviveView(View):
         select.callback = self.on_select
         self.add_item(select)
 
-    async def on_select(self, interaction: discord.Interaction):
+    async def on_select(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("❌ Đây không phải lựa chọn của bạn!", ephemeral=True)
             return
@@ -49,7 +49,7 @@ class ReviveView(View):
             return
 
         await interaction.response.edit_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="⚰️ XÁC NHẬN HỒI SINH",
                 description=(
                     f"Bạn sẽ hồi sinh **{target.display_name}**.\n\n"
@@ -97,7 +97,7 @@ class Retributionist(BaseRole):
     async def send_revive_ui(self, game, is_day=False):
         if self.used:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⚰️ NGƯỜI PHỤC HẬN",
                     description="❌ Bạn đã dùng khả năng hồi sinh rồi.",
                     color=0x95a5a6
@@ -113,7 +113,7 @@ class Retributionist(BaseRole):
 
         if not dead_survivors:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⚰️ NGƯỜI PHỤC HẬN",
                     description="Chưa có Survivor nào tử vong để hồi sinh.",
                     color=0x95a5a6
@@ -121,7 +121,7 @@ class Retributionist(BaseRole):
             )
             return
 
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="⚰️ NGƯỜI PHỤC HẬN",
             description=(
                 "Bạn có thể hồi sinh 1 Survivor đã chết.\n\n"
@@ -171,7 +171,7 @@ class Retributionist(BaseRole):
                 pass
 
             await game.log_channel.send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⚰️ HỒI SINH",
                     description=f"Người Phục Hậu đã hồi sinh **{target.display_name}** trước mắt mọi người!",
                     color=0x9b59b6
@@ -179,7 +179,7 @@ class Retributionist(BaseRole):
             )
         else:
             await game.log_channel.send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     description=f"⚰️ Một Survivor đã được hồi sinh bí mật trong đêm!",
                     color=0x9b59b6
                 )
@@ -203,7 +203,7 @@ class Retributionist(BaseRole):
             status = "❌ Đã dùng lượt hồi sinh." if self.used else "💀 Chưa có Survivor nào tử vong."
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="🔮 ĐÊM — KẺ HỒI SINH",
                         description=status,
                         color=0x7f8c8d
@@ -216,7 +216,7 @@ class Retributionist(BaseRole):
         view = ReviveView(self, game, is_day=False)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🔮 ĐÊM — KẺ HỒI SINH",
                     description=(
                         f"Có **{len(dead_survivors)}** Survivor đã ngã xuống.\n\n"

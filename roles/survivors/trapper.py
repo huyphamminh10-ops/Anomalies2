@@ -1,4 +1,4 @@
-import discord
+import disnake
 import random
 from roles.base_role import BaseRole
 
@@ -45,7 +45,7 @@ class Trapper(BaseRole):
             color = 0x95a5a6
             title = "🪤 ĐÊM — THỢ ĐẶT BẪY (Bẫy đã dùng)"
             label = "🪤 Bẫy: ĐÃ DÙNG"
-            style = discord.ButtonStyle.secondary
+            style = disnake.ButtonStyle.secondary
         else:
             desc  = (
                 "Bẫy của bạn đang **hoạt động** đêm nay.\n\n"
@@ -60,19 +60,19 @@ class Trapper(BaseRole):
             color = 0xe67e22
             title = "🪤 ĐÊM — THỢ ĐẶT BẪY"
             label = "🪤 Bẫy: ĐANG HOẠT ĐỘNG"
-            style = discord.ButtonStyle.success
+            style = disnake.ButtonStyle.success
 
-        class TrapStatusView(discord.ui.View):
+        class TrapStatusView(disnake.ui.View):
             def __init__(self_v):
                 super().__init__(timeout=60)
 
-            @discord.ui.button(label=label, style=style, disabled=True)
-            async def trap_status(self_v, interaction: discord.Interaction, button: discord.ui.Button):
+            @disnake.ui.button(label=label, style=style, disabled=True)
+            async def trap_status(self_v, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
                 pass
 
         try:
             await self.safe_send(
-                embed=discord.Embed(title=title, description=desc, color=color),
+                embed=disnake.Embed(title=title, description=desc, color=color),
                 view=TrapStatusView()
             )
         except Exception:
@@ -106,13 +106,13 @@ class Trapper(BaseRole):
                     await member.edit(nick="ANOMALY")
                 except Exception:
                     pass
-            await game.log_channel.send(embed=discord.Embed(
+            await game.log_channel.send(embed=disnake.Embed(
                 title="🪤 BẪY KÍCH HOẠT — LỘ DIỆN",
                 description="⚠️ Một Dị Thể đã bị **lộ danh tính** bởi bẫy của Thợ Đặt Bẫy!",
                 color=0xf39c12
             ))
             try:
-                await self.safe_send(embed=discord.Embed(
+                await self.safe_send(embed=disnake.Embed(
                     title="🪤 BẪY KÍCH HOẠT",
                     description="👁️ Kẻ tấn công đã bị **lộ danh tính**!\n⚠️ Bẫy đã hết hiệu lực.",
                     color=0xf39c12
@@ -125,7 +125,7 @@ class Trapper(BaseRole):
             # 25%: Giết kẻ tấn công
             await game.kill_player(target, reason="Bị bẫy của Thợ Đặt Bẫy giết")
             try:
-                await self.safe_send(embed=discord.Embed(
+                await self.safe_send(embed=disnake.Embed(
                     title="🪤 BẪY KÍCH HOẠT",
                     description="💀 Kẻ tấn công đã bị **tiêu diệt** tại chỗ!\n⚠️ Bẫy đã hết hiệu lực.",
                     color=0x27ae60
@@ -137,14 +137,14 @@ class Trapper(BaseRole):
         elif outcome == "backfire":
             # 25%: Phản đòn — Thợ Đặt Bẫy chết, kẻ tấn công thoát
             try:
-                await self.safe_send(embed=discord.Embed(
+                await self.safe_send(embed=disnake.Embed(
                     title="🪤 BẪY PHẢN ĐÒN",
                     description="💥 Bẫy phát nổ ngược — bạn đã **hy sinh**!\n⚠️ Bẫy đã hết hiệu lực.",
                     color=0xe74c3c
                 ))
             except Exception:
                 pass
-            await game.log_channel.send(embed=discord.Embed(
+            await game.log_channel.send(embed=disnake.Embed(
                 title="🪤 BẪY PHẢN ĐÒN",
                 description="💥 Thợ Đặt Bẫy đã chết vì bẫy của chính mình! Kẻ tấn công thoát.",
                 color=0xe74c3c
@@ -158,7 +158,7 @@ class Trapper(BaseRole):
             game.stun_next_night.add(target.id)
 
             try:
-                await self.safe_send(embed=discord.Embed(
+                await self.safe_send(embed=disnake.Embed(
                     title="🪤 BẪY KÍCH HOẠT — STUN",
                     description=(
                         "😵 Kẻ tấn công đã bị **Stun**!\n"
@@ -169,7 +169,7 @@ class Trapper(BaseRole):
                 ))
             except Exception:
                 pass
-            await game.log_channel.send(embed=discord.Embed(
+            await game.log_channel.send(embed=disnake.Embed(
                 title="🪤 BẪY KÍCH HOẠT — STUN",
                 description="😵 Một Dị Thể đã bị **Stun** bởi bẫy — mất lượt đêm sau!",
                 color=0x9b59b6

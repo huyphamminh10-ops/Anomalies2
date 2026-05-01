@@ -1,5 +1,5 @@
-import discord
-from discord.ui import View, Select, Button
+import disnake
+from disnake.ui import View, Select, Button
 from roles.base_role import BaseRole
 
 
@@ -22,7 +22,7 @@ class JailView(View):
             return
 
         options = [
-            discord.SelectOption(label=p.display_name, value=str(p.id))
+            disnake.SelectOption(label=p.display_name, value=str(p.id))
             for p in alive_players
         ][:25]
 
@@ -34,7 +34,7 @@ class JailView(View):
         select.callback = self.on_select
         self.add_item(select)
 
-    async def on_select(self, interaction: discord.Interaction):
+    async def on_select(self, interaction: disnake.ApplicationCommandInteraction):
         selected_id = int(interaction.data["values"][0])
         target = self.game.get_member(selected_id)
 
@@ -45,7 +45,7 @@ class JailView(View):
         self.game.set_selected_target(self.role.player, target)
 
         await interaction.response.edit_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="🔒 ĐÃ CHỌN TÙ NHÂN",
                 description=(
                     f"Bạn sẽ giam **{target.display_name}** đêm nay.\n\n"
@@ -67,15 +67,15 @@ class ExecuteView(View):
         self.role = role
         self.game = game
 
-    @discord.ui.button(label="⚡ XỬ TỬ", style=discord.ButtonStyle.danger, custom_id="jailor_execute")
-    async def execute(self, interaction: discord.Interaction, button: Button):
+    @disnake.ui.button(label="⚡ XỬ TỬ", style=disnake.ButtonStyle.danger, custom_id="jailor_execute")
+    async def execute(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("❌ Bạn không phải Quản Ngục!", ephemeral=True)
             return
 
         if not self.role.has_bullet:
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="❌ HẾT ĐẠN",
                     description="Bạn không còn viên đạn nào để xử tử.",
                     color=0x95a5a6
@@ -94,21 +94,21 @@ class ExecuteView(View):
         await self.role.execute_prisoner(self.game)
 
         await interaction.followup.send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="⚡ ĐÃ XỬ TỬ",
                 description=f"**{self.role.current_prisoner.display_name}** đã bị xử tử.",
                 color=0xe74c3c
             )
         )
 
-    @discord.ui.button(label="🔓 Tha Cho Họ", style=discord.ButtonStyle.secondary, custom_id="jailor_release")
-    async def release(self, interaction: discord.Interaction, button: Button):
+    @disnake.ui.button(label="🔓 Tha Cho Họ", style=disnake.ButtonStyle.secondary, custom_id="jailor_release")
+    async def release(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("❌ Bạn không phải Quản Ngục!", ephemeral=True)
             return
 
         await interaction.response.send_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="🔓 ĐÃ THA",
                 description="Tù nhân sẽ được thả ra vào buổi sáng.",
                 color=0x2ecc71
@@ -154,7 +154,7 @@ class Jailor(BaseRole):
     # ==============================
 
     async def send_night_ui(self, game):
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="🔒 QUẢN NGỤC - CHỌN TÙ NHÂN",
             description=(
                 "Chọn người bạn muốn giam giữ đêm nay.\n\n"
@@ -203,9 +203,9 @@ class Jailor(BaseRole):
         guild = game.guild
 
         overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            self.player: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            target: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            guild.default_role: disnake.PermissionOverwrite(read_messages=False),
+            self.player: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
+            target: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
         }
 
         channel = await guild.create_text_channel(
@@ -217,7 +217,7 @@ class Jailor(BaseRole):
 
         # Thông báo trong phòng giam
         await channel.send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="🔒 PHÒNG GIAM",
                 description=(
                     f"{target.mention} đã bị giam giữ.\n\n"
@@ -230,7 +230,7 @@ class Jailor(BaseRole):
         # Gửi nút xử tử cho Jailor qua DM
         if self.has_bullet:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⚡ QUYẾT ĐỊNH CỦA QUẢN NGỤC",
                     description=f"Bạn có muốn xử tử **{target.display_name}** không?",
                     color=0xe74c3c

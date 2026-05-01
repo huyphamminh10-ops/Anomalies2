@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -75,7 +75,7 @@ class MadPharmacist(BaseRole):
             self.potion_glow > 0 or self.potion_ult > 0
         )
         if not has_any:
-            await self.safe_send(embed=discord.Embed(
+            await self.safe_send(embed=disnake.Embed(
                 title="🧪 NHÀ DƯỢC HỌC ĐIÊN",
                 description="Bạn đã dùng hết tất cả thuốc.",
                 color=0x7f8c8d
@@ -84,7 +84,7 @@ class MadPharmacist(BaseRole):
 
         ult_label = self._ult_label()
 
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="🧪 NHÀ DƯỢC HỌC ĐIÊN — HÀNH ĐỘNG ĐÊM",
             description=(
                 f"💊 Hồi Phục Nhanh : `{self.potion_heal}` lần còn lại\n"
@@ -119,7 +119,7 @@ class MadPharmacist(BaseRole):
     # ══════════════════════════════════════════════════
     # VIEW CHỌN THUỐC
     # ══════════════════════════════════════════════════
-    class PotionView(discord.ui.View):
+    class PotionView(disnake.ui.View):
         def __init__(self, game, role, alive_all, alive_others):
             super().__init__(timeout=60)
             self.game        = game
@@ -130,19 +130,19 @@ class MadPharmacist(BaseRole):
             # Potion selector
             potion_options = []
             if role.potion_heal > 0:
-                potion_options.append(discord.SelectOption(
+                potion_options.append(disnake.SelectOption(
                     label=f"💊 Hồi Phục Nhanh (×{role.potion_heal})",
                     value="heal",
                     description="Bảo vệ mục tiêu khỏi bị giết 1 lần (dùng cho bản thân được)"
                 ))
             if role.potion_stop > 0:
-                potion_options.append(discord.SelectOption(
+                potion_options.append(disnake.SelectOption(
                     label="💀 Thuốc Ngừng Tim",
                     value="stop",
                     description="Giết mục tiêu ngay lập tức"
                 ))
             if role.potion_glow > 0:
-                potion_options.append(discord.SelectOption(
+                potion_options.append(disnake.SelectOption(
                     label="✨ Thuốc Phát Sáng",
                     value="glow",
                     description="Lộ diện kẻ Dị Thể nếu chúng giết mục tiêu này"
@@ -150,7 +150,7 @@ class MadPharmacist(BaseRole):
             if role.potion_ult > 0:
                 ult_name = "⚗️ Trường Sinh (Hồi Phục còn)" if role.potion_heal > 0 else "☠️ Thuốc Virus (Hồi Phục hết)"
                 ult_desc = "Bất tử 2 đêm" if role.potion_heal > 0 else "Chết ngay; ai giết họ cũng chết theo"
-                potion_options.append(discord.SelectOption(
+                potion_options.append(disnake.SelectOption(
                     label=ult_name,
                     value="ult",
                     description=ult_desc
@@ -161,7 +161,7 @@ class MadPharmacist(BaseRole):
     # ══════════════════════════════════════════════════
     # SELECT CHỌN THUỐC
     # ══════════════════════════════════════════════════
-    class PotionSelect(discord.ui.Select):
+    class PotionSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -173,7 +173,7 @@ class MadPharmacist(BaseRole):
                 row=0
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -186,7 +186,7 @@ class MadPharmacist(BaseRole):
                 target_pool = [p for p in self.game.get_alive_players() if p != self.role.player]
 
             target_options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in target_pool
             ][:25]
 
@@ -212,7 +212,7 @@ class MadPharmacist(BaseRole):
     # ══════════════════════════════════════════════════
     # VIEW CHỌN MỤC TIÊU
     # ══════════════════════════════════════════════════
-    class TargetView(discord.ui.View):
+    class TargetView(disnake.ui.View):
         def __init__(self, game, role, potion, target_options):
             super().__init__(timeout=60)
             self.add_item(MadPharmacist.TargetSelect(game, role, potion, target_options))
@@ -220,7 +220,7 @@ class MadPharmacist(BaseRole):
     # ══════════════════════════════════════════════════
     # SELECT MỤC TIÊU + APPLY EFFECT
     # ══════════════════════════════════════════════════
-    class TargetSelect(discord.ui.Select):
+    class TargetSelect(disnake.ui.Select):
         def __init__(self, game, role, potion, options):
             self.game   = game
             self.role   = role
@@ -233,7 +233,7 @@ class MadPharmacist(BaseRole):
                 row=0
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return

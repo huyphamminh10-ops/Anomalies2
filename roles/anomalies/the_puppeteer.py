@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -33,7 +33,7 @@ class ThePuppeteer(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -44,7 +44,7 @@ class ThePuppeteer(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -59,7 +59,7 @@ class ThePuppeteer(BaseRole):
 
         if self.uses_left <= 0:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🎭 ĐÊM — THE PUPPETEER",
                     description="❌ Bạn đã hết **3 lượt** Điều Khiển.",
                     color=0x7f8c8d
@@ -77,7 +77,7 @@ class ThePuppeteer(BaseRole):
 
         view = self.PuppeteerTargetView(game, self, alive)
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="🎭 ĐÊM — THE PUPPETEER",
                 description=f"🎭 Bạn còn **{self.uses_left}/3 lượt**.\nChọn Survivor để điều khiển:",
                 color=0x9b59b6
@@ -88,16 +88,16 @@ class ThePuppeteer(BaseRole):
     # ==================================
     # VIEW 1: CHỌN NẠN NHÂN
     # ==================================
-    class PuppeteerTargetView(discord.ui.View):
+    class PuppeteerTargetView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25][:25][:25]
             self.add_item(ThePuppeteer.PuppeteerTargetSelect(game, role, options))
 
-    class PuppeteerTargetSelect(discord.ui.Select):
+    class PuppeteerTargetSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -108,7 +108,7 @@ class ThePuppeteer(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message(
                     "Đây không phải lượt của bạn.", ephemeral=True
@@ -154,18 +154,18 @@ class ThePuppeteer(BaseRole):
     # ==================================
     # VIEW 2: CHỌN MỤC TIÊU VOTE
     # ==================================
-    class PuppeteerVoteView(discord.ui.View):
+    class PuppeteerVoteView(disnake.ui.View):
         def __init__(self, game, role, victim_id, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25]
             self.add_item(ThePuppeteer.PuppeteerVoteSelect(
                 game, role, victim_id, options
             ))
 
-    class PuppeteerVoteSelect(discord.ui.Select):
+    class PuppeteerVoteSelect(disnake.ui.Select):
         def __init__(self, game, role, victim_id, options):
             self.game = game
             self.role = role
@@ -178,7 +178,7 @@ class ThePuppeteer(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             forced_vote_id = int(self.values[0])
 

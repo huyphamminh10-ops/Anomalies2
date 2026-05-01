@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -68,16 +68,16 @@ class TheDreamweaver(BaseRole):
     # ================================
     # VIEW
     # ================================
-    class DreamView(discord.ui.View):
+    class DreamView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25]
             self.add_item(TheDreamweaver.DreamSelect(game, role, options))
 
-    class DreamSelect(discord.ui.Select):
+    class DreamSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -89,7 +89,7 @@ class TheDreamweaver(BaseRole):
                 max_values=2
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             id1 = int(self.values[0])
             id2 = int(self.values[1])

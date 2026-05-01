@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 import copy
 
@@ -80,14 +80,14 @@ class TheTimeWeaver(BaseRole):
     # =================================
     # VIEW
     # =================================
-    class RewindView(discord.ui.View):
+    class RewindView(disnake.ui.View):
         def __init__(self, game, role):
             super().__init__(timeout=60)
             self.game = game
             self.role = role
 
-        @discord.ui.button(label="⏪ Rewind Timeline", style=discord.ButtonStyle.danger)
-        async def rewind(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="⏪ Rewind Timeline", style=disnake.ButtonStyle.danger)
+        async def rewind(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
 
             target_day = self.game.day_count - 2
 

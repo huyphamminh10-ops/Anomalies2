@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 _PAGE_SIZE = 15   # Số người mỗi trang Select
@@ -68,7 +68,7 @@ class TheCorruptedAI(BaseRole):
         shield_bar = f"{self.shields}/3 " + "🟦" * min(self.shields, 3) + "⬜" * (3 - min(self.shields, 3))
         kill_bar   = f"{self.kill_charges}/2 " + "🟥" * min(self.kill_charges, 2) + "⬜" * (2 - min(self.kill_charges, 2))
 
-        embed = discord.Embed(
+        embed = disnake.Embed(
             title="🤖 A.I THA HÓA — HÀNH ĐỘNG ĐÊM",
             description=(
                 f"🛡️ Khiên : {shield_bar}\n"
@@ -89,7 +89,7 @@ class TheCorruptedAI(BaseRole):
     # ================================================================
     # PAGINATED VIEW  (15 người / trang)
     # ================================================================
-    class AIView(discord.ui.View):
+    class AIView(disnake.ui.View):
         PAGE_SIZE = _PAGE_SIZE
 
         def __init__(self, game, role, alive_list):
@@ -112,7 +112,7 @@ class TheCorruptedAI(BaseRole):
             start        = self.page * self.PAGE_SIZE
             page_players = self.alive_list[start : start + self.PAGE_SIZE]
             options      = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in page_players
             ][:25]
 
@@ -123,26 +123,26 @@ class TheCorruptedAI(BaseRole):
             # ── Thanh điều hướng chỉ hiện khi có >1 trang ─────────
             if self.total_pages > 1:
                 # Nút Trang Trước
-                prev_btn = discord.ui.Button(
+                prev_btn = disnake.ui.Button(
                     label="◀ Trước",
-                    style=discord.ButtonStyle.secondary,
+                    style=disnake.ButtonStyle.secondary,
                     disabled=(self.page == 0),
                     row=2
                 )
                 prev_btn.callback = self._prev_callback
 
                 # Nhãn trang (disabled button, chỉ để hiển thị)
-                page_label = discord.ui.Button(
+                page_label = disnake.ui.Button(
                     label=f"Trang {self.page + 1}/{self.total_pages}",
-                    style=discord.ButtonStyle.secondary,
+                    style=disnake.ButtonStyle.secondary,
                     disabled=True,
                     row=2
                 )
 
                 # Nút Trang Sau
-                next_btn = discord.ui.Button(
+                next_btn = disnake.ui.Button(
                     label="Sau ▶",
-                    style=discord.ButtonStyle.secondary,
+                    style=disnake.ButtonStyle.secondary,
                     disabled=(self.page >= self.total_pages - 1),
                     row=2
                 )
@@ -153,12 +153,12 @@ class TheCorruptedAI(BaseRole):
                 self.add_item(next_btn)
 
         # ── Callbacks điều hướng ─────────────────────────────────
-        async def _prev_callback(self, interaction: discord.Interaction):
+        async def _prev_callback(self, interaction: disnake.ApplicationCommandInteraction):
             self.page = max(0, self.page - 1)
             self._rebuild()
             await interaction.response.edit_message(view=self)
 
-        async def _next_callback(self, interaction: discord.Interaction):
+        async def _next_callback(self, interaction: disnake.ApplicationCommandInteraction):
             self.page = min(self.total_pages - 1, self.page + 1)
             self._rebuild()
             await interaction.response.edit_message(view=self)
@@ -166,7 +166,7 @@ class TheCorruptedAI(BaseRole):
     # ================================================================
     # SCAN SELECT
     # ================================================================
-    class ScanSelect(discord.ui.Select):
+    class ScanSelect(disnake.ui.Select):
         def __init__(self, game, role, options, row=0):
             self.game = game
             self.role = role
@@ -179,7 +179,7 @@ class TheCorruptedAI(BaseRole):
                 custom_id="corrupted_ai_scan"
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message(
                     "Đây không phải lượt của bạn.", ephemeral=True
@@ -237,7 +237,7 @@ class TheCorruptedAI(BaseRole):
     # ================================================================
     # KILL SELECT  (cần 2 kill_charges)
     # ================================================================
-    class KillSelect(discord.ui.Select):
+    class KillSelect(disnake.ui.Select):
         def __init__(self, game, role, options, row=1):
             self.game = game
             self.role = role
@@ -250,7 +250,7 @@ class TheCorruptedAI(BaseRole):
                 custom_id="corrupted_ai_kill"
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message(
                     "Đây không phải lượt của bạn.", ephemeral=True

@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -45,7 +45,7 @@ class TheSleeper(BaseRole):
         view = self.SleeperNightView(self)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="😴 ĐÊM — KẺ SAY NGỦ",
                     description=(
                         "Bạn bị cách ly và không thể hành động trực tiếp.\n\n"
@@ -59,26 +59,26 @@ class TheSleeper(BaseRole):
         except Exception:
             pass
 
-    class SleeperNightView(discord.ui.View):
+    class SleeperNightView(disnake.ui.View):
         def __init__(self, role):
             super().__init__(timeout=60)
             self.role = role
 
-        @discord.ui.button(label="📝 Cập nhật ghi chú", style=discord.ButtonStyle.primary)
-        async def open_notes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="📝 Cập nhật ghi chú", style=disnake.ButtonStyle.primary)
+        async def open_notes(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
             await interaction.response.send_modal(TheSleeper.NoteModal(self.role))
 
-        @discord.ui.button(label="📖 Xem ghi chú hiện tại", style=discord.ButtonStyle.secondary)
-        async def view_notes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="📖 Xem ghi chú hiện tại", style=disnake.ButtonStyle.secondary)
+        async def view_notes(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
             notes_text = self.role.get_full_notes()
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="📓 GHI CHÚ CỦA BẠN",
                     description=notes_text[:4000],
                     color=0x7f8c8d
@@ -86,24 +86,24 @@ class TheSleeper(BaseRole):
                 ephemeral=True
             )
 
-    class NoteModal(discord.ui.Modal, title="📝 Cập nhật Giấy Lời Nhắn"):
-        note_input = discord.ui.TextInput(
+    class NoteModal(disnake.ui.Modal):
+        note_input = disnake.ui.TextInput(
             label="Ghi chú mới",
             placeholder="Viết quan sát, nghi ngờ của bạn...",
-            style=discord.TextStyle.paragraph,
+            style=disnake.TextStyle.paragraph,
             max_length=500,
             required=True
         )
 
         def __init__(self, role):
-            super().__init__()
+            super().__init__(title="📝 Cập nhật Giấy Lời Nhắn")
             self.role = role
 
-        async def on_submit(self, interaction: discord.Interaction):
+        async def on_submit(self, interaction: disnake.ModalInteraction):
             content = self.note_input.value.strip()
             await self.role.update_note(content)
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     description=f"✅ Ghi chú đã được lưu! ({len(self.role.notes)}/20 dòng)",
                     color=0x27ae60
                 ),
@@ -133,7 +133,7 @@ class TheSleeper(BaseRole):
         )
 
         try:
-            await self.safe_send(embed=discord.Embed(
+            await self.safe_send(embed=disnake.Embed(
                 title=f"🌅 BÁO CÁO NGÀY {day_number}",
                 description=message[:4096],
                 color=0xf39c12

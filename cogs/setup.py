@@ -1,10 +1,9 @@
-import discord
+import disnake
 import traceback
 import os
 import re
 import asyncio
-from discord.ext import commands
-from discord import app_commands
+from disnake.ext import commands
 from config_manager import load_guild_config, save_guild_config
 from updater import greet_owner_on_setup
 from cogs.settings import check_command_permission as _check_perm
@@ -32,7 +31,7 @@ def get_guild_dir(guild_id: str, guild_name: str) -> str:
     return path
 
 
-def build_status_embed(state: dict) -> discord.Embed:
+def build_status_embed(state: dict) -> disnake.Embed:
     """Tạo embed hiển thị trạng thái setup hiện tại."""
     lines = []
 
@@ -67,7 +66,7 @@ def build_status_embed(state: dict) -> discord.Embed:
         cat = "⏳ Đang chọn danh mục..."
     lines.append(f"**3. Danh mục (Category)**\n{cat}")
 
-    embed = discord.Embed(
+    embed = disnake.Embed(
         title="⚙️ SETUP — ANOMALIES",
         description="\n\n".join(lines),
         color=COLOR_SETUP
@@ -80,16 +79,16 @@ def build_status_embed(state: dict) -> discord.Embed:
 # VIEW CHÍNH
 # ───────────────────────────────────────────────────────────────────────────────
 
-class SetupView(discord.ui.View):
-    def __init__(self, guild: discord.Guild, interaction: discord.Interaction, config: dict):
+class SetupView(disnake.ui.View):
+    def __init__(self, guild: disnake.Guild, interaction: disnake.ApplicationCommandInteraction, config: dict):
         super().__init__(timeout=300)
         self.guild       = guild
         self.interaction = interaction
         self.config      = config
         self.state: dict = {}
 
-        self.text_channels  = [c for c in guild.channels if isinstance(c, discord.TextChannel)]
-        self.voice_channels = [c for c in guild.channels if isinstance(c, discord.VoiceChannel)]
+        self.text_channels  = [c for c in guild.channels if isinstance(c, disnake.TextChannel)]
+        self.voice_channels = [c for c in guild.channels if isinstance(c, disnake.VoiceChannel)]
         self.categories     = list(guild.categories)
 
         self.text_page  = 0
@@ -131,14 +130,14 @@ class SetupView(discord.ui.View):
             return False
         return True
 
-    async def refresh(self, interaction: discord.Interaction):
+    async def refresh(self, interaction: disnake.ApplicationCommandInteraction):
         self._rebuild()
         try:
             await interaction.response.edit_message(
                 embed=build_status_embed(self.state),
                 view=self
             )
-        except discord.InteractionResponded:
+        except disnake.InteractionResponded:
             await interaction.message.edit(
                 embed=build_status_embed(self.state),
                 view=self
@@ -149,7 +148,7 @@ class SetupView(discord.ui.View):
             for item in self.children:
                 item.disabled = True
             await self.interaction.edit_original_response(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="⏰ Hết thời gian",
                     description="Setup đã hết thời gian (5 phút). Dùng `/setup` để thử lại.",
                     color=0xe74c3c
@@ -164,7 +163,7 @@ class SetupView(discord.ui.View):
 # SELECT: KÊNH CHỮ
 # ───────────────────────────────────────────────────────────────────────────────
 
-class TextChannelSelect(discord.ui.Select):
+class TextChannelSelect(disnake.ui.Select):
     def __init__(self, view: SetupView, channels: list, page: int):
         self._sv   = view
         self._page = page
@@ -180,16 +179,16 @@ class TextChannelSelect(discord.ui.Select):
         start   = page * SELECT_PAGE_SIZE
         chunk   = channels[start: start + SELECT_PAGE_SIZE]
         opts    = [
-            discord.SelectOption(label=f"# {c.name}"[:100], value=str(c.id), emoji="💬")
+            disnake.SelectOption(label=f"# {c.name}"[:100], value=str(c.id), emoji="💬")
             for c in chunk
         ]
-        opts.append(discord.SelectOption(label="✨ Tạo kênh mới cho tôi", value="create", emoji="🔧"))
+        opts.append(disnake.SelectOption(label="✨ Tạo kênh mới cho tôi", value="create", emoji="🔧"))
         if total > 1:
             nxt = (page + 1) % total
-            opts.append(discord.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
+            opts.append(disnake.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
         return opts
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self._sv.interaction.user.id:
             return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
         val = self.values[0]
@@ -204,7 +203,7 @@ class TextChannelSelect(discord.ui.Select):
 # SELECT: KÊNH THOẠI
 # ───────────────────────────────────────────────────────────────────────────────
 
-class VoiceChannelSelect(discord.ui.Select):
+class VoiceChannelSelect(disnake.ui.Select):
     def __init__(self, view: SetupView, channels: list, page: int):
         self._sv   = view
         self._page = page
@@ -220,16 +219,16 @@ class VoiceChannelSelect(discord.ui.Select):
         start = page * SELECT_PAGE_SIZE
         chunk = channels[start: start + SELECT_PAGE_SIZE]
         opts  = [
-            discord.SelectOption(label=f"🔊 {c.name}"[:100], value=str(c.id), emoji="🔊")
+            disnake.SelectOption(label=f"🔊 {c.name}"[:100], value=str(c.id), emoji="🔊")
             for c in chunk
         ]
-        opts.append(discord.SelectOption(label="✨ Tạo kênh mới cho tôi", value="create", emoji="🔧"))
+        opts.append(disnake.SelectOption(label="✨ Tạo kênh mới cho tôi", value="create", emoji="🔧"))
         if total > 1:
             nxt = (page + 1) % total
-            opts.append(discord.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
+            opts.append(disnake.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
         return opts
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self._sv.interaction.user.id:
             return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
         val = self.values[0]
@@ -244,19 +243,19 @@ class VoiceChannelSelect(discord.ui.Select):
 # SELECT: CÓ DÙNG CATEGORY KHÔNG
 # ───────────────────────────────────────────────────────────────────────────────
 
-class UseCategorySelect(discord.ui.Select):
+class UseCategorySelect(disnake.ui.Select):
     def __init__(self, view: SetupView):
         self._sv = view
         super().__init__(
             placeholder="3. Có đặt game trong danh mục (Category) không?",
             options=[
-                discord.SelectOption(label="✅ Có, tôi muốn chọn danh mục", value="yes", emoji="📂"),
-                discord.SelectOption(label="❌ Không, bỏ qua danh mục",      value="no",  emoji="🚫"),
+                disnake.SelectOption(label="✅ Có, tôi muốn chọn danh mục", value="yes", emoji="📂"),
+                disnake.SelectOption(label="❌ Không, bỏ qua danh mục",      value="no",  emoji="🚫"),
             ],
             min_values=1, max_values=1, row=2
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self._sv.interaction.user.id:
             return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
         if self.values[0] == "yes":
@@ -272,7 +271,7 @@ class UseCategorySelect(discord.ui.Select):
 # SELECT: CHỌN CATEGORY
 # ───────────────────────────────────────────────────────────────────────────────
 
-class CategorySelect(discord.ui.Select):
+class CategorySelect(disnake.ui.Select):
     def __init__(self, view: SetupView, categories: list, page: int):
         self._sv   = view
         self._page = page
@@ -288,16 +287,16 @@ class CategorySelect(discord.ui.Select):
         start = page * SELECT_PAGE_SIZE
         chunk = categories[start: start + SELECT_PAGE_SIZE]
         opts  = [
-            discord.SelectOption(label=f"📂 {c.name}"[:100], value=str(c.id))
+            disnake.SelectOption(label=f"📂 {c.name}"[:100], value=str(c.id))
             for c in chunk
         ]
-        opts.append(discord.SelectOption(label="✨ Tạo danh mục mới cho tôi", value="create", emoji="🔧"))
+        opts.append(disnake.SelectOption(label="✨ Tạo danh mục mới cho tôi", value="create", emoji="🔧"))
         if total > 1:
             nxt = (page + 1) % total
-            opts.append(discord.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
+            opts.append(disnake.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
         return opts
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self._sv.interaction.user.id:
             return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
         val = self.values[0]
@@ -312,12 +311,12 @@ class CategorySelect(discord.ui.Select):
 # NÚT XÁC NHẬN
 # ───────────────────────────────────────────────────────────────────────────────
 
-class ConfirmButton(discord.ui.Button):
+class ConfirmButton(disnake.ui.Button):
     def __init__(self, sv: SetupView):
-        super().__init__(label="✅ Xác nhận & Setup", style=discord.ButtonStyle.success, emoji="🚀", row=4)
+        super().__init__(label="✅ Xác nhận & Setup", style=disnake.ButtonStyle.success, emoji="🚀", row=4)
         self._sv = sv
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self._sv.interaction.user.id:
             return await interaction.response.send_message("Không phải lượt của bạn.", ephemeral=True)
 
@@ -325,7 +324,7 @@ class ConfirmButton(discord.ui.Button):
             item.disabled = True
 
         await interaction.response.edit_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="⚙️ Đang cài đặt...",
                 description="Vui lòng chờ trong giây lát...",
                 color=0xf39c12
@@ -340,7 +339,7 @@ class ConfirmButton(discord.ui.Button):
 # HÀM SETUP THỰC THI
 # ───────────────────────────────────────────────────────────────────────────────
 
-async def do_setup(interaction: discord.Interaction, guild: discord.Guild, state: dict, config: dict):
+async def do_setup(interaction: disnake.ApplicationCommandInteraction, guild: disnake.Guild, state: dict, config: dict):
     guild_id = str(guild.id)
 
     try:
@@ -376,8 +375,8 @@ async def do_setup(interaction: discord.Interaction, guild: discord.Guild, state
 
         # ── 4. Roles ─────────────────────────────────────────────────
         alive_role = await guild.create_role(
-            name="Alive-❤️‍🩹", color=discord.Color.green(),
-            permissions=discord.Permissions(
+            name="Alive-❤️‍🩹", color=disnake.Color.green(),
+            permissions=disnake.Permissions(
                 view_channel=True, send_messages=True, send_messages_in_threads=True,
                 read_message_history=True, add_reactions=True, use_external_emojis=True,
                 use_application_commands=True, connect=True, speak=True,
@@ -386,7 +385,7 @@ async def do_setup(interaction: discord.Interaction, guild: discord.Guild, state
             reason="Anomalies — Alive role"
         )
         dead_role = await guild.create_role(
-            name="Dead-☠️", color=discord.Color.dark_grey(),
+            name="Dead-☠️", color=disnake.Color.dark_grey(),
             reason="Anomalies — Dead role"
         )
 
@@ -462,7 +461,7 @@ async def do_setup(interaction: discord.Interaction, guild: discord.Guild, state
             )
 
         # ── 8. Embed kết quả ─────────────────────────────────────────
-        embed = discord.Embed(title="✅ SETUP HOÀN TẤT!", color=COLOR_DONE)
+        embed = disnake.Embed(title="✅ SETUP HOÀN TẤT!", color=COLOR_DONE)
         embed.add_field(name="📂 Danh mục",   value=cat_label, inline=False)
         embed.add_field(name="💬 Kênh chữ",   value=txt_label, inline=False)
         embed.add_field(name="🔊 Kênh thoại", value=vc_label,  inline=False)
@@ -478,7 +477,7 @@ async def do_setup(interaction: discord.Interaction, guild: discord.Guild, state
         print(f"[SETUP] ❌ LỖI:\n{tb}")
         try:
             await interaction.edit_original_response(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="❌ Setup thất bại",
                     description=f"```{tb}```",
                     color=0xe74c3c
@@ -504,15 +503,15 @@ class Setup(commands.Cog):
         if not cat_id:
             return None
         ch = self.bot.get_channel(cat_id)
-        return ch if isinstance(ch, discord.CategoryChannel) else None
+        return ch if isinstance(ch, disnake.CategoryChannel) else None
 
     def lay_ten_category(self, guild_id: str) -> str:
         cat = self.lay_category(guild_id)
         return cat.name if cat else "Chưa đặt"
 
-    @app_commands.command(name="setup", description="Cài đặt hệ thống Anomalies cho server")
-    @app_commands.guild_only()
-    async def setup_command(self, interaction: discord.Interaction):
+    @commands.slash_command(name="setup", description="Cài đặt hệ thống Anomalies cho server")
+    
+    async def setup_command(self, interaction: disnake.ApplicationCommandInteraction):
         guild    = interaction.guild
         guild_id = str(guild.id)
         config   = load_guild_config(guild_id)

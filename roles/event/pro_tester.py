@@ -2,7 +2,7 @@
 # roles/event/pro_tester.py — Vai Trò Sự Kiện Đặc Biệt
 # ══════════════════════════════════════════════════════════════════
 
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -55,7 +55,7 @@ class ProTester(BaseRole):
         try:
             if overlord_role:
                 self.overlord_info = overlord_role.player.display_name
-                embed = discord.Embed(
+                embed = disnake.Embed(
                     title       = "🔬 PRO TESTER — THÔNG TIN BÍ MẬT",
                     description = (
                         f"Thiết bị theo dõi của bạn đã xác định được:\n\n"
@@ -68,7 +68,7 @@ class ProTester(BaseRole):
                 )
                 embed.set_footer(text="⚡ Kỹ năng: /pro_tester_activate | Chỉ 1 lần duy nhất")
             else:
-                embed = discord.Embed(
+                embed = disnake.Embed(
                     title       = "🔬 PRO TESTER — THÔNG TIN BÍ MẬT",
                     description = (
                         "Thiết bị không phát hiện Lãnh Chúa trong trận này.\n\n"
@@ -92,7 +92,7 @@ class ProTester(BaseRole):
             # Đã dùng rồi — chỉ thông báo
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title       = "🌙 ĐÊM — PRO TESTER",
                         description = "Bạn đã sử dụng kỹ năng rồi.\n\n💤 Nghỉ ngơi và chờ bình minh.",
                         color       = 0x95a5a6
@@ -109,7 +109,7 @@ class ProTester(BaseRole):
             if can_use:
                 view = ProTesterView(game, self)
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title       = "🌙 ĐÊM — PRO TESTER",
                         description = (
                             f"👑 Lãnh Chúa: `{self.overlord_info or 'Không xác định'}`\n\n"
@@ -123,7 +123,7 @@ class ProTester(BaseRole):
                 )
             else:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title       = "🌙 ĐÊM — PRO TESTER",
                         description = f"⚠️ Không thể kích hoạt kỹ năng:\n{reason}\n\n💤 Nghỉ ngơi đêm nay.",
                         color       = 0xe74c3c
@@ -181,7 +181,7 @@ class ProTester(BaseRole):
             text_ch = game.text_channel
             if text_ch:
                 await text_ch.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title       = "⚠️ GIAO THỨC KIỂM SOÁT DỊ THỂ",
                         description = (
                             "Một **Người Thử Nghiệm** đã kích hoạt giao thức kiểm soát dị thể!\n\n"
@@ -230,7 +230,7 @@ class ProTester(BaseRole):
 # DISCORD UI
 # ══════════════════════════════════════════════════════════════════
 
-class ProTesterView(discord.ui.View):
+class ProTesterView(disnake.ui.View):
     def __init__(self, game, role: ProTester):
         super().__init__(timeout=60)
         self.game = game
@@ -250,8 +250,8 @@ class ProTesterView(discord.ui.View):
         if anomaly_targets:
             self.add_item(ProTesterSelect(game, self.role, anomaly_targets))
 
-    @discord.ui.button(label="⚡ Kích hoạt (Random)", style=discord.ButtonStyle.danger, row=1)
-    async def btn_random(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="⚡ Kích hoạt (Random)", style=disnake.ButtonStyle.danger, row=1)
+    async def btn_random(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
             return
@@ -263,7 +263,7 @@ class ProTesterView(discord.ui.View):
         success, result = await self.role.activate_ability(self.game, target_id=None)
         if success:
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title       = "⚡ KÍCH HOẠT THÀNH CÔNG",
                     description = f"Lãnh Chúa đã bị ép giết **{result}**.\nBạn đã hi sinh vì nhiệm vụ.",
                     color       = 0xe74c3c
@@ -274,8 +274,8 @@ class ProTesterView(discord.ui.View):
             await interaction.response.send_message(f"❌ {result}", ephemeral=True)
         self.stop()
 
-    @discord.ui.button(label="💤 Bỏ qua đêm nay", style=discord.ButtonStyle.secondary, row=1)
-    async def btn_skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="💤 Bỏ qua đêm nay", style=disnake.ButtonStyle.secondary, row=1)
+    async def btn_skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
             return
@@ -290,14 +290,14 @@ class ProTesterView(discord.ui.View):
             item.disabled = True
 
 
-class ProTesterSelect(discord.ui.Select):
+class ProTesterSelect(disnake.ui.Select):
     """Chọn mục tiêu Anomaly cụ thể để Lãnh Chúa giết."""
     def __init__(self, game, role: ProTester, anomaly_pids: list[int]):
         self.game = game
         self.role = role
 
         options = [
-            discord.SelectOption(
+            disnake.SelectOption(
                 label = game.players[pid][:25].display_name,
                 value = str(pid),
                 emoji = "🎯"
@@ -314,7 +314,7 @@ class ProTesterSelect(discord.ui.Select):
             row         = 0
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
             return
@@ -328,7 +328,7 @@ class ProTesterSelect(discord.ui.Select):
         success, result = await self.role.activate_ability(self.game, target_id=target_id)
         if success:
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title       = "⚡ KÍCH HOẠT THÀNH CÔNG",
                     description = f"Lãnh Chúa đã bị ép giết **{result}**.\nBạn đã hi sinh vì nhiệm vụ.",
                     color       = 0xe74c3c

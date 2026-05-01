@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -43,7 +43,7 @@ class TheGlitchStalker(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -67,7 +67,7 @@ class TheGlitchStalker(BaseRole):
 
         if not alive:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="👁️ ĐÊM — KẺ RÌNH RẬP",
                     description="Không còn Survivor nào chưa bị theo dõi gần đây.",
                     color=0xe74c3c
@@ -78,7 +78,7 @@ class TheGlitchStalker(BaseRole):
         view = self.StalkerView(game, self, alive)
 
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title="👁️ ĐÊM — KẺ RÌNH RẬP",
                 description="Chọn 1 Survivor để theo dõi và phát hiện vai trò thực của họ:",
                 color=0xe74c3c
@@ -89,16 +89,16 @@ class TheGlitchStalker(BaseRole):
     # =====================================
     # VIEW
     # =====================================
-    class StalkerView(discord.ui.View):
+    class StalkerView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25]
             self.add_item(TheGlitchStalker.StalkerSelect(game, role, options))
 
-    class StalkerSelect(discord.ui.Select):
+    class StalkerSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -110,7 +110,7 @@ class TheGlitchStalker(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message(
                     "Đây không phải lượt của bạn.", ephemeral=True

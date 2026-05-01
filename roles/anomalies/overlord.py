@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -30,7 +30,7 @@ class Overlord(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -41,7 +41,7 @@ class Overlord(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -75,7 +75,7 @@ class Overlord(BaseRole):
         view = self.OverlordView(game, self, alive_targets)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="👑 ĐÊM — LÃNH CHÚA",
                     description=(
                         "Bạn là thủ lĩnh — **quyết định của bạn là mệnh lệnh**.\n\n"
@@ -89,13 +89,13 @@ class Overlord(BaseRole):
         except Exception:
             pass
 
-    class OverlordView(discord.ui.View):
+    class OverlordView(disnake.ui.View):
         def __init__(self, game, role, target_list):
             super().__init__(timeout=60)
             self.add_item(Overlord.KillSelect(game, role, target_list))
 
-        @discord.ui.button(label="💤 Bỏ qua đêm nay", style=discord.ButtonStyle.secondary, row=1)
-        async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="💤 Bỏ qua đêm nay", style=disnake.ButtonStyle.secondary, row=1)
+        async def skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             role = self.children[0].role
             if interaction.user.id != role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
@@ -105,12 +105,12 @@ class Overlord(BaseRole):
             await interaction.message.edit(view=self)
             await interaction.response.send_message("Bạn bỏ qua đêm nay — không ai bị giết.", ephemeral=True)
 
-    class KillSelect(discord.ui.Select):
+    class KillSelect(disnake.ui.Select):
         def __init__(self, game, role, target_list):
             self.game = game
             self.role = role
             options   = [
-                discord.SelectOption(label=p.display_name, value=str(p.id), emoji="🎯")
+                disnake.SelectOption(label=p.display_name, value=str(p.id), emoji="🎯")
                 for p in target_list
             ][:25]
             super().__init__(
@@ -120,7 +120,7 @@ class Overlord(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -134,7 +134,7 @@ class Overlord(BaseRole):
                 item.disabled = True
             await interaction.message.edit(view=self.view)
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     description=f"👑 Lệnh đã ban ra: **{target.display_name if target else '?'}** sẽ bị tiêu diệt đêm nay.",
                     color=0x8e44ad
                 ),

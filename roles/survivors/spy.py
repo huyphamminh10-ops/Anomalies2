@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -31,7 +31,7 @@ class Spy(BaseRole):
         view = self.SpyStandbyView(self)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="👁️ ĐÊM — ĐIỆP VIÊN",
                     description=(
                         "Hệ thống theo dõi đang hoạt động...\n\n"
@@ -46,13 +46,13 @@ class Spy(BaseRole):
         except Exception:
             pass
 
-    class SpyStandbyView(discord.ui.View):
+    class SpyStandbyView(disnake.ui.View):
         def __init__(self, role):
             super().__init__(timeout=60)
             self.role = role
 
-        @discord.ui.button(label="📡 Trạng thái: Đang theo dõi", style=discord.ButtonStyle.secondary, disabled=True)
-        async def status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="📡 Trạng thái: Đang theo dõi", style=disnake.ButtonStyle.secondary, disabled=True)
+        async def status(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             pass
 
     # ==============================
@@ -63,7 +63,7 @@ class Spy(BaseRole):
         if not target:
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="👁️ THÔNG TIN TÌNH BÁO",
                         description="📡 Đêm nay Dị Thể không có hành động bất thường.",
                         color=0x34495e
@@ -74,7 +74,7 @@ class Spy(BaseRole):
             return
 
         try:
-            embed = discord.Embed(
+            embed = disnake.Embed(
                 title="👁️ THÔNG TIN TÌNH BÁO",
                 description=f"⚠️ Dị Thể đang nhắm vào: **{target.display_name}**",
                 color=0xe74c3c

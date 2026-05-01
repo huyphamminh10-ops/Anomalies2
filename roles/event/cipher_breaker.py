@@ -12,7 +12,7 @@
 # ══════════════════════════════════════════════════════════════════
 
 import random
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 # ── Bộ ký tự ─────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def _corrupt_player_msg(text: str) -> str:
     return "".join(chars)
 
 
-def _transform_embed(embed: discord.Embed, fn) -> discord.Embed:
+def _transform_embed(embed: disnake.Embed, fn) -> disnake.Embed:
     """Áp transform lên title + description của embed."""
     if embed.title:
         embed.title = fn(embed.title)
@@ -119,13 +119,13 @@ def _transform_embed(embed: discord.Embed, fn) -> discord.Embed:
 
 class CipherChannel:
     """
-    Proxy của discord.TextChannel.
+    Proxy của disnake.TextChannel.
     Khi cipher_alive=True  → nhiễu passive mọi tin nhắn.
     Khi cipher_destroy=True → phá hủy hoàn toàn.
     Mọi attribute/method khác delegate thẳng về channel gốc.
     """
 
-    def __init__(self, original: discord.TextChannel, game):
+    def __init__(self, original: disnake.TextChannel, game):
         self._original = original
         self._game     = game
 
@@ -221,7 +221,7 @@ class CipherBreaker(BaseRole):
         # DM riêng — không đi qua CipherChannel nên không bị nhiễu
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title       = "💀 KẺ GIẢI MÃ — MÃ HÓA HỆTHỐNG",
                     description = self.dm_message,
                     color       = 0x2c3e50
@@ -251,7 +251,7 @@ class CipherBreaker(BaseRole):
 
             if self.destroy_uses <= 0:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title       = "🌙 ĐÊM — KẺ GIẢI MÃ",
                         description = desc + "💣 Đã hết lượt phá hủy.\n💤 Passive nhiễu vẫn hoạt động.",
                         color       = 0x2c3e50
@@ -261,7 +261,7 @@ class CipherBreaker(BaseRole):
 
             view = CipherBreakerView(game, self)
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title       = "🌙 ĐÊM — KẺ GIẢI MÃ",
                     description = desc + f"💣 Lượt phá hủy còn lại: **{self.destroy_uses}/5**\n"
                                          "Kích hoạt để biến mọi thông báo thành hỗn loạn hoàn toàn.",
@@ -293,7 +293,7 @@ class CipherBreaker(BaseRole):
     # HOOK — Nhiễu chat người chơi
     # ══════════════════════════════════════════════════════════════
 
-    async def _on_player_message(self, game, message: discord.Message):
+    async def _on_player_message(self, game, message: disnake.Message):
         """
         Intercept tin nhắn người chơi trong kênh game.
         - Luôn dùng passive corrupt (PLAYER_MSG_CORRUPT_INTENSITY=0.50).
@@ -316,7 +316,7 @@ class CipherBreaker(BaseRole):
 
         try:
             await message.delete()
-        except (discord.Forbidden, discord.NotFound):
+        except (disnake.Forbidden, disnake.NotFound):
             # Không có quyền xóa — gửi phiên bản nhiễu như reply thay thế
             if corrupted and corrupted != message.content:
                 await self._original_channel.send(
@@ -387,14 +387,14 @@ class CipherBreaker(BaseRole):
 # DISCORD UI
 # ══════════════════════════════════════════════════════════════════
 
-class CipherBreakerView(discord.ui.View):
+class CipherBreakerView(disnake.ui.View):
     def __init__(self, game, role: "CipherBreaker"):
         super().__init__(timeout=60)
         self.game = game
         self.role = role
 
-    @discord.ui.button(label="💣 Kích hoạt Phá Hủy", style=discord.ButtonStyle.danger, emoji="💀")
-    async def btn_destroy(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="💣 Kích hoạt Phá Hủy", style=disnake.ButtonStyle.danger, emoji="💀")
+    async def btn_destroy(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
             return
@@ -403,7 +403,7 @@ class CipherBreakerView(discord.ui.View):
         await interaction.message.edit(view=self)
         success, msg = await self.role.activate_destroy(self.game)
         await interaction.response.send_message(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title       = "💣 PHÁ HỦY HỆ THỐNG" if success else "❌ Thất bại",
                 description = msg,
                 color       = 0xe74c3c if success else 0x95a5a6
@@ -412,8 +412,8 @@ class CipherBreakerView(discord.ui.View):
         )
         self.stop()
 
-    @discord.ui.button(label="💤 Bỏ qua đêm nay", style=discord.ButtonStyle.secondary)
-    async def btn_skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @disnake.ui.button(label="💤 Bỏ qua đêm nay", style=disnake.ButtonStyle.secondary)
+    async def btn_skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.user.id != self.role.player.id:
             await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
             return

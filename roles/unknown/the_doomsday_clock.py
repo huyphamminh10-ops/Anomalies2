@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -61,14 +61,14 @@ class TheDoomsdayClock(BaseRole):
     # ================================
     # VIEW
     # ================================
-    class DoomsdayView(discord.ui.View):
+    class DoomsdayView(disnake.ui.View):
         def __init__(self, game, role):
             super().__init__(timeout=60)
             self.game = game
             self.role = role
 
-        @discord.ui.button(label="⏩ Tua Nhanh", style=discord.ButtonStyle.danger)
-        async def fast_forward(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="⏩ Tua Nhanh", style=disnake.ButtonStyle.danger)
+        async def fast_forward(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
 
             self.role.fast_forward_uses -= 1
             self.role.last_used_night = self.game.night_count

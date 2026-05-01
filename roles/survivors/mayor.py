@@ -1,6 +1,6 @@
-import discord
-from discord.ui import View, Button
-from discord import Embed
+import disnake
+from disnake.ui import View, Button
+from disnake import Embed
 
 class Mayor:
     name = "Thị Trưởng"
@@ -89,8 +89,8 @@ class RevealView(View):
         super().__init__(timeout=None)
         self.role = role
 
-    @discord.ui.button(label="LỘ DIỆN", style=discord.ButtonStyle.danger)
-    async def reveal(self, interaction: discord.Interaction, button: Button):
+    @disnake.ui.button(label="LỘ DIỆN", style=disnake.ButtonStyle.danger)
+    async def reveal(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
 
         if self.role.revealed:
             await interaction.response.send_message(

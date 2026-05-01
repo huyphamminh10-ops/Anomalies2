@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -73,16 +73,16 @@ class TheGhostShip(BaseRole):
     # ================================
     # VIEW
     # ================================
-    class GhostView(discord.ui.View):
+    class GhostView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25]
             self.add_item(TheGhostShip.GhostSelect(game, role, options))
 
-    class GhostSelect(discord.ui.Select):
+    class GhostSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -93,7 +93,7 @@ class TheGhostShip(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             target_id = int(self.values[0])
 

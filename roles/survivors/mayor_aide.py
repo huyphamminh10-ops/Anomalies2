@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -42,7 +42,7 @@ class MayorAide(BaseRole):
         view = self.AideNightView(self, mayor_role)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="👔 ĐÊM — TRỢ LÝ THỊ TRƯỞNG",
                     description=(
                         f"{status_desc}\n\n"
@@ -56,14 +56,14 @@ class MayorAide(BaseRole):
         except Exception:
             pass
 
-    class AideNightView(discord.ui.View):
+    class AideNightView(disnake.ui.View):
         def __init__(self, role, mayor_role):
             super().__init__(timeout=60)
             self.role       = role
             self.mayor_role = mayor_role
 
-        @discord.ui.button(label="🏛️ Xem thông tin Thị Trưởng", style=discord.ButtonStyle.primary)
-        async def view_mayor(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="🏛️ Xem thông tin Thị Trưởng", style=disnake.ButtonStyle.primary)
+        async def view_mayor(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -73,7 +73,7 @@ class MayorAide(BaseRole):
                 return
 
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🏛️ THÔNG TIN THỊ TRƯỞNG",
                     description=(
                         f"👤 Tên: **{self.mayor_role.player.display_name}**\n"
@@ -94,7 +94,7 @@ class MayorAide(BaseRole):
         if self.mayor:
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="👔 TRỢ LÝ THỊ TRƯỞNG",
                         description=(
                             f"🏛️ Thị Trưởng là: {self.mayor.player.mention}\n\n"
@@ -114,7 +114,7 @@ class MayorAide(BaseRole):
         if self.mayor and dead_player == self.mayor.player:
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="⚠️ CẢNH BÁO",
                         description=(
                             "💀 **Thị Trưởng đã chết.**\n\n"

@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -54,11 +54,11 @@ class TheArchivist(BaseRole):
     # ==================================
     # VIEW
     # ==================================
-    class ArchivistView(discord.ui.View):
+    class ArchivistView(disnake.ui.View):
         def __init__(self, game, role, dead_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(
+                disnake.SelectOption(
                     label=p.display_name,
                     value=str(p.id)
                 )
@@ -70,7 +70,7 @@ class TheArchivist(BaseRole):
     # ==================================
     # SELECT
     # ==================================
-    class ArchivistSelect(discord.ui.Select):
+    class ArchivistSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -82,7 +82,7 @@ class TheArchivist(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
 
             if self.role.used_tonight:
                 await interaction.response.send_message(
@@ -103,7 +103,7 @@ class TheArchivist(BaseRole):
             self.role.used_tonight = True
 
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title=f"📖 DI CHÚC CỦA {target.display_name}",
                     description=will_text,
                     color=0x95a5a6

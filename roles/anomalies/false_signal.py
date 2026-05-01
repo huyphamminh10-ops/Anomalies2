@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 
@@ -31,7 +31,7 @@ class TheFalseSignal(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -42,7 +42,7 @@ class TheFalseSignal(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -59,7 +59,7 @@ class TheFalseSignal(BaseRole):
 
         if uses_left <= 0:
             try:
-                await self.safe_send(embed=discord.Embed(
+                await self.safe_send(embed=disnake.Embed(
                     title="📡 ĐÊM — TÍN HIỆU GIẢ",
                     description="❌ Bạn đã dùng hết **3 lượt**. Không thể phát tín hiệu giả.",
                     color=0x7f8c8d
@@ -79,7 +79,7 @@ class TheFalseSignal(BaseRole):
         view = self.FalseSignalView(game, self, alive_targets)
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="📡 ĐÊM — TÍN HIỆU GIẢ",
                     description=(
                         f"📡 Lượt còn lại: **{uses_left}/{self.max_uses}**\n"
@@ -93,13 +93,13 @@ class TheFalseSignal(BaseRole):
         except Exception:
             pass
 
-    class FalseSignalView(discord.ui.View):
+    class FalseSignalView(disnake.ui.View):
         def __init__(self, game, role, target_list):
             super().__init__(timeout=60)
             self.add_item(TheFalseSignal.SignalSelect(game, role, target_list))
 
-        @discord.ui.button(label="💤 Bỏ qua đêm nay", style=discord.ButtonStyle.secondary, row=1)
-        async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        @disnake.ui.button(label="💤 Bỏ qua đêm nay", style=disnake.ButtonStyle.secondary, row=1)
+        async def skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
             role = self.children[0].role
             if interaction.user.id != role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
@@ -109,12 +109,12 @@ class TheFalseSignal(BaseRole):
             await interaction.message.edit(view=self)
             await interaction.response.send_message("Bạn bỏ qua đêm nay.", ephemeral=True)
 
-    class SignalSelect(discord.ui.Select):
+    class SignalSelect(disnake.ui.Select):
         def __init__(self, game, role, target_list):
             self.game = game
             self.role = role
             options   = [
-                discord.SelectOption(label=p.display_name, value=str(p.id), emoji="📡")
+                disnake.SelectOption(label=p.display_name, value=str(p.id), emoji="📡")
                 for p in target_list
             ][:25]
             super().__init__(
@@ -124,7 +124,7 @@ class TheFalseSignal(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
                 return
@@ -139,7 +139,7 @@ class TheFalseSignal(BaseRole):
             target = self.game.players.get(target_id)
             if ok:
                 await interaction.response.send_message(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         description=f"📡 Tín hiệu giả đã phát đến **{target.display_name if target else '?'}** — lượt còn lại: {self.role.max_uses - self.role.used}/{self.role.max_uses}",
                         color=0x3498db
                     ),

@@ -1,4 +1,4 @@
-import discord
+import disnake
 from roles.base_role import BaseRole
 
 class TheNeuroParasite(BaseRole):
@@ -37,7 +37,7 @@ class TheNeuroParasite(BaseRole):
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""
-        import discord
+        import disnake
         teammates = [
             game.players[pid]
             for pid, role in game.roles.items()
@@ -48,7 +48,7 @@ class TheNeuroParasite(BaseRole):
         names = ', '.join('**' + m.display_name + '**' for m in teammates)
         desc = 'Đồng đội của bạn:' + chr(10) + names
         await self.safe_send(
-            embed=discord.Embed(
+            embed=disnake.Embed(
                 title='👥 Đồng Đội Dị Thể',
                 description=desc,
                 color=0xe74c3c
@@ -64,7 +64,7 @@ class TheNeuroParasite(BaseRole):
         if self.host_id and game.is_alive(self.host_id):
             try:
                 await self.safe_send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="🦠 ĐANG KÝ SINH",
                         description=f"Bạn đang trong quá trình tha hóa vật chủ.\nThời gian đã qua: **{self.days_infected}/3** ngày.",
                         color=0x9b59b6
@@ -94,7 +94,7 @@ class TheNeuroParasite(BaseRole):
 
         try:
             await self.safe_send(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🦠 CHỌN MỤC TIÊU KÝ SINH",
                     description="Hãy chọn một nạn nhân để bắt đầu quá trình tha hóa:",
                     color=0x9b59b6
@@ -152,7 +152,7 @@ class TheNeuroParasite(BaseRole):
             # 2. Gửi thông báo cho nạn nhân bị tha hóa
             try:
                 await host.send(
-                    embed=discord.Embed(
+                    embed=disnake.Embed(
                         title="🔴 BẠN ĐÃ BỊ THA HÓA",
                         description="Bạn cảm thấy cơ thể mình bị biến đổi... Bạn đã trở thành một **Anomaly**.",
                         color=0xe74c3c
@@ -165,7 +165,7 @@ class TheNeuroParasite(BaseRole):
             if hasattr(game, "channel") and game.channel:
                 try:
                     await game.channel.send(
-                        embed=discord.Embed(
+                        embed=disnake.Embed(
                             title="⚠️ CẢNH BÁO",
                             description="Một thực thể đã tha hóa thành công một nạn nhân.",
                             color=0xe74c3c
@@ -193,16 +193,16 @@ class TheNeuroParasite(BaseRole):
     # =====================================
     # VIEW
     # =====================================
-    class ParasiteView(discord.ui.View):
+    class ParasiteView(disnake.ui.View):
         def __init__(self, game, role, alive_list):
             super().__init__(timeout=60)
             options = [
-                discord.SelectOption(label=p.display_name, value=str(p.id))
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
                 for p in alive_list
             ][:25]
             self.add_item(TheNeuroParasite.ParasiteSelect(game, role, options))
 
-    class ParasiteSelect(discord.ui.Select):
+    class ParasiteSelect(disnake.ui.Select):
         def __init__(self, game, role, options):
             self.game = game
             self.role = role
@@ -214,7 +214,7 @@ class TheNeuroParasite(BaseRole):
                 max_values=1
             )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
             if interaction.user.id != self.role.player.id:
                 await interaction.response.send_message(
                     "Đây không phải lượt của bạn.",
@@ -229,7 +229,7 @@ class TheNeuroParasite(BaseRole):
             self.role.infected_history.add(target_id)
 
             await interaction.response.send_message(
-                embed=discord.Embed(
+                embed=disnake.Embed(
                     title="🦠 KÝ SINH THÀNH CÔNG",
                     description="Ký sinh đã bắt đầu lên mục tiêu.\nQuá trình tha hóa sẽ hoàn tất sau **3 ngày** nữa.",
                     color=0x9b59b6
