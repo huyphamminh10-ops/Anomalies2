@@ -1193,20 +1193,41 @@ async def on_voice_state_update(member, before, after):
             gs["countdown_time"] = cfg_countdown(raw_config)
 
         engine = active_games.get(guild_id)
+        pid    = member.id
+
         # Chỉ xử lý 'rời trận' khi có engine đang chạy thực sự
         if engine and not engine.ended and (gs.get("is_active") or gs["state"] == GameState.IN_GAME):
             if text_channel:
                 await text_channel.send(f"🚪 **{member.display_name}** đã rời trận giữa chừng.")
 
-            if member.id in engine.alive_players:
-                engine.alive_players.discard(member.id)
-                engine.dead_players.add(member.id)
+            if pid in engine.alive_players:
+                engine.alive_players.discard(pid)
+                engine.dead_players.add(pid)
                 engine._invalidate_alive_cache()
                 await engine.dead_chat_mgr.add_dead_player(member)
                 engine._check_win()
-            engine.spectators.discard(member.id)
+            engine.spectators.discard(pid)
 
-        pid = member.id
+            # ── TÍNH NĂNG MỚI: Khi rời voice → trả lại nick + bỏ mute ──────────
+            # 1. Unmute nếu đang bị mute (chết ban đêm / force_muted / spectator muted)
+            try:
+                if member.voice and member.voice.mute:
+                    await member.edit(mute=False)
+            except Exception:
+                pass
+
+            # 2. Xoá khỏi _force_muted để không bị mute lại khi vào lại
+            if hasattr(engine, "_force_muted"):
+                engine._force_muted.discard(pid)
+
+            # 3. Restore nick từ engine.nick_registry (đổi tên do chiêu role)
+            if hasattr(engine, "nick_registry") and pid in engine.nick_registry:
+                try:
+                    await engine.restore_nick(member)
+                except Exception:
+                    pass
+
+        # 4. Restore nick Spectator (đổi tên do vào xem game)
         if pid in gs.get("original_nicknames", {}):
             original_nick = gs["original_nicknames"].pop(pid)
             try:

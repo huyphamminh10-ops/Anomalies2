@@ -242,14 +242,16 @@ class _PlayerWrapper:
     def __getattr__(self, item):
         return getattr(self._member, item)
 
-    # ✅ FIX: thêm property display_name để tránh lỗi hiển thị object
     @property
     def display_name(self):
         return self._member.display_name
 
-    # ✅ FIX: __str__ để in ra tên thay vì object repr
     def __str__(self):
-        return self.display_name
+        return self._member.display_name
+
+    # FIX: __repr__ trả về tên thay vì object address — tránh hiện "<game._PlayerWrapper object at 0x...>"
+    def __repr__(self):
+        return self._member.display_name
 
     @property
     def alive(self):   return self._game.is_alive(self._member.id)
@@ -1139,6 +1141,8 @@ class WillSelectView(disnake.ui.View):
 class WillSelectMenu(disnake.ui.Select):
     def __init__(self, game: "GameEngine", dead_with_wills: list):
         self._game = game
+        # Lưu mapping id→name để callback không phải parse lại từ options
+        self._id_to_name: dict = {mid: name for mid, name in dead_with_wills}
         options = [
             disnake.SelectOption(
                 label=name[:100],
@@ -1156,7 +1160,11 @@ class WillSelectMenu(disnake.ui.Select):
 
     async def callback(self, interaction: disnake.ApplicationCommandInteraction):
         mid  = int(self.values[0])
-        name = next((n for m, n in [(o.value, o.label) for o in self.options] if int(m) == mid), str(mid))
+        # Lấy tên từ dict đã lưu — không bao giờ trả về object repr hay Discord ID
+        name = self._id_to_name.get(mid)
+        if not name:
+            raw = self._game._players_dict.get(mid)
+            name = getattr(raw, "display_name", None) or str(mid)
 
         # Tạo nội dung file .txt
         will_text_raw = self._game.wills.get(mid, "")
@@ -1210,14 +1218,21 @@ async def send_morning_will_board(game: "GameEngine"):
     dead_lines = []
 
     for pid in dead_ids:
-        # ✅ Lấy member thật từ _players_dict để tránh wrapper in ra object
+        # Lấy member từ _players_dict (có thể là discord.Member hoặc _PlayerWrapper)
         member = game._players_dict.get(pid)
         if not member:
             continue
-        name = member.display_name
+        # An toàn: luôn lấy display_name qua getattr để tránh f-string dùng __repr__
+        name = getattr(member, "display_name", None) or str(pid)
         role_obj = game.roles.get(pid)
         role_name = getattr(role_obj, "name", "Ẩn")
         will_text = game.wills.get(pid, "")
+        if not will_text or not will_text.strip():
+            # Fallback: will_lines chưa được flush kịp vào wills dict
+            _ws_fb = game.will_states.get(pid)
+            if _ws_fb and _ws_fb.will_lines:
+                will_text = "\n".join(_ws_fb.will_lines)
+                game.wills[pid] = will_text   # sync để lần sau khỏi fallback
         has_will = bool(will_text and will_text.strip())
 
         will_icon = "📜" if has_will else "🚫"
@@ -2427,24 +2442,19 @@ class GameEngine:
             except Exception:
                 self.logger.error(f"on_death error [{role.name}]: {traceback.format_exc()}")
 
-        # ✅ FIX: Khoá di chúc khi chết — nếu đang ghi dở thì flush luôn
+        # Khoá + flush di chúc khi chết
         _ws = self.will_states.get(pid)
         if _ws:
-            if _ws.writing_will:
-                if _ws.will_lines:
-                    self.wills[pid] = "\n".join(_ws.will_lines)
-                    self.logger.debug(f"[Will] Flushed will for {member.display_name} (pid={pid}) with {len(_ws.will_lines)} lines")
-                _ws.writing_will = False
-                _ws.locked = True
-            elif _ws.will_lines:
-                # Trường hợp đã kết thúc ghi trước đó, vẫn đảm bảo wills có dữ liệu
-                if pid not in self.wills or not self.wills[pid]:
-                    self.wills[pid] = "\n".join(_ws.will_lines)
-
-        # Đảm bảo nếu có will_lines nhưng chưa kịp lưu do không ở writing_will (hiếm)
-        if pid not in self.wills or not self.wills[pid]:
-            if _ws and _ws.will_lines:
+            _ws.writing_will = False
+            _ws.locked = True
+            # Luôn flush từ will_lines nếu có — đây là nguồn chính xác nhất
+            if _ws.will_lines:
                 self.wills[pid] = "\n".join(_ws.will_lines)
+                self.logger.debug(
+                    f"[Will] Flushed on death: {member.display_name} "
+                    f"(pid={pid}), {len(_ws.will_lines)} lines"
+                )
+            # Nếu will_lines rỗng nhưng wills[pid] đã có dữ liệu realtime → giữ nguyên
 
         # Dead Chat
         await self.dead_chat_mgr.add_dead_player(member)
@@ -3007,3 +3017,21 @@ class SkipTracker(disnake.ui.View):
     async def skip(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         uid = interaction.user.id
         if not self.game.abuse_tracker.is_allowed(uid):
+            await interaction.response.send_message(
+                "⚠️ Bạn đang thực hiện hành động quá nhanh. Vui lòng chờ một chút.",
+                ephemeral=True
+            )
+            return
+
+        self.skippers.add(uid)
+        total_alive = len([p for p in self.game.players if self.game.is_alive(p)])
+        needed = max(1, (total_alive // 2) + 1)
+
+        await interaction.response.send_message(
+            f"⏩ **{interaction.user.display_name}** muốn bỏ qua. "
+            f"({len(self.skippers)}/{needed} cần thiết)",
+            ephemeral=False
+        )
+
+        if len(self.skippers) >= needed:
+            self.skip_event.set()
