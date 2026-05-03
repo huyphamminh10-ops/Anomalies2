@@ -973,6 +973,121 @@ class VotingSession:
         return leaders[0], "normal"
 
 
+
+# ══════════════════════════════════════════════════════════════════════
+# §10.5  VOTE VIEW V2 — UI bỏ phiếu công khai cho phase_voting
+# ══════════════════════════════════════════════════════════════════════
+
+class VoteViewV2(disnake.ui.View):
+    """
+    View bỏ phiếu trục xuất cho toàn server.
+    - Mỗi người alive chỉ vote được 1 lần (có thể đổi ý).
+    - Hỗ trợ anonymous_vote: ẩn tên người vote.
+    - Hỗ trợ allow_skip: nút bỏ qua.
+    - Tích hợp VotingSession để record vote.
+    """
+
+    def __init__(self, game: "GameEngine", alive_members: list, vote_time: int, session: "VotingSession"):
+        super().__init__(timeout=vote_time + 5)
+        self.game    = game
+        self.session = session
+
+        # Select menu chọn người bị trục xuất
+        options = [
+            disnake.SelectOption(
+                label=p.display_name[:100],
+                value=str(p.id),
+                emoji="🎯"
+            )
+            for p in alive_members
+        ][:25]
+
+        self.add_item(VoteViewV2.VoteSelect(game, session, options))
+
+        # Nút bỏ qua (skip) nếu config cho phép
+        if game.config.allow_skip:
+            self.add_item(VoteViewV2.SkipButton(session))
+
+    class VoteSelect(disnake.ui.Select):
+        def __init__(self, game: "GameEngine", session: "VotingSession", options):
+            self.game    = game
+            self.session = session
+            super().__init__(
+                placeholder="🗳️ Chọn người muốn trục xuất...",
+                options=options,
+                min_values=1,
+                max_values=1,
+                row=0,
+            )
+
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
+            voter_id  = interaction.user.id
+            target_id = int(self.values[0])
+
+            if not self.game.is_alive(voter_id):
+                await interaction.response.send_message(
+                    "❌ Bạn đã chết và không thể bỏ phiếu.",
+                    ephemeral=True
+                )
+                return
+
+            recorded = self.session.record_vote(voter_id, target_id)
+            if not recorded:
+                await interaction.response.send_message(
+                    "⚠️ Không thể ghi nhận phiếu (rate-limit hoặc không hợp lệ).",
+                    ephemeral=True
+                )
+                return
+
+            target = self.game._players_dict.get(target_id)
+            target_name = getattr(target, "display_name", str(target_id))
+
+            if self.game.config.anonymous_vote:
+                await interaction.response.send_message(
+                    f"🗳️ Phiếu của bạn đã được ghi nhận *(ẩn danh)*.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"🗳️ Bạn đã vote: **{target_name}**",
+                    ephemeral=True
+                )
+
+    class SkipButton(disnake.ui.Button):
+        def __init__(self, session: "VotingSession"):
+            self.session = session
+            super().__init__(
+                label="⏭️ Bỏ qua",
+                style=disnake.ButtonStyle.secondary,
+                row=1,
+            )
+
+        async def callback(self, interaction: disnake.ApplicationCommandInteraction):
+            voter_id = interaction.user.id
+
+            if not self.session.game.is_alive(voter_id):
+                await interaction.response.send_message(
+                    "❌ Bạn đã chết và không thể bỏ phiếu.",
+                    ephemeral=True
+                )
+                return
+
+            recorded = self.session.record_skip(voter_id)
+            if not recorded:
+                await interaction.response.send_message(
+                    "⚠️ Không thể ghi nhận phiếu skip.",
+                    ephemeral=True
+                )
+                return
+
+            alive     = len(self.session.game.get_alive_players())
+            needed    = math.ceil(alive * self.session.game.config.skip_threshold)
+            current   = len(self.session.skip_votes)
+            await interaction.response.send_message(
+                f"⏭️ Bỏ qua được ghi nhận. ({current}/{needed} cần thiết)",
+                ephemeral=True
+            )
+
 # ══════════════════════════════════════════════════════════════════════
 # §11  WILL SYSTEM  — Áp dụng cho TẤT CẢ người chơi
 # ══════════════════════════════════════════════════════════════════════
