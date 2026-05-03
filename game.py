@@ -1154,6 +1154,11 @@ async def handle_will_dm(active_games: dict, message: disnake.Message) -> bool:
             await message.channel.send("❌ Bạn không đang trong trận nào.")
             return True
 
+        # 🔒 Người đã chết không được viết di chúc
+        if uid in game.dead_players:
+            await message.channel.send("💀 Bạn đã chết — không thể viết di chúc nữa.")
+            return True
+
         ws = get_will_state(game, uid)
 
         if ws.locked:
@@ -1190,6 +1195,15 @@ async def handle_will_dm(active_games: dict, message: disnake.Message) -> bool:
     ws = get_will_state(game, uid)
     if not ws.writing_will:
         return False   # Không trong chế độ ghi → không xử lý
+
+    # 🔒 Nếu người đã chết trong khi đang ghi dở → khóa lại
+    if uid in game.dead_players:
+        ws.writing_will = False
+        ws.locked = True
+        if ws.will_lines:
+            game.wills[uid] = "\n".join(ws.will_lines)
+        await message.channel.send("💀 Bạn đã chết — di chúc đã bị khóa lại.")
+        return True
 
     # Kiểm tra giới hạn số dòng
     if len(ws.will_lines) >= MAX_WILL_LINES:
@@ -2524,6 +2538,15 @@ class GameEngine:
         self.dead_players.add(pid)
         self._invalidate_alive_cache()
         self.last_night_killers.append(pid)
+
+        # 🔒 Tự động khóa di chúc nếu người chơi đang ghi dở
+        _ws_kill = self.will_states.get(pid)
+        if _ws_kill and _ws_kill.writing_will:
+            _ws_kill.writing_will = False
+            _ws_kill.locked = True
+            if _ws_kill.will_lines:
+                self.wills[pid] = "\n".join(_ws_kill.will_lines)
+            await self.send_dm(member, "💀 Bạn đã chết — di chúc đã được khóa lại tự động.")
 
         # Gán Dead role + mute nếu cần
         if self._muting_enabled:
