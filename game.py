@@ -2019,16 +2019,27 @@ class GameEngine:
         try:
             team = getattr(role, "team", None) or getattr(role, "faction", "?")
             dm_msg = getattr(role, "dm_message", None)
+
+            # Chọn màu embed theo phe
+            team_colors = {
+                "Anomalies": 0xe74c3c,   # Đỏ — Dị Thể
+                "Survivors":  0x2ecc71,  # Xanh lá — Người Sống Sót
+                "Unknown":    0xf1c40f,  # Vàng — Ẩn Danh
+            }
+            embed_color = team_colors.get(team, 0x9b59b6)
+
+            # Luôn tạo embed thông tin vai trò
+            embed = disnake.Embed(
+                title=f"🎭 Vai Trò: {role.name}",
+                description=f"**Phe:** {team}\n\n{getattr(role, 'description', '')}",
+                color=embed_color
+            )
+
             if dm_msg:
-                # Dùng dm_message tuỳ chỉnh của role (nếu có)
-                await member.send(dm_msg)
+                # Gửi text dm_message trước, kèm embed ngay sau
+                await member.send(dm_msg, embed=embed)
             else:
-                # Fallback: embed mặc định từ description
-                embed = disnake.Embed(
-                    title=f"🎭 Vai Trò: {role.name}",
-                    description=f"**Phe:** {team}\n\n{getattr(role, 'description', '')}",
-                    color=0x9b59b6
-                )
+                # Không có dm_message — chỉ gửi embed
                 await member.send(embed=embed)
 
             # ── Gửi thêm danh sách vai trò toàn trận ─────────────────────
