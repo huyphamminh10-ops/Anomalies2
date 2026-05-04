@@ -2028,19 +2028,14 @@ class GameEngine:
             }
             embed_color = team_colors.get(team, 0x9b59b6)
 
-            # Luôn tạo embed thông tin vai trò
+            # Tạo embed với dm_message (description chỉ dùng cho role_preview)
             embed = disnake.Embed(
                 title=f"🎭 Vai Trò: {role.name}",
-                description=f"**Phe:** {team}\n\n{getattr(role, 'description', '')}",
+                description=f"**Phe:** {team}\n\n{dm_msg}" if dm_msg else f"**Phe:** {team}",
                 color=embed_color
             )
 
-            if dm_msg:
-                # Gửi text dm_message trước, kèm embed ngay sau
-                await member.send(dm_msg, embed=embed)
-            else:
-                # Không có dm_message — chỉ gửi embed
-                await member.send(embed=embed)
+            await member.send(embed=embed)
 
             # ── Gửi thêm danh sách vai trò toàn trận ─────────────────────
             await member.send(embed=self._build_role_list_embed())
