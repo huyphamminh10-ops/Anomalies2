@@ -2188,7 +2188,7 @@ class GameEngine:
         for elapsed in range(night_time):
             await asyncio.sleep(1)
             remaining = night_time - elapsed - 1
-            if timer_msg and elapsed % 5 == 0:
+            if timer_msg:
                 try:
                     timer_embed.description = f"⏱️ Còn lại: **{remaining}s**"
                     await timer_msg.edit(embed=timer_embed)
@@ -2964,7 +2964,7 @@ class GameEngine:
             if skip_tracker is not None and skip_tracker.skip_event.is_set():
                 break
             remaining = day_time - elapsed - 1
-            if day_timer_msg and elapsed % 5 == 0:
+            if day_timer_msg:
                 try:
                     day_timer_embed.description = f"⏱️ Còn lại: **{remaining}s**"
                     await day_timer_msg.edit(embed=day_timer_embed)
@@ -3034,7 +3034,7 @@ class GameEngine:
             for elapsed in range(vote_time):
                 await asyncio.sleep(1)
                 remaining = vote_time - elapsed - 1
-                if vote_timer_msg and elapsed % 5 == 0:
+                if vote_timer_msg:
                     try:
                         new_desc = ("Nhấn nút để chọn người bị trục xuất."
                             + (" *(Ẩn danh)*" if self.config.anonymous_vote else "")
