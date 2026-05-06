@@ -322,12 +322,24 @@ class RoleDistributor:
                     
             while slots_left > 0 and power_candidates:
                 chosen = random.choice(power_candidates)
-                pool.append(chosen)
+                max_c = eligible[chosen]["max_count"]
+                if used.get(chosen, 0) < max_c:
+                    pool.append(chosen)
+                    used[chosen] = used.get(chosen, 0) + 1
+                    slots_left -= 1
                 power_candidates.remove(chosen)
-                slots_left -= 1
                 
+            # Fallback cuối: chỉ thêm KẺ GIẾT NGƯỜI HÀNG LOẠT nếu chưa đạt max_count
+            serial_killer_name = "KẺ GIẾT NGƯỜI HÀNG LOẠT"
+            serial_killer_max = eligible.get(serial_killer_name, {}).get("max_count", 1)
             while slots_left > 0:
-                pool.append("KẺ GIẾT NGƯỜI HÀNG LOẠT")
+                if used.get(serial_killer_name, 0) < serial_killer_max:
+                    pool.append(serial_killer_name)
+                    used[serial_killer_name] = used.get(serial_killer_name, 0) + 1
+                else:
+                    # Đã đạt giới hạn, không thể thêm nữa → dừng để tránh vượt max
+                    print(f"[Distributor] ⚠ Không thể thêm '{serial_killer_name}' (đã đạt max_count={serial_killer_max}). Bỏ qua {slots_left} slot còn lại.")
+                    break
                 slots_left -= 1
                 
         elif team == "Anomalies" and slots_left > 0:
