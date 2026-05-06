@@ -357,6 +357,136 @@ def build_embed(gs, guild_id=None):
 
 
 # ==============================
+# LOBBY VIEW (NÚT THAM GIA)
+# ==============================
+
+class JoinButton(disnake.ui.Button):
+    """Nút Tham Gia — hiện khi lobby KHÔNG có kênh thoại."""
+    def __init__(self):
+        super().__init__(
+            label="✋ Tham Gia",
+            style=disnake.ButtonStyle.success,
+            custom_id="lobby_join_button",
+            emoji="🎮",
+        )
+
+    async def callback(self, interaction: disnake.Interaction):
+        guild_id   = str(interaction.guild_id)
+        raw_config = get_cached_config(guild_id)
+        gs         = get_guild_state(guild_id)
+        member     = interaction.user
+
+        if gs.get("is_active") or gs["state"] == GameState.IN_GAME:
+            return await interaction.response.send_message(
+                "❌ Trận đấu đang diễn ra, bạn không thể tham gia lúc này.",
+                ephemeral=True
+            )
+
+        max_p = cfg_max_players(raw_config)
+        if len(gs["players_join_order"]) >= max_p:
+            return await interaction.response.send_message(
+                "❌ Sảnh đã đầy người!", ephemeral=True
+            )
+
+        async with _get_lobby_lock(gs):
+            if member in gs["players_join_order"]:
+                return await interaction.response.send_message(
+                    "✅ Bạn đã ở trong sảnh rồi!", ephemeral=True
+                )
+            gs["players_join_order"].append(member)
+            save_active_players(guild_id, [m.id for m in gs["players_join_order"]])
+
+        player_count = len(gs["players_join_order"])
+        min_p        = cfg_min_players(raw_config)
+
+        if player_count >= max_p:
+            gs["state"]          = GameState.FULL_FAST
+            gs["countdown_time"] = 10
+        elif player_count >= min_p and gs["state"] == GameState.WAITING:
+            gs["state"]          = GameState.COUNTDOWN
+            gs["countdown_time"] = cfg_countdown(raw_config)
+
+        await update_lobby(gs, guild_id=guild_id)
+        await interaction.response.send_message(
+            f"✅ **{member.display_name}** đã tham gia sảnh!", ephemeral=True
+        )
+
+
+class LeaveButton(disnake.ui.Button):
+    """Nút Rời Sảnh — hiện khi lobby KHÔNG có kênh thoại."""
+    def __init__(self):
+        super().__init__(
+            label="🚪 Rời Sảnh",
+            style=disnake.ButtonStyle.danger,
+            custom_id="lobby_leave_button",
+            emoji="🚶",
+        )
+
+    async def callback(self, interaction: disnake.Interaction):
+        guild_id = str(interaction.guild_id)
+        raw_config = get_cached_config(guild_id)
+        gs       = get_guild_state(guild_id)
+        member   = interaction.user
+
+        if gs.get("is_active") or gs["state"] == GameState.IN_GAME:
+            return await interaction.response.send_message(
+                "❌ Trận đấu đang diễn ra.", ephemeral=True
+            )
+
+        async with _get_lobby_lock(gs):
+            if member not in gs["players_join_order"]:
+                return await interaction.response.send_message(
+                    "❌ Bạn chưa ở trong sảnh.", ephemeral=True
+                )
+            gs["players_join_order"].remove(member)
+            save_active_players(guild_id, [m.id for m in gs["players_join_order"]])
+
+        player_count = len(gs["players_join_order"])
+        min_p        = cfg_min_players(raw_config)
+
+        if gs["state"] == GameState.FULL_FAST:
+            gs["state"]          = GameState.COUNTDOWN
+            gs["countdown_time"] = 60
+        if gs["state"] == GameState.COUNTDOWN and player_count < min_p:
+            gs["state"]          = GameState.WAITING
+            gs["countdown_time"] = cfg_countdown(raw_config)
+
+        await update_lobby(gs, guild_id=guild_id)
+        await interaction.response.send_message(
+            f"👋 **{member.display_name}** đã rời sảnh.", ephemeral=True
+        )
+
+
+def build_lobby_view(guild_id: str) -> disnake.ui.View:
+    """
+    Tạo View cho lobby embed.
+    - Có voice channel → nút link dẫn vào kênh thoại.
+    - Không có voice channel → nút Tham Gia / Rời Sảnh.
+    """
+    cfg      = get_cached_config(str(guild_id))
+    vc_id    = _to_int(cfg.get("voice_channel_id"))
+
+    view = disnake.ui.View(timeout=None)
+
+    if vc_id:
+        # Nút dẫn thẳng vào voice channel
+        guild_id_int = int(guild_id)
+        view.add_item(disnake.ui.Button(
+            label=f"Tham Gia Tại Kênh Thoại",
+            style=disnake.ButtonStyle.link,
+            url=f"https://discord.com/channels/{guild_id_int}/{vc_id}",
+            emoji="🔊",
+        ))
+    else:
+        # Không có voice → nút click để join/leave
+        view.add_item(JoinButton())
+        view.add_item(LeaveButton())
+
+    return view
+
+
+
+# ==============================
 # VIEW TASK
 # ==============================
 
@@ -383,7 +513,8 @@ async def _flush_lobby(gs, guild_id=None):
             tc      = bot.get_channel(_to_int(raw_cfg.get("text_channel_id"), 0))
             if not tc:
                 return
-            new_msg = await tc.send(embed=build_embed(gs, guild_id=guild_id))
+            view    = build_lobby_view(str(guild_id))
+            new_msg = await tc.send(embed=build_embed(gs, guild_id=guild_id), view=view)
             gs["lobby_message"]  = new_msg
             gs["dirty"]          = False
             gs["last_edit_time"] = now
@@ -400,7 +531,8 @@ async def _flush_lobby(gs, guild_id=None):
     gs["last_edit_time"] = now
 
     try:
-        await gs["lobby_message"].edit(embed=build_embed(gs, guild_id=guild_id))
+        view = build_lobby_view(str(guild_id)) if guild_id else None
+        await gs["lobby_message"].edit(embed=build_embed(gs, guild_id=guild_id), view=view)
     except disnake.errors.HTTPException as e:
         if e.status == 429:
             retry_after = getattr(e, "retry_after", None) or 2.5
@@ -414,7 +546,8 @@ async def _flush_lobby(gs, guild_id=None):
                     raw_cfg  = get_cached_config(str(guild_id))
                     tc       = bot.get_channel(_to_int(raw_cfg.get("text_channel_id"), 0))
                     if tc:
-                        new_msg = await tc.send(embed=build_embed(gs, guild_id=guild_id))
+                        view    = build_lobby_view(str(guild_id))
+                        new_msg = await tc.send(embed=build_embed(gs, guild_id=guild_id), view=view)
                         gs["lobby_message"] = new_msg
                         save_guild_lobby(str(guild_id), {
                             "message_id": new_msg.id,
@@ -916,7 +1049,8 @@ async def init_guild(guild_id: str, text_channel):
     if gs["lobby_message"] is None:
         try:
             embed = build_embed(gs, guild_id=gid)
-            msg   = await text_channel.send(embed=embed)
+            view  = build_lobby_view(gid)
+            msg   = await text_channel.send(embed=embed, view=view)
             gs["lobby_message"] = msg
             save_guild_lobby(gid, {"message_id": msg.id, "channel_id": text_channel.id})
             print(f"  [{gid}] Tạo lobby message mới: {msg.id}")
@@ -1325,6 +1459,12 @@ async def on_ready():
         if not update_game_board.is_running():
             update_game_board.start()
         return
+
+    # Đăng ký persistent view để nút "Tham Gia" hoạt động sau khi bot restart
+    _persistent_lobby_view = disnake.ui.View(timeout=None)
+    _persistent_lobby_view.add_item(JoinButton())
+    _persistent_lobby_view.add_item(LeaveButton())
+    bot.add_view(_persistent_lobby_view)
 
     if session is None or session.closed:
         session = aiohttp.ClientSession()

@@ -47,6 +47,8 @@ def build_status_embed(state: dict) -> disnake.Embed:
     # 2. Kênh thoại
     if state.get("voice_channel_id") == "create":
         vc = "✅ Tạo kênh mới tự động"
+    elif state.get("voice_channel_id") == "none":
+        vc = "✅ Không có kênh thoại"
     elif state.get("voice_channel_id"):
         vc = f"✅ <#{state['voice_channel_id']}>"
     else:
@@ -223,6 +225,7 @@ class VoiceChannelSelect(disnake.ui.Select):
             for c in chunk
         ]
         opts.append(disnake.SelectOption(label="✨ Tạo kênh mới cho tôi", value="create", emoji="🔧"))
+        opts.append(disnake.SelectOption(label="🚫 Không có kênh thoại",  value="none",   emoji="🚫"))
         if total > 1:
             nxt = (page + 1) % total
             opts.append(disnake.SelectOption(label=f"→ Trang {nxt + 1}/{total}", value=f"__page_{nxt}__", emoji="📄"))
@@ -366,7 +369,10 @@ async def do_setup(interaction: disnake.ApplicationCommandInteraction, guild: di
 
         # ── 3. Voice channel ─────────────────────────────────────────
         vc_val = state.get("voice_channel_id", "create")
-        if vc_val == "create":
+        if vc_val == "none":
+            voice_channel = None
+            vc_label      = "🚫 Không có kênh thoại"
+        elif vc_val == "create":
             voice_channel = await guild.create_voice_channel("🗣️-nói-chuyện", category=category)
             vc_label      = f"✨ Tạo mới: `{voice_channel.name}`"
         else:
