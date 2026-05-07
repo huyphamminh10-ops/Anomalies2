@@ -30,97 +30,6 @@ import threading as _threading
 import builtins as _builtins
 import socket
 import atexit
-import random
-import urllib.request
-
-
-# ══════════════════════════════════════════════════════════════════
-# PROXY MANAGER — Tự động fetch & rotate proxy miễn phí
-# Khi Render bị Discord block (429/1015), bot sẽ tự đổi proxy và thử lại
-# ══════════════════════════════════════════════════════════════════
-
-class _ProxyManager:
-    """
-    Fetch danh sách proxy miễn phí từ nhiều nguồn public,
-    rotate qua từng proxy khi bị Discord block.
-    """
-    SOURCES = [
-        "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
-        "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt",
-        "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt",
-        "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
-    ]
-
-    def __init__(self):
-        self._proxies: list[str] = []
-        self._index: int = 0
-        self._lock = _threading.Lock()
-        self._last_fetch: float = 0.0
-        self._fetch_interval: float = 300.0  # refetch mỗi 5 phút
-
-    def _fetch_proxies_sync(self) -> list[str]:
-        """Fetch proxy list từ các nguồn (chạy sync trong thread)."""
-        result = []
-        for url in self.SOURCES:
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    text = resp.read().decode("utf-8", errors="ignore")
-                    for line in text.splitlines():
-                        line = line.strip()
-                        if line and ":" in line and not line.startswith("#"):
-                            # Lọc bỏ các dòng không phải IP:PORT
-                            parts = line.split(":")
-                            if len(parts) == 2 and parts[1].isdigit():
-                                result.append(f"http://{line}")
-            except Exception as e:
-                print(f"[ProxyManager] Không fetch được {url}: {e}")
-        random.shuffle(result)
-        print(f"[ProxyManager] Đã fetch {len(result)} proxy từ {len(self.SOURCES)} nguồn.")
-        return result
-
-    def refresh(self):
-        """Refresh danh sách proxy (gọi từ thread)."""
-        now = _time_module.time()
-        with self._lock:
-            if now - self._last_fetch < self._fetch_interval and self._proxies:
-                return
-        proxies = self._fetch_proxies_sync()
-        with self._lock:
-            if proxies:
-                self._proxies = proxies
-                self._index = 0
-                self._last_fetch = now
-            else:
-                print("[ProxyManager] Không có proxy nào — dùng kết nối trực tiếp.")
-
-    def next_proxy(self) -> str | None:
-        """Lấy proxy kế tiếp (rotate)."""
-        with self._lock:
-            if not self._proxies:
-                return None
-            proxy = self._proxies[self._index % len(self._proxies)]
-            self._index = (self._index + 1) % len(self._proxies)
-            return proxy
-
-    def remove_current(self):
-        """Xóa proxy hiện tại khỏi danh sách (khi proxy bị lỗi)."""
-        with self._lock:
-            if not self._proxies:
-                return
-            idx = (self._index - 1) % len(self._proxies)
-            if 0 <= idx < len(self._proxies):
-                bad = self._proxies.pop(idx)
-                self._index = max(0, self._index - 1)
-                print(f"[ProxyManager] Đã xóa proxy lỗi: {bad} ({len(self._proxies)} còn lại)")
-
-    @property
-    def count(self) -> int:
-        with self._lock:
-            return len(self._proxies)
-
-
-_proxy_manager = _ProxyManager()
 from disnake.ext import commands, tasks
 from cogs.settings import check_command_permission as _check_cmd_perm
 from config_manager import (
@@ -1662,34 +1571,11 @@ async def on_guild_remove(guild):
 #      Bot thread là daemon → không bị ảnh hưởng khi Streamlit reload.
 # ══════════════════════════════════════════════════════════════════
 
-def _make_bot_with_proxy(proxy: str | None) -> commands.Bot:
-    """Tạo bot instance mới với proxy connector (nếu có)."""
-    _intents = disnake.Intents.all()
-    if proxy:
-        connector = aiohttp.TCPConnector(ssl=False)
-        _bot = commands.Bot(
-            command_prefix="!",
-            intents=_intents,
-            connector=connector,
-        )
-        # Patch proxy vào session của bot sau khi connector tạo xong
-        # disnake dùng aiohttp bên trong — truyền proxy qua http_session
-        _bot._proxy = proxy
-    else:
-        _bot = commands.Bot(
-            command_prefix="!",
-            intents=_intents,
-        )
-        _bot._proxy = None
-    return _bot
-
-
 def _run_bot_in_thread():
     """
     Hàm chạy trong thread daemon riêng.
     - Tạo event loop MỚI (không share với Streamlit/main thread)
     - Reconnect tự động với exponential backoff khi mất kết nối
-    - Khi bị 429 (IP Render bị block): tự động đổi sang proxy mới và thử lại
     - Dừng sạch khi _shutting_down = True
     """
     global _bot_loop, _shutting_down
@@ -1700,37 +1586,23 @@ def _run_bot_in_thread():
         return
 
     print("[BotThread] Bot thread đang khởi động...")
-
-    # Fetch proxy list trước khi start
-    print("[BotThread] Đang fetch danh sách proxy dự phòng...")
-    _proxy_manager.refresh()
-    print(f"[BotThread] Sẵn {_proxy_manager.count} proxy dự phòng.")
-
     loop = None
-    current_proxy: str | None = None
-    using_proxy: bool = False
 
     try:
+        # Tạo event loop riêng cho thread này
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         _bot_loop = loop
         _bot_state["loop"] = loop
 
-        MAX_RETRIES   = 999   # Không giới hạn — cứ đổi proxy và thử lại
-        retry_count   = 0
-        base_delay    = 5
-        rate_limit_hits = 0   # Đếm số lần bị 429 liên tiếp
+        MAX_RETRIES = 5
+        retry_count = 0
+        base_delay  = 5
 
-        while not _shutting_down:
+        while not _shutting_down and retry_count < MAX_RETRIES:
             try:
-                if using_proxy and current_proxy:
-                    print(f"[BotThread] Thử kết nối qua proxy: {current_proxy}")
-                    loop.run_until_complete(
-                        bot.start(TOKEN, reconnect=True, proxy=current_proxy)
-                    )
-                else:
-                    print("[BotThread] Thử kết nối trực tiếp (không proxy)...")
-                    loop.run_until_complete(bot.start(TOKEN, reconnect=True))
+                # Chạy bot với reconnect=True (tự reconnect khi Discord ngắt kết nối)
+                loop.run_until_complete(bot.start(TOKEN, reconnect=True))
 
             except disnake.LoginFailure:
                 print("[BotThread] FATAL: Token Discord không hợp lệ! Kiểm tra DISCORD_TOKEN.")
@@ -1743,65 +1615,31 @@ def _run_bot_in_thread():
             except Exception as e:
                 if _shutting_down:
                     break
-
-                err_str = str(e)
-                is_rate_limited = (
-                    (isinstance(e, disnake.errors.HTTPException) and e.status in (429, 1015))
-                    or "429" in err_str
-                    or "1015" in err_str
-                    or "rate limit" in err_str.lower()
-                    or "cloudflare" in err_str.lower()
-                )
-
-                if is_rate_limited:
-                    rate_limit_hits += 1
-                    # Xóa proxy lỗi khỏi danh sách nếu đang dùng proxy
-                    if using_proxy:
-                        _proxy_manager.remove_current()
-
-                    # Refresh proxy list nếu cạn
-                    if _proxy_manager.count < 5:
-                        print("[BotThread] Proxy list cạn — đang fetch lại...")
-                        _proxy_manager.refresh()
-
-                    # Lấy proxy mới
-                    current_proxy = _proxy_manager.next_proxy()
-
-                    if current_proxy:
-                        using_proxy = True
-                        print(f"[BotThread] Bị Discord block (429/1015)! "
-                              f"Đổi sang proxy #{rate_limit_hits}: {current_proxy}")
-                        _time_module.sleep(5)  # Chờ ngắn trước khi thử proxy
-                    else:
-                        # Hết proxy → chờ lâu hơn rồi thử lại không proxy
-                        using_proxy = False
-                        wait = min(60 * rate_limit_hits, 600)  # tối đa 10 phút
-                        print(f"[BotThread] Hết proxy dự phòng! "
-                              f"Chờ {wait}s rồi fetch proxy mới và thử lại...")
-                        _time_module.sleep(wait)
-                        _proxy_manager.refresh()
-                        current_proxy = _proxy_manager.next_proxy()
-                        if current_proxy:
-                            using_proxy = True
-
+                retry_count += 1
+                # Xử lý riêng lỗi 429 Rate Limit từ Discord/Cloudflare
+                if isinstance(e, disnake.errors.HTTPException) and e.status == 429:
+                    wait_time = 60 * retry_count  # 60s, 120s, 180s, 240s, 300s
+                    print(f"[BotThread] Bị Discord rate limit (429 / Cloudflare 1015)!")
+                    print(f"[BotThread] IP Render đang bị chặn tạm thời. Chờ {wait_time}s trước khi thử lại...")
+                    _time_module.sleep(wait_time)
                 else:
-                    # Lỗi khác → exponential backoff
-                    retry_count += 1
-                    rate_limit_hits = 0  # reset counter
-                    delay = base_delay * (2 ** min(retry_count - 1, 6))  # tối đa 320s
+                    # Exponential backoff cho các lỗi khác: 5s, 10s, 20s, 40s, 80s
+                    delay = base_delay * (2 ** min(retry_count - 1, 4))
                     print(f"[BotThread] Lỗi: {e}")
-                    print(f"[BotThread] Retry {retry_count} sau {delay}s...")
+                    print(f"[BotThread] Retry {retry_count}/{MAX_RETRIES} sau {delay}s...")
                     traceback.print_exc()
                     _time_module.sleep(delay)
 
             else:
-                # bot.start() kết thúc bình thường
-                if not _shutting_down:
-                    print("[BotThread] Bot thoát bất ngờ — restart sau 10s...")
-                    _time_module.sleep(10)
-                    continue
+                # bot.start() kết thúc bình thường → graceful shutdown đã xảy ra
                 print("[BotThread] Bot đã thoát bình thường.")
                 break
+
+        if retry_count >= MAX_RETRIES:
+            print(f"[BotThread] Đã thử lại {MAX_RETRIES} lần mà không thành công — dừng hẳn.")
+            print(f"[BotThread] Giữ process sống để Render không tự restart và làm nặng thêm rate limit.")
+            while not _shutting_down:
+                _time_module.sleep(3600)
 
     except Exception as e:
         print(f"[BotThread] Lỗi ngoài ý muốn: {e}")
