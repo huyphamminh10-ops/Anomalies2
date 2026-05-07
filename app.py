@@ -1616,12 +1616,19 @@ def _run_bot_in_thread():
                 if _shutting_down:
                     break
                 retry_count += 1
-                # Exponential backoff: 5s, 10s, 20s, 40s, 80s
-                delay = base_delay * (2 ** min(retry_count - 1, 4))
-                print(f"[BotThread] Lỗi: {e}")
-                print(f"[BotThread] Retry {retry_count}/{MAX_RETRIES} sau {delay}s...")
-                traceback.print_exc()
-                _time_module.sleep(delay)
+                # Xử lý riêng lỗi 429 Rate Limit từ Discord/Cloudflare
+                if isinstance(e, disnake.errors.HTTPException) and e.status == 429:
+                    wait_time = 60 * retry_count  # 60s, 120s, 180s, 240s, 300s
+                    print(f"[BotThread] Bị Discord rate limit (429 / Cloudflare 1015)!")
+                    print(f"[BotThread] IP Render đang bị chặn tạm thời. Chờ {wait_time}s trước khi thử lại...")
+                    _time_module.sleep(wait_time)
+                else:
+                    # Exponential backoff cho các lỗi khác: 5s, 10s, 20s, 40s, 80s
+                    delay = base_delay * (2 ** min(retry_count - 1, 4))
+                    print(f"[BotThread] Lỗi: {e}")
+                    print(f"[BotThread] Retry {retry_count}/{MAX_RETRIES} sau {delay}s...")
+                    traceback.print_exc()
+                    _time_module.sleep(delay)
 
             else:
                 # bot.start() kết thúc bình thường → graceful shutdown đã xảy ra
@@ -1630,6 +1637,9 @@ def _run_bot_in_thread():
 
         if retry_count >= MAX_RETRIES:
             print(f"[BotThread] Đã thử lại {MAX_RETRIES} lần mà không thành công — dừng hẳn.")
+            print(f"[BotThread] Giữ process sống để Render không tự restart và làm nặng thêm rate limit.")
+            while not _shutting_down:
+                _time_module.sleep(3600)
 
     except Exception as e:
         print(f"[BotThread] Lỗi ngoài ý muốn: {e}")
