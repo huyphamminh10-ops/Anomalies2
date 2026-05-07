@@ -1697,67 +1697,12 @@ def start_bot_once():
             traceback.print_exc()
 
 
-# ── Gradio UI ─────────────────────────────────────────────────────
-import gradio as gr
 
-# Khởi động bot ngay khi module load (chỉ 1 lần nhờ start_bot_once)
+# ── Render: khởi động bot + chạy FastAPI uvicorn ─────────────────
 start_bot_once()
 
-def _get_status():
-    """Trả về dashboard HTML cho Gradio."""
-    thread_alive = _BOT_THREAD is not None and _BOT_THREAD.is_alive()
-    env_label    = "☁️ Hugging Face" if _IS_HUGGING_FACE else "🖥️ Local"
-
-    if _BOT_STARTED.is_set() and thread_alive:
-        status_html = "<div style='color:#2ecc71;font-size:1.1em;font-weight:bold;'>🟢 Bot đang hoạt động bình thường</div>"
-    elif _BOT_STARTED.is_set() and not thread_alive:
-        status_html = "<div style='color:#e74c3c;font-size:1.1em;font-weight:bold;'>🔴 Bot thread đã dừng! Kiểm tra log.</div>"
-    else:
-        status_html = "<div style='color:#f39c12;font-size:1.1em;font-weight:bold;'>⚠️ Bot chưa khởi động — kiểm tra DISCORD_TOKEN</div>"
-
-    import json as _j
-    stats_text = _j.dumps(game_stats, ensure_ascii=False, indent=2)
-
-    html = f"""
-    <div style="font-family:sans-serif;padding:16px;">
-        <h2 style="margin-bottom:20px;">🎮 Anomalies2 — Bot Dashboard</h2>
-        <table style="border-collapse:collapse;width:100%;margin-bottom:20px;">
-            <tr>
-                <td style="padding:10px 20px;background:#1a1a2e;border-radius:8px;text-align:center;margin:4px;">
-                    <div style="color:#aaa;font-size:.85em;">Môi trường</div>
-                    <div style="color:#fff;font-size:1.1em;font-weight:bold;">{env_label}</div>
-                </td>
-                <td style="width:12px;"></td>
-                <td style="padding:10px 20px;background:#1a1a2e;border-radius:8px;text-align:center;">
-                    <div style="color:#aaa;font-size:.85em;">Bot Status</div>
-                    <div style="color:#{'2ecc71' if _BOT_STARTED.is_set() else 'e74c3c'};font-size:1.1em;font-weight:bold;">
-                        {'🟢 Running' if _BOT_STARTED.is_set() else '🔴 Stopped'}
-                    </div>
-                </td>
-                <td style="width:12px;"></td>
-                <td style="padding:10px 20px;background:#1a1a2e;border-radius:8px;text-align:center;">
-                    <div style="color:#aaa;font-size:.85em;">Bot Thread</div>
-                    <div style="color:#{'2ecc71' if thread_alive else 'e74c3c'};font-size:1.1em;font-weight:bold;">
-                        {'🟢 Active' if thread_alive else '🔴 Dead'}
-                    </div>
-                </td>
-            </tr>
-        </table>
-        <div style="margin-bottom:12px;">{status_html}</div>
-        <details style="background:#111;padding:12px;border-radius:8px;">
-            <summary style="color:#aaa;cursor:pointer;">📊 Game Stats</summary>
-            <pre style="color:#ccc;font-size:.85em;margin-top:8px;overflow:auto;">{stats_text}</pre>
-        </details>
-    </div>
-    """
-    return html
-
-
-with gr.Blocks(title="Anomalies2 Bot", theme=gr.themes.Soft()) as _gradio_app:
-    gr.HTML(_get_status())
-    refresh_btn = gr.Button("🔄 Refresh", variant="secondary", size="sm")
-    status_box  = gr.HTML()
-    refresh_btn.click(fn=_get_status, inputs=[], outputs=status_box)
-
-if __name__ == "__main__" or _IS_HUGGING_FACE:
-    _gradio_app.launch(server_name="0.0.0.0", server_port=7860)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    print(f"[Main] Khởi động uvicorn trên port {port}...")
+    uvicorn.run(_fastapi_app, host="0.0.0.0", port=port)
