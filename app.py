@@ -219,7 +219,7 @@ _pending_role_maps: dict[str, dict] = {}
 _config_cache      = {}
 _config_cache_time = {}
 
-_EDIT_INTERVAL = 0.0   # Không throttle thêm — loop sleep đã handle
+_EDIT_INTERVAL = 1.05  # Tối thiểu 1.05s giữa 2 lần edit — tránh Discord rate-limit (429)
 
 
 def _to_int(value, default=None):
@@ -527,17 +527,18 @@ async def _flush_lobby(gs, guild_id=None):
             print(f"[flush_lobby] [{guild_id}] Không tạo lại được message: {_e}")
         return
 
-    gs["dirty"]          = False
-    gs["last_edit_time"] = now
+    gs["dirty"] = False
 
     try:
         view = build_lobby_view(str(guild_id)) if guild_id else None
         await gs["lobby_message"].edit(embed=build_embed(gs, guild_id=guild_id), view=view)
+        gs["last_edit_time"] = _time.monotonic()  # Tính SAU khi edit thật sự hoàn tất
     except disnake.errors.HTTPException as e:
         if e.status == 429:
             retry_after = getattr(e, "retry_after", None) or 2.5
             gs["_backoff_until"] = _time.monotonic() + retry_after
             gs["dirty"]          = True
+            gs["last_edit_time"] = _time.monotonic()  # Cập nhật để tránh spam khi backoff hết
         elif e.status in (404, 10008):  # Unknown Message — bị xóa tay
             gs["lobby_message"] = None
             # Tạo lại message mới trong kênh text
@@ -1109,7 +1110,13 @@ async def _lobby_loop(guild_id: str):
 
         # ── Ngủ đúng phần còn lại của giây để giữ nhịp 1s ───────
         elapsed = _time.monotonic() - tick_start
-        sleep_for = max(0.0, _TICK - elapsed)
+        # Nếu đang trong backoff (bị 429), ngủ đến hết backoff thay vì cứ 1s
+        try:
+            backoff_until = get_guild_state(gid).get("_backoff_until", 0.0)
+            remaining_backoff = max(0.0, backoff_until - _time.monotonic())
+        except Exception:
+            remaining_backoff = 0.0
+        sleep_for = max(remaining_backoff, max(0.0, _TICK - elapsed))
         await asyncio.sleep(sleep_for)
 
 
@@ -1690,59 +1697,67 @@ def start_bot_once():
             traceback.print_exc()
 
 
-# ── Streamlit UI ──────────────────────────────────────────────────
-try:
-    import streamlit as st
+# ── Gradio UI ─────────────────────────────────────────────────────
+import gradio as gr
 
-    st.set_page_config(
-        page_title="Anomalies Bot",
-        page_icon="🎮",
-        layout="wide",
-    )
+# Khởi động bot ngay khi module load (chỉ 1 lần nhờ start_bot_once)
+start_bot_once()
 
-    @st.cache_resource(show_spinner=False)
-    def _start_bot_cached_for_streamlit():
-        start_bot_once()
-        return True
-
-    _start_bot_cached_for_streamlit()
-
-    st.title("🎮 Anomalies Bot — Dashboard")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        env_label = "☁️ Hugging Face" if _IS_HUGGING_FACE else "🖥️ Local"
-        st.metric("Môi trường", env_label)
-
-    with col2:
-        bot_status = "🟢 Đang chạy" if _BOT_STARTED.is_set() else "🔴 Chưa khởi động"
-        st.metric("Bot Status", bot_status)
-
-    with col3:
-        thread_alive = _BOT_THREAD is not None and _BOT_THREAD.is_alive()
-        thread_status = "🟢 Active" if thread_alive else "🔴 Stopped"
-        st.metric("Bot Thread", thread_status)
-
-    st.divider()
+def _get_status():
+    """Trả về dashboard HTML cho Gradio."""
+    thread_alive = _BOT_THREAD is not None and _BOT_THREAD.is_alive()
+    env_label    = "☁️ Hugging Face" if _IS_HUGGING_FACE else "🖥️ Local"
 
     if _BOT_STARTED.is_set() and thread_alive:
-        st.success("Bot đang hoạt động bình thường.")
+        status_html = "<div style='color:#2ecc71;font-size:1.1em;font-weight:bold;'>🟢 Bot đang hoạt động bình thường</div>"
     elif _BOT_STARTED.is_set() and not thread_alive:
-        st.error("Bot thread đã dừng! Kiểm tra log.")
+        status_html = "<div style='color:#e74c3c;font-size:1.1em;font-weight:bold;'>🔴 Bot thread đã dừng! Kiểm tra log.</div>"
     else:
-        st.warning("Bot chưa được khởi động. Kiểm tra biến môi trường DISCORD_TOKEN.")
+        status_html = "<div style='color:#f39c12;font-size:1.1em;font-weight:bold;'>⚠️ Bot chưa khởi động — kiểm tra DISCORD_TOKEN</div>"
 
-    with st.expander("Game Stats"):
-        st.json(game_stats)
+    import json as _j
+    stats_text = _j.dumps(game_stats, ensure_ascii=False, indent=2)
 
-except ImportError:
-    # Không chạy trong Streamlit — chế độ standalone
-    print("[Main] Streamlit không có — chạy standalone.")
-    start_bot_once()
-    if _BOT_THREAD:
-        try:
-            _BOT_THREAD.join()
-        except KeyboardInterrupt:
-            print("[Main] Nhận Ctrl+C — đang tắt...")
-            _shutting_down = True
+    html = f"""
+    <div style="font-family:sans-serif;padding:16px;">
+        <h2 style="margin-bottom:20px;">🎮 Anomalies2 — Bot Dashboard</h2>
+        <table style="border-collapse:collapse;width:100%;margin-bottom:20px;">
+            <tr>
+                <td style="padding:10px 20px;background:#1a1a2e;border-radius:8px;text-align:center;margin:4px;">
+                    <div style="color:#aaa;font-size:.85em;">Môi trường</div>
+                    <div style="color:#fff;font-size:1.1em;font-weight:bold;">{env_label}</div>
+                </td>
+                <td style="width:12px;"></td>
+                <td style="padding:10px 20px;background:#1a1a2e;border-radius:8px;text-align:center;">
+                    <div style="color:#aaa;font-size:.85em;">Bot Status</div>
+                    <div style="color:#{'2ecc71' if _BOT_STARTED.is_set() else 'e74c3c'};font-size:1.1em;font-weight:bold;">
+                        {'🟢 Running' if _BOT_STARTED.is_set() else '🔴 Stopped'}
+                    </div>
+                </td>
+                <td style="width:12px;"></td>
+                <td style="padding:10px 20px;background:#1a1a2e;border-radius:8px;text-align:center;">
+                    <div style="color:#aaa;font-size:.85em;">Bot Thread</div>
+                    <div style="color:#{'2ecc71' if thread_alive else 'e74c3c'};font-size:1.1em;font-weight:bold;">
+                        {'🟢 Active' if thread_alive else '🔴 Dead'}
+                    </div>
+                </td>
+            </tr>
+        </table>
+        <div style="margin-bottom:12px;">{status_html}</div>
+        <details style="background:#111;padding:12px;border-radius:8px;">
+            <summary style="color:#aaa;cursor:pointer;">📊 Game Stats</summary>
+            <pre style="color:#ccc;font-size:.85em;margin-top:8px;overflow:auto;">{stats_text}</pre>
+        </details>
+    </div>
+    """
+    return html
+
+
+with gr.Blocks(title="Anomalies2 Bot", theme=gr.themes.Soft()) as _gradio_app:
+    gr.HTML(_get_status())
+    refresh_btn = gr.Button("🔄 Refresh", variant="secondary", size="sm")
+    status_box  = gr.HTML()
+    refresh_btn.click(fn=_get_status, inputs=[], outputs=status_box)
+
+if __name__ == "__main__" or _IS_HUGGING_FACE:
+    _gradio_app.launch(server_name="0.0.0.0", server_port=7860)

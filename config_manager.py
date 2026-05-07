@@ -11,10 +11,9 @@ from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
 # ── Kết nối MongoDB ────────────────────────────────────────────────
-MONGO_URI = os.environ.get(
-    "MONGO_URI",
-    "mongodb+srv://HuyPh:axQGNHfYHMpL0WRq@anom.05vxqrw.mongodb.net/?appName=Anom"
-)
+MONGO_URI = os.environ.get("MONGO_URI", "")
+if not MONGO_URI:
+    print("[config_manager] CẢNH BÁO: Biến môi trường MONGO_URI chưa được đặt!")
 DB_NAME = "Anomalies_DB"
 
 _client = None
