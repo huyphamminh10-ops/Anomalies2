@@ -31,10 +31,8 @@ if TYPE_CHECKING:
 BOT_OWNER_ID          = 1306441206296875099
 DISCORD_CLIENT_ID     = os.environ.get("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
-DISCORD_REDIRECT_URI  = os.environ.get(
-    "DISCORD_REDIRECT_URI",
-    "http://localhost:8000/auth/callback",
-)
+# Ưu tiên env var; fallback tự động detect từ request nếu không có
+DISCORD_REDIRECT_URI  = os.environ.get("DISCORD_REDIRECT_URI", "")
 _SECRET_KEY           = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
 DISCORD_API           = "https://discord.com/api/v10"
 
@@ -284,12 +282,18 @@ router = APIRouter()
 # ── AUTH ──────────────────────────────────────────────────────────
 
 @router.get("/auth/login")
-async def auth_login():
+async def auth_login(request: Request):
     state = secrets.token_hex(16)
+    # Tự detect redirect URI từ request nếu env var chưa set
+    redirect_uri = DISCORD_REDIRECT_URI
+    if not redirect_uri:
+        base = str(request.base_url).rstrip("/")
+        redirect_uri = f"{base}/auth/discord/callback"
+    import urllib.parse
     url = (
         "https://discord.com/oauth2/authorize"
         f"?client_id={DISCORD_CLIENT_ID}"
-        f"&redirect_uri={DISCORD_REDIRECT_URI}"
+        f"&redirect_uri={urllib.parse.quote(redirect_uri, safe='')}"
         f"&response_type=code"
         f"&scope=identify%20guilds"
         f"&state={state}"
@@ -298,8 +302,15 @@ async def auth_login():
 
 
 @router.get("/auth/callback")
-async def auth_callback(code: str, response: Response):
+@router.get("/auth/discord/callback")
+async def auth_callback(code: str, response: Response, state: str = ""):
+    # Xử lý cả /auth/callback và /auth/discord/callback
     async with httpx.AsyncClient() as http:
+        # Tự detect redirect_uri khớp với URL Discord gọi về
+        used_redirect = DISCORD_REDIRECT_URI
+        if not used_redirect:
+            base = str(request.base_url).rstrip("/")
+            used_redirect = f"{base}/auth/discord/callback"
         tr = await http.post(
             "https://discord.com/api/oauth2/token",
             data={
@@ -307,7 +318,7 @@ async def auth_callback(code: str, response: Response):
                 "client_secret": DISCORD_CLIENT_SECRET,
                 "grant_type":    "authorization_code",
                 "code":          code,
-                "redirect_uri":  DISCORD_REDIRECT_URI,
+                "redirect_uri":  used_redirect,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
