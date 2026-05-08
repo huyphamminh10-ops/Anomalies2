@@ -1,0 +1,12 @@
+{
+  "pool": [
+    {"name": "Mù Quáng", "faction": "Anomalies", "weight": 3, "min_players": 10, "max_count": 1, "core": false, "event": true},
+    {"name": "Kẻ Giải Mã", "faction": "Unknown Entities", "weight": 3, "min_players": 16, "max_count": 1, "core": false, "event": true},
+    {"name": "Người Thử Nghiệm", "faction": "Survivors", "weight": 3, "min_players": 7, "max_count": 2, "core": false, "event": true}
+  ],
+  "queue": [
+    
+  ],
+  "current": "Mù Quáng",
+  "last_rotate": 1776338241.3992538
+}
