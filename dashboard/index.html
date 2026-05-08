@@ -423,24 +423,83 @@ tr:last-child td{border-bottom:none;}
   border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto;
 }
 @keyframes spin{to{transform:rotate(360deg);}}
-/* ═══════ SKELETON LOADING ═══════ */
-@keyframes shimmer {
-  0%   { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
-}
-.sk {
-  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
-  background-size: 800px 100%;
-  animation: shimmer 1.4s infinite;
-  border-radius: 6px;
-}
-.sk-line   { height: 14px; margin-bottom: 10px; }
-.sk-title  { height: 20px; width: 40%; margin-bottom: 16px; }
-.sk-card   { height: 110px; border-radius: var(--radius); }
-.sk-sm     { height: 10px; width: 60%; }
-.sk-stat   { height: 80px; border-radius: var(--radius); }
-
 .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:12px;color:var(--text2);font-size:13px;}
+
+/* ═══════ BOOT LOADING SCREEN ═══════ */
+#boot-screen{
+  position:fixed;inset:0;z-index:99999;
+  background:#070a10;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:0;transition:opacity .5s ease;
+}
+#boot-screen.fade-out{opacity:0;pointer-events:none;}
+
+.boot-logo{
+  width:80px;height:80px;border-radius:20px;
+  background:linear-gradient(135deg,#00d4ff,#b388ff);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Rajdhani',sans-serif;font-size:36px;font-weight:700;color:#fff;
+  box-shadow:0 0 40px rgba(0,212,255,0.4),0 0 80px rgba(0,212,255,0.15);
+  animation:bootPulse 2s ease-in-out infinite;
+  margin-bottom:28px;
+}
+@keyframes bootPulse{
+  0%,100%{box-shadow:0 0 40px rgba(0,212,255,0.4),0 0 80px rgba(0,212,255,0.15);}
+  50%{box-shadow:0 0 60px rgba(0,212,255,0.7),0 0 120px rgba(0,212,255,0.3);}
+}
+
+.boot-title{
+  font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;
+  background:linear-gradient(135deg,#00d4ff,#b388ff);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:6px;
+}
+.boot-subtitle{
+  font-size:13px;color:#64748b;margin-bottom:36px;letter-spacing:.5px;
+}
+
+.boot-bar-wrap{
+  width:260px;height:3px;background:#1e2d47;border-radius:2px;
+  overflow:hidden;margin-bottom:20px;
+}
+.boot-bar{
+  height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#b388ff);
+  border-radius:2px;transition:width .4s ease;
+}
+
+.boot-status{
+  font-size:12px;color:#475569;text-align:center;min-height:32px;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+}
+.boot-status-text{transition:opacity .3s;}
+.boot-dots span{
+  display:inline-block;width:6px;height:6px;border-radius:50%;
+  background:#00d4ff;margin:0 3px;
+  animation:dotBounce .8s ease-in-out infinite;
+}
+.boot-dots span:nth-child(2){animation-delay:.15s;}
+.boot-dots span:nth-child(3){animation-delay:.3s;}
+@keyframes dotBounce{0%,80%,100%{transform:translateY(0);opacity:.4;}40%{transform:translateY(-6px);opacity:1;}}
+
+.boot-retry-btn{
+  margin-top:20px;padding:8px 20px;border-radius:8px;
+  background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);
+  color:#00d4ff;font-size:13px;font-weight:600;cursor:pointer;
+  transition:all .2s;display:none;
+}
+.boot-retry-btn:hover{background:rgba(0,212,255,0.2);}
+
+.boot-bg{
+  position:absolute;inset:0;pointer-events:none;overflow:hidden;
+}
+.boot-bg::before{
+  content:'';position:absolute;
+  width:600px;height:600px;border-radius:50%;
+  background:radial-gradient(ellipse,rgba(0,212,255,0.04) 0%,transparent 70%);
+  top:50%;left:50%;transform:translate(-50%,-50%);
+  animation:bootGlow 4s ease-in-out infinite;
+}
+@keyframes bootGlow{0%,100%{transform:translate(-50%,-50%) scale(1);}50%{transform:translate(-50%,-50%) scale(1.2);}}
 
 /* ═══════ IMAGE PREVIEW ═══════ */
 .img-preview-overlay{
@@ -461,7 +520,23 @@ tr:last-child td{border-bottom:none;}
 </head>
 <body>
 
-<div id="app"></div>
+<!-- BOOT LOADING SCREEN -->
+<div id="boot-screen">
+  <div class="boot-bg"></div>
+  <div class="boot-logo">A</div>
+  <div class="boot-title">Anomalies</div>
+  <div class="boot-subtitle">Discord Game Dashboard</div>
+  <div class="boot-bar-wrap">
+    <div class="boot-bar" id="boot-bar"></div>
+  </div>
+  <div class="boot-status">
+    <div class="boot-status-text" id="boot-status-text">Đang kết nối...</div>
+    <div class="boot-dots"><span></span><span></span><span></span></div>
+  </div>
+  <button class="boot-retry-btn" id="boot-retry-btn" onclick="bootRetry()">🔄 Thử Lại</button>
+</div>
+
+<div id="app" style="display:none"></div>
 
 <div id="toast-container"></div>
 
@@ -494,13 +569,22 @@ document.documentElement.setAttribute('data-theme', state.theme);
 // ══════════════════════════════════════════════════════════════
 // API HELPER
 // ══════════════════════════════════════════════════════════════
-async function api(path, options = {}) {
-  const r = await fetch(path, { credentials: 'include', ...options });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({ detail: 'Lỗi không xác định' }));
-    throw new Error(err.detail || `HTTP ${r.status}`);
+async function api(path, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(path, { credentials: 'include', signal: controller.signal, ...options });
+    clearTimeout(timer);
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: 'Lỗi không xác định' }));
+      throw new Error(err.detail || `HTTP ${r.status}`);
+    }
+    return r.json();
+  } catch(e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Yêu cầu quá thời gian chờ, vui lòng thử lại');
+    throw e;
   }
-  return r.json();
 }
 async function post(path, body) {
   return api(path, {
@@ -531,15 +615,8 @@ function toast(msg, type = 'info') {
 function navigate(page) {
   if (state.statusInterval) { clearInterval(state.statusInterval); state.statusInterval = null; }
   state.page = page;
-  // Update nav active states without full re-render
-  document.querySelectorAll('.nav-item').forEach(el => {
-    el.classList.toggle('active', el.getAttribute('onclick') === `navigate('${page}')`);
-  });
-  const titleEl = document.getElementById('page-title');
-  if (titleEl) titleEl.textContent = pageTitles[page] || '';
-  const content = document.getElementById('content');
-  if (content) { content.scrollTo(0,0); renderPage(); }
-  else render();
+  render();
+  document.querySelector('.content')?.scrollTo(0, 0);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -642,7 +719,9 @@ function renderLayout() {
           </div>
         </div>
       </div>
-      <div class="content" id="content"></div>
+      <div class="content" id="content">
+        <div class="loading"><div class="spinner"></div><span>Đang tải trang...</span></div>
+      </div>
     </div>
   </div>`;
 }
@@ -743,16 +822,10 @@ async function renderHome(el) {
 // ROLES PAGE
 // ══════════════════════════════════════════════════════════════
 async function renderRoles(el) {
-  if (state.roles.length) { buildRolesPage(el); return; }
-  // Show skeleton immediately
-  el.innerHTML = `
-  <div class="search-bar" style="pointer-events:none;opacity:.4">
-    <span>🔍</span><input type="text" placeholder="Tìm kiếm vai trò..." disabled/>
-  </div>
-  <div class="role-grid">
-    ${Array(8).fill(0).map(()=>`<div class="card"><div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-sm"></div></div>`).join('')}
-  </div>`;
-  state.roles = await api('/api/dash/roles').catch(() => []);
+  el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải vai trò...</span></div>`;
+  if (!state.roles.length) {
+    state.roles = await api('/api/dash/roles').catch(() => []);
+  }
   buildRolesPage(el);
 }
 
@@ -932,12 +1005,10 @@ Xác định và loại bỏ các vai trò nguy hiểm như Thám Trưởng, Cai
 // SETTINGS PAGE
 // ══════════════════════════════════════════════════════════════
 async function renderSettings(el) {
-  if (state.guilds.length) { buildSettingsPage(el); return; }
-  el.innerHTML = `<div style="max-width:600px">
-    <div class="card mb-16"><div class="sk sk-title mb-8"></div>
-    ${Array(3).fill(0).map(()=>`<div class="sk sk-card mb-8" style="height:64px"></div>`).join('')}
-    </div></div>`;
-  state.guilds = await api('/api/dash/guilds').catch(() => []);
+  el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải server...</span></div>`;
+  if (!state.guilds.length) {
+    state.guilds = await api('/api/dash/guilds').catch(() => []);
+  }
   if (!state.guilds.length) {
     el.innerHTML = `
     <div class="empty">
@@ -1088,7 +1159,7 @@ window.saveSettings = async function() {
 // CHANGELOG
 // ══════════════════════════════════════════════════════════════
 async function renderChangelog(el) {
-  if (!state.changelogs.length) el.innerHTML = `<div>${Array(3).fill(0).map(()=>`<div class="card mb-16"><div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-line sk-sm"></div></div>`).join("")}</div>`;
+  el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải changelog...</span></div>`;
   state.changelogs = await api('/api/dash/changelog').catch(() => []);
   if (!state.changelogs.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Chưa có bản cập nhật nào</div></div>`;
@@ -1112,7 +1183,7 @@ async function renderChangelog(el) {
 // ADMIN — FEEDBACK
 // ══════════════════════════════════════════════════════════════
 async function renderAdminFeedback(el) {
-  if (!state.feedbacks.length) el.innerHTML = `<div class="card"><div class="sk sk-title"></div>${Array(3).fill(0).map(()=>`<div class="sk sk-line mb-8"></div>`).join("")}</div>`;
+  el.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
   state.feedbacks = await api('/api/dash/admin/feedbacks').catch(() => []);
   if (!state.feedbacks.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><div class="empty-text">Chưa có feedback nào</div></div>`;
@@ -1303,7 +1374,7 @@ window.unban = async function(uid) {
 // ADMIN — ROOMS
 // ══════════════════════════════════════════════════════════════
 async function renderAdminRooms(el) {
-  if (!state.adminGuilds.length) el.innerHTML=`<div class="card"><div class="sk sk-title"></div>${Array(3).fill(0).map(()=>'<div class="sk sk-card mb-8" style="height:56px"></div>').join("")}</div>`;
+  el.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
   state.adminGuilds = await api('/api/dash/admin/rooms').catch(() => []);
   buildRoomsPage(el);
   state.statusInterval = setInterval(async () => {
@@ -1357,50 +1428,144 @@ window.previewImg = function(url) {
 };
 
 // ══════════════════════════════════════════════════════════════
+// BOOT LOADING SCREEN CONTROLLER
+// ══════════════════════════════════════════════════════════════
+const bootScreen = {
+  bar: null, statusText: null, retryBtn: null,
+  _progress: 0,
+  init() {
+    this.bar = document.getElementById('boot-bar');
+    this.statusText = document.getElementById('boot-status-text');
+    this.retryBtn = document.getElementById('boot-retry-btn');
+  },
+  setProgress(pct, msg) {
+    this._progress = pct;
+    if (this.bar) this.bar.style.width = pct + '%';
+    if (this.statusText && msg) this.statusText.textContent = msg;
+  },
+  animateProgress(target, msg, duration = 800) {
+    const start = this._progress;
+    const diff = target - start;
+    const startTime = performance.now();
+    const animate = (now) => {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      this.setProgress(Math.round(start + diff * eased), msg);
+      if (t < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  },
+  showRetry(msg) {
+    if (this.statusText) this.statusText.textContent = msg;
+    if (this.retryBtn) this.retryBtn.style.display = 'block';
+    if (this.bar) this.bar.style.background = 'linear-gradient(90deg,#ff4757,#ff6b7a)';
+  },
+  async hide() {
+    const el = document.getElementById('boot-screen');
+    const app = document.getElementById('app');
+    if (el) { el.classList.add('fade-out'); setTimeout(() => el.remove(), 500); }
+    if (app) { app.style.display = ''; }
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// API WITH TIMEOUT
+// ══════════════════════════════════════════════════════════════
+async function apiWithTimeout(path, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(path, { credentials: 'include', signal: controller.signal, ...options });
+    clearTimeout(timer);
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: 'Lỗi không xác định' }));
+      throw new Error(err.detail || `HTTP ${r.status}`);
+    }
+    return r.json();
+  } catch(e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('timeout');
+    throw e;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // BOOT
 // ══════════════════════════════════════════════════════════════
+let bootAttempt = 0;
+const MAX_BOOT_ATTEMPTS = 8;
+
 async function boot() {
-  try {
-    state.user = await api('/api/dash/me');
-    if (!state.user.logged_in) state.user = null;
-  } catch {
-    state.user = null;
-  }
-  render();
+  bootScreen.init();
+  bootScreen.animateProgress(20, 'Đang kết nối server...', 600);
+  await attemptBoot();
 }
+
+async function attemptBoot() {
+  bootAttempt++;
+  const isRetry = bootAttempt > 1;
+
+  const statusMessages = [
+    'Đang kết nối server...',
+    'Server đang khởi động (Render.com cold start)...',
+    'Vẫn đang chờ, server mất ~30 giây để thức dậy...',
+    'Gần xong rồi, vui lòng đợi thêm...',
+    'Server hơi chậm hôm nay, đợi thêm tí nhé...',
+    'Đang thử lại lần cuối...',
+  ];
+
+  if (isRetry) {
+    const msg = statusMessages[Math.min(bootAttempt - 1, statusMessages.length - 1)];
+    bootScreen.animateProgress(Math.min(20 + bootAttempt * 10, 85), msg, 400);
+  }
+
+  try {
+    const data = await apiWithTimeout('/api/dash/me', {}, 20000);
+    bootScreen.animateProgress(100, 'Sẵn sàng! 🎉', 300);
+    await new Promise(r => setTimeout(r, 400));
+
+    if (!data.logged_in) {
+      state.user = null;
+    } else {
+      state.user = data;
+    }
+    await bootScreen.hide();
+    render();
+  } catch(e) {
+    if (bootAttempt < MAX_BOOT_ATTEMPTS) {
+      // Auto retry with countdown
+      let countdown = bootAttempt <= 3 ? 5 : 8;
+      const tick = () => {
+        if (countdown <= 0) {
+          attemptBoot();
+          return;
+        }
+        bootScreen.setProgress(
+          Math.min(20 + bootAttempt * 8, 80),
+          `Thử lại sau ${countdown}s... (lần ${bootAttempt}/${MAX_BOOT_ATTEMPTS})`
+        );
+        countdown--;
+        setTimeout(tick, 1000);
+      };
+      tick();
+    } else {
+      bootScreen.showRetry('❌ Không thể kết nối server. Nhấn thử lại.');
+    }
+  }
+}
+
+window.bootRetry = function() {
+  bootAttempt = 0;
+  const btn = document.getElementById('boot-retry-btn');
+  if (btn) btn.style.display = 'none';
+  const bar = document.getElementById('boot-bar');
+  if (bar) bar.style.background = 'linear-gradient(90deg,#00d4ff,#b388ff)';
+  bootScreen.animateProgress(10, 'Đang thử lại...', 400);
+  setTimeout(attemptBoot, 500);
+};
 
 boot();
-  boot();
-
-// --- AUTO FIX START ---
-const API_URL = window.location.origin; 
-const state = { user: null, view: 'dashboard', loading: false };
-
-async def_boot() {
-    console.log("System booting...");
-    if (typeof showLoading === 'function') showLoading(true);
-    try {
-        // Nếu API chưa sẵn sàng, giả lập user để hiện Dashboard luôn
-        // Sau này ông chạy backend xong thì xóa dòng dưới đi nhé
-        state.user = { name: "NẶNG5GRAM", role: "Admin" }; 
-        
-        if (typeof render === 'function') render();
-    } catch (e) {
-        console.error("Boot error:", e);
-    } finally {
-        if (typeof showLoading === 'function') showLoading(false);
-    }
-}
-
-// Tự kích hoạt khi load trang
-window.addEventListener('DOMContentLoaded', def_boot);
-
-// Bẫy lỗi alert để debug trên điện thoại
-window.onerror = function(msg, url, line) {
-    alert("Lỗi JS: " + msg + "\nTại dòng: " + line);
-};
-// --- AUTO FIX END ---
-
 </script>
 </body>
 </html>
