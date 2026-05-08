@@ -173,6 +173,7 @@ async def logout(response: Response):
 # API — PUBLIC (cần đăng nhập)
 # ══════════════════════════════════════════════════════════════
 
+@app.get("/api/dash/me")
 @app.get("/api/me")
 async def api_me(request: Request):
     session = get_session(request)
