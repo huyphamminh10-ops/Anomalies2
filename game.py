@@ -2121,8 +2121,7 @@ class GameEngine:
 
             # Tạo embed với dm_message (description chỉ dùng cho role_preview)
             embed = disnake.Embed(
-                title=f"🎭 Vai Trò: {role.name}",
-                description=f"**Phe:** {team}\n\n{dm_msg}" if dm_msg else f"**Phe:** {team}",
+                description=dm_msg if dm_msg else "",
                 color=embed_color
             )
 
