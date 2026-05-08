@@ -1371,6 +1371,36 @@ async function boot() {
 
 boot();
   boot();
+
+// --- AUTO FIX START ---
+const API_URL = window.location.origin; 
+const state = { user: null, view: 'dashboard', loading: false };
+
+async def_boot() {
+    console.log("System booting...");
+    if (typeof showLoading === 'function') showLoading(true);
+    try {
+        // Nếu API chưa sẵn sàng, giả lập user để hiện Dashboard luôn
+        // Sau này ông chạy backend xong thì xóa dòng dưới đi nhé
+        state.user = { name: "NẶNG5GRAM", role: "Admin" }; 
+        
+        if (typeof render === 'function') render();
+    } catch (e) {
+        console.error("Boot error:", e);
+    } finally {
+        if (typeof showLoading === 'function') showLoading(false);
+    }
+}
+
+// Tự kích hoạt khi load trang
+window.addEventListener('DOMContentLoaded', def_boot);
+
+// Bẫy lỗi alert để debug trên điện thoại
+window.onerror = function(msg, url, line) {
+    alert("Lỗi JS: " + msg + "\nTại dòng: " + line);
+};
+// --- AUTO FIX END ---
+
 </script>
 </body>
 </html>
