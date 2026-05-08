@@ -187,7 +187,7 @@ async def api_me(request: Request):
         "is_owner": session["is_owner"]
     })
 
-@app.get("/api/roles")
+@app.get("/api/dash/roles")
 async def api_roles(request: Request):
     """Trả về danh sách tất cả vai trò từ MongoDB hoặc hardcode."""
     session = require_auth(request)
@@ -195,7 +195,7 @@ async def api_roles(request: Request):
     roles_data = _get_roles_catalog()
     return JSONResponse(roles_data)
 
-@app.get("/api/guilds")
+@app.get("/api/dash/guilds")
 async def api_guilds(request: Request):
     """Lấy danh sách server mà user có trong game (từ Discord)."""
     session = require_auth(request)
@@ -224,7 +224,7 @@ async def api_guilds(request: Request):
                 })
     return JSONResponse(result)
 
-@app.get("/api/guild/{guild_id}/config")
+@app.get("/api/dash/guild/{guild_id}/config")
 async def api_guild_config(guild_id: str, request: Request):
     session = require_auth(request)
     _assert_guild_access(session, guild_id)
@@ -236,7 +236,7 @@ async def api_guild_config(guild_id: str, request: Request):
         doc.pop("_id", None)
     return JSONResponse(doc or {})
 
-@app.post("/api/guild/{guild_id}/config")
+@app.post("/api/dash/guild/{guild_id}/config")
 async def api_update_config(guild_id: str, request: Request):
     session = require_auth(request)
     _assert_guild_access(session, guild_id)
@@ -253,7 +253,7 @@ async def api_update_config(guild_id: str, request: Request):
         db_col.update_one({"guild_id": guild_id}, {"$set": update}, upsert=True)
     return JSONResponse({"ok": True})
 
-@app.get("/api/guild/{guild_id}/status")
+@app.get("/api/dash/guild/{guild_id}/status")
 async def api_guild_status(guild_id: str, request: Request):
     require_auth(request)
     db_col = col("guild_configs")
@@ -263,7 +263,7 @@ async def api_guild_status(guild_id: str, request: Request):
     status = doc.get("status") if doc else None
     return JSONResponse({"status": status, "max_players": doc.get("max_players", 65) if doc else 65})
 
-@app.get("/api/changelog")
+@app.get("/api/dash/changelog")
 async def api_changelog(request: Request):
     require_auth(request)
     db_col = col("changelogs")
@@ -272,7 +272,7 @@ async def api_changelog(request: Request):
     logs = list(db_col.find({}, {"_id": 0}).sort("created_at", -1).limit(20))
     return JSONResponse(logs)
 
-@app.post("/api/feedback")
+@app.post("/api/dash/feedback")
 async def api_feedback(request: Request):
     session = require_auth(request)
     data = await request.json()
@@ -297,7 +297,7 @@ async def api_feedback(request: Request):
 # API — OWNER ONLY
 # ══════════════════════════════════════════════════════════════
 
-@app.get("/api/admin/feedbacks")
+@app.get("/api/dash/admin/feedbacks")
 async def api_admin_feedbacks(request: Request):
     require_owner(request)
     db_col = col("feedbacks")
@@ -306,7 +306,7 @@ async def api_admin_feedbacks(request: Request):
     docs = list(db_col.find({}, {"_id": 0}).sort("created_at", -1).limit(50))
     return JSONResponse(docs)
 
-@app.post("/api/admin/feedback/{fb_id}/reply")
+@app.post("/api/dash/admin/feedback/{fb_id}/reply")
 async def api_reply_feedback(fb_id: str, request: Request):
     require_owner(request)
     data = await request.json()
@@ -317,7 +317,7 @@ async def api_reply_feedback(fb_id: str, request: Request):
         db_col.update_one({"_id": ObjectId(fb_id)}, {"$set": {"reply": reply}})
     return JSONResponse({"ok": True})
 
-@app.post("/api/admin/feedback/{fb_id}/reply_by_index")
+@app.post("/api/dash/admin/feedback/{fb_id}/reply_by_index")
 async def api_reply_feedback_by_index(fb_id: str, request: Request):
     """Reply bằng index (created_at + user_id) thay vì ObjectId."""
     require_owner(request)
@@ -329,7 +329,7 @@ async def api_reply_feedback_by_index(fb_id: str, request: Request):
         db_col.update_one({"created_at": created_at}, {"$set": {"reply": reply}})
     return JSONResponse({"ok": True})
 
-@app.post("/api/admin/changelog")
+@app.post("/api/dash/admin/changelog")
 async def api_post_changelog(request: Request):
     require_owner(request)
     data = await request.json()
@@ -348,7 +348,7 @@ async def api_post_changelog(request: Request):
         })
     return JSONResponse({"ok": True})
 
-@app.get("/api/admin/bans")
+@app.get("/api/dash/admin/bans")
 async def api_admin_bans(request: Request):
     require_owner(request)
     db_col = col("bans")
@@ -357,7 +357,7 @@ async def api_admin_bans(request: Request):
     docs = list(db_col.find({}, {"_id": 0}).sort("created_at", -1))
     return JSONResponse(docs)
 
-@app.post("/api/admin/ban")
+@app.post("/api/dash/admin/ban")
 async def api_ban_player(request: Request):
     require_owner(request)
     data = await request.json()
@@ -380,7 +380,7 @@ async def api_ban_player(request: Request):
         )
     return JSONResponse({"ok": True})
 
-@app.delete("/api/admin/ban/{user_id}")
+@app.delete("/api/dash/admin/ban/{user_id}")
 async def api_unban_player(user_id: str, request: Request):
     require_owner(request)
     db_col = col("bans")
@@ -388,7 +388,7 @@ async def api_unban_player(user_id: str, request: Request):
         db_col.delete_one({"user_id": user_id})
     return JSONResponse({"ok": True})
 
-@app.get("/api/admin/guilds")
+@app.get("/api/dash/admin/rooms")
 async def api_admin_guilds(request: Request):
     require_owner(request)
     db_col = col("guild_configs")
