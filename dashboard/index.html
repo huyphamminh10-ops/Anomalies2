@@ -1521,7 +1521,9 @@ async function attemptBoot() {
   }
 
   try {
+    showDebug('Đang fetch /api/dash/me...');
     const data = await apiWithTimeout('/api/dash/me', {}, 20000);
+    showDebug('Response OK: logged_in=' + data.logged_in, '#4ade80');
     bootScreen.animateProgress(100, 'Sẵn sàng! 🎉', 300);
     await new Promise(r => setTimeout(r, 400));
 
@@ -1530,9 +1532,13 @@ async function attemptBoot() {
     } else {
       state.user = data;
     }
+    showDebug('Gọi bootScreen.hide()...', '#4ade80');
     await bootScreen.hide();
+    showDebug('Gọi render()...', '#4ade80');
     render();
+    showDebug('render() XONG!', '#4ade80');
   } catch(e) {
+    showDebug('LỖI: ' + e.name + ': ' + e.message, '#ff4757');
     if (bootAttempt < MAX_BOOT_ATTEMPTS) {
       // Auto retry with countdown
       let countdown = bootAttempt <= 3 ? 5 : 8;
@@ -1564,6 +1570,26 @@ window.bootRetry = function() {
   bootScreen.animateProgress(10, 'Đang thử lại...', 400);
   setTimeout(attemptBoot, 500);
 };
+
+
+// ═══ SCREEN DEBUG ═══
+function showDebug(msg, color) {
+  color = color || '#00d4ff';
+  var el = document.getElementById('boot-status-text');
+  if (el) el.textContent = msg;
+  var dbg = document.getElementById('_dbg');
+  if (!dbg) {
+    dbg = document.createElement('div');
+    dbg.id = '_dbg';
+    dbg.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.85);color:#fff;font-size:11px;padding:8px;z-index:999999;max-height:40vh;overflow-y:auto;font-family:monospace;';
+    document.body.appendChild(dbg);
+  }
+  var line = document.createElement('div');
+  line.style.color = color;
+  line.textContent = new Date().toISOString().slice(11,19) + ' ' + msg;
+  dbg.appendChild(line);
+  dbg.scrollTop = dbg.scrollHeight;
+}
 
 boot();
 </script>
