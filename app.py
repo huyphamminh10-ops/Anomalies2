@@ -140,41 +140,71 @@ from updater import (
     register_emergency_callback,
 )
 
-# ── FastAPI (tuỳ chọn, cho /ping + /get-table) ───────────────────
+# ── Detect môi trường Hugging Face (phải khai báo trước FastAPI) ─
+_IS_HUGGING_FACE = bool(os.environ.get("SPACE_ID"))
+if _IS_HUGGING_FACE:
+    print(f"[Env] Đang chạy trên Hugging Face Space: {os.environ.get('SPACE_ID')}")
+else:
+    print("[Env] Đang chạy môi trường local/Render.")
+
+# ── FastAPI + Dashboard (tích hợp) ───────────────────────────────
 try:
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
-    _fastapi_app = FastAPI()
+    from fastapi.middleware.cors import CORSMiddleware
+    _fastapi_app = FastAPI(title="Anomalies Bot + Dashboard")
+    _fastapi_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     game_stats: dict = {"table_content": "Đang khởi tạo..."}
 
+    # ── Routes cũ (giữ nguyên tương thích) ──────────────────────
     @_fastapi_app.get("/get-table")
     async def get_table():
         return game_stats
-
-    @_fastapi_app.get("/")
-    @_fastapi_app.head("/")
-    async def _root_health_check():
-        return {"status": "ok", "bot": "Anomalies", "message": "Service is live"}
 
     @_fastapi_app.get("/ping")
     async def ping():
         """Endpoint cho UptimeRobot keep-alive."""
         return JSONResponse({
-            "status": "ok",
+            "status":      "ok",
             "bot_running": _BOT_STARTED.is_set(),
             "environment": "hugging_face" if _IS_HUGGING_FACE else "local",
         })
 
-except ImportError:
-    _fastapi_app = None
-    game_stats: dict = {}
+    # ── Mount Dashboard routes ───────────────────────────────────
+    try:
+        from dashboard_routes import router as _dash_router, init_shared as _dash_init
+        _fastapi_app.include_router(_dash_router)
+        print("[Dashboard] Routes đã mount vào FastAPI.")
+        _DASHBOARD_OK = True
+    except ImportError as _de:
+        print(f"[Dashboard] Bỏ qua — không tìm thấy dashboard_routes.py: {_de}")
+        _DASHBOARD_OK = False
 
-# ── Detect môi trường Hugging Face ───────────────────────────────
-_IS_HUGGING_FACE = bool(os.environ.get("SPACE_ID"))
-if _IS_HUGGING_FACE:
-    print(f"[Env] Đang chạy trên Hugging Face Space: {os.environ.get('SPACE_ID')}")
-else:
-    print("[Env] Đang chạy môi trường local/khác.")
+    # ── Health check + redirect root → dashboard ────────────────
+    from fastapi.responses import RedirectResponse as _RR
+    @_fastapi_app.get("/")
+    async def _root_redirect():
+        """Redirect / → /dashboard nếu có, còn lại trả health check."""
+        if _DASHBOARD_OK:
+            return _RR("/dashboard", status_code=302)
+        return {"status": "ok", "bot": "Anomalies"}
+
+    @_fastapi_app.head("/")
+    async def _root_head():
+        return {"status": "ok"}
+
+except ImportError:
+    _fastapi_app  = None
+    game_stats: dict = {}
+    _DASHBOARD_OK = False
+
+# _IS_HUGGING_FACE đã được khai báo phía trên
 
 # ── Intents + Bot ─────────────────────────────────────────────────
 intents = disnake.Intents.all()
@@ -1641,6 +1671,27 @@ async def on_ready():
 
     _READY_BOOTSTRAPPED = True
     print("[Bot] Bot sẵn sàng hoạt động.")
+
+    # ── Truyền shared state vào Dashboard ────────────────────────
+    try:
+        if _DASHBOARD_OK:
+            from dashboard_routes import init_shared as _dash_init
+            from config_manager import _get_db as _cm_get_db
+            def _col_fn(name: str):
+                try:
+                    return _cm_get_db()[name]
+                except Exception:
+                    return None
+            _dash_init(
+                bot=bot,
+                guilds=guilds,
+                active_games=active_games,
+                game_stats=game_stats,
+                col_fn=_col_fn,
+            )
+            print("[Dashboard] Shared state đã được truyền vào dashboard_routes.")
+    except Exception as _de:
+        print(f"[Dashboard] Lỗi khi init_shared: {_de}")
 
 
 @bot.event

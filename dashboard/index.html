@@ -728,7 +728,7 @@ async function renderHome(el) {
 async function renderRoles(el) {
   el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải vai trò...</span></div>`;
   if (!state.roles.length) {
-    state.roles = await api('/api/roles').catch(() => []);
+    state.roles = await api('/api/dash/roles').catch(() => []);
   }
   buildRolesPage(el);
 }
@@ -851,7 +851,7 @@ window.submitFeedback = async function() {
   const btn = document.getElementById('fb-submit');
   btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
   try {
-    await post('/api/feedback', { content, images });
+    await post('/api/dash/feedback', { content, images });
     toast('Gửi phản hồi thành công! Cảm ơn bạn 🎉', 'success');
     document.getElementById('fb-content').value = '';
     [1,2,3].forEach(i => { const el = document.getElementById(`fb-img${i}`); if(el) el.value=''; });
@@ -910,7 +910,7 @@ Xác định và loại bỏ các vai trò nguy hiểm như Thám Trưởng, Cai
 async function renderSettings(el) {
   el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải server...</span></div>`;
   if (!state.guilds.length) {
-    state.guilds = await api('/api/guilds').catch(() => []);
+    state.guilds = await api('/api/dash/guilds').catch(() => []);
   }
   if (!state.guilds.length) {
     el.innerHTML = `
@@ -1036,7 +1036,7 @@ function buildSettingsPage(el) {
 
 window.selectGuild = async function(id) {
   state.selectedGuild = id;
-  state.guildConfig = await api(`/api/guild/${id}/config`).catch(() => ({}));
+  state.guildConfig = await api(`/api/dash/guild/${id}/config`).catch(() => ({}));
   buildSettingsPage(document.getElementById('content'));
 };
 window.updateToggle = function(key, val) { state.guildConfig[key] = val; };
@@ -1049,7 +1049,7 @@ window.saveSettings = async function() {
     vote_time:     +document.getElementById('cfg-vote-time')?.value,
   };
   try {
-    await post(`/api/guild/${state.selectedGuild}/config`, { ...state.guildConfig, ...numFields });
+    await post(`/api/dash/guild/${state.selectedGuild}/config`, { ...state.guildConfig, ...numFields });
     toast('Đã lưu cài đặt!', 'success');
   } catch(e) { toast(e.message, 'error'); }
 };
@@ -1059,7 +1059,7 @@ window.saveSettings = async function() {
 // ══════════════════════════════════════════════════════════════
 async function renderChangelog(el) {
   el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải changelog...</span></div>`;
-  state.changelogs = await api('/api/changelog').catch(() => []);
+  state.changelogs = await api('/api/dash/changelog').catch(() => []);
   if (!state.changelogs.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Chưa có bản cập nhật nào</div></div>`;
     return;
@@ -1083,7 +1083,7 @@ async function renderChangelog(el) {
 // ══════════════════════════════════════════════════════════════
 async function renderAdminFeedback(el) {
   el.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
-  state.feedbacks = await api('/api/admin/feedbacks').catch(() => []);
+  state.feedbacks = await api('/api/dash/admin/feedbacks').catch(() => []);
   if (!state.feedbacks.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><div class="empty-text">Chưa có feedback nào</div></div>`;
     return;
@@ -1177,7 +1177,7 @@ window.postChangelog = async function() {
   const version = document.getElementById('cl-version').value.trim();
   if (!title || !content) { toast('Cần có tiêu đề và nội dung!','error'); return; }
   try {
-    await post('/api/admin/changelog', { title, content, version });
+    await post('/api/dash/admin/changelog', { title, content, version });
     toast('Đã đăng cập nhật!','success');
     document.getElementById('cl-title').value='';
     document.getElementById('cl-content').value='';
@@ -1188,7 +1188,7 @@ window.postChangelog = async function() {
 window.loadRecentChangelogs = async function() {
   const el = document.getElementById('recent-cl');
   el.innerHTML='<div class="loading"><div class="spinner"></div></div>';
-  const logs = await api('/api/changelog').catch(()=>[]);
+  const logs = await api('/api/dash/changelog').catch(()=>[]);
   el.innerHTML = logs.slice(0,5).map(c=>`
   <div style="padding:10px;border-bottom:1px solid var(--border)">
     ${c.version?`<span class="changelog-ver">${c.version}</span>`:''}
@@ -1202,7 +1202,7 @@ window.loadRecentChangelogs = async function() {
 // ══════════════════════════════════════════════════════════════
 async function renderAdminBan(el) {
   el.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
-  state.bans = await api('/api/admin/bans').catch(() => []);
+  state.bans = await api('/api/dash/admin/bans').catch(() => []);
   buildBanPage(el);
 }
 
@@ -1252,9 +1252,9 @@ window.addBan = async function() {
   const mode   = document.getElementById('ban-mode').value;
   if (!uid) { toast('Nhập User ID!','error'); return; }
   try {
-    await post('/api/admin/ban', { user_id: uid, reason: reason||'Không có lý do', mode });
+    await post('/api/dash/admin/ban', { user_id: uid, reason: reason||'Không có lý do', mode });
     toast(`Đã ${mode==='ban'?'ban':'lobby'} user ${uid}!`, 'success');
-    state.bans = await api('/api/admin/bans').catch(()=>[]);
+    state.bans = await api('/api/dash/admin/bans').catch(()=>[]);
     buildBanPage(document.getElementById('content'));
   } catch(e) { toast(e.message,'error'); }
 };
@@ -1262,9 +1262,9 @@ window.addBan = async function() {
 window.unban = async function(uid) {
   if (!confirm(`Gỡ ban cho ${uid}?`)) return;
   try {
-    await del(`/api/admin/ban/${uid}`);
+    await del(`/api/dash/admin/ban/${uid}`);
     toast('Đã gỡ ban!','success');
-    state.bans = await api('/api/admin/bans').catch(()=>[]);
+    state.bans = await api('/api/dash/admin/bans').catch(()=>[]);
     buildBanPage(document.getElementById('content'));
   } catch(e) { toast(e.message,'error'); }
 };
@@ -1274,10 +1274,10 @@ window.unban = async function(uid) {
 // ══════════════════════════════════════════════════════════════
 async function renderAdminRooms(el) {
   el.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
-  state.adminGuilds = await api('/api/admin/guilds').catch(() => []);
+  state.adminGuilds = await api('/api/dash/admin/rooms').catch(() => []);
   buildRoomsPage(el);
   state.statusInterval = setInterval(async () => {
-    state.adminGuilds = await api('/api/admin/guilds').catch(() => state.adminGuilds);
+    state.adminGuilds = await api('/api/dash/admin/rooms').catch(() => state.adminGuilds);
     buildRoomsPage(document.getElementById('content'));
   }, 20000);
 }
@@ -1331,7 +1331,7 @@ window.previewImg = function(url) {
 // ══════════════════════════════════════════════════════════════
 async function boot() {
   try {
-    state.user = await api('/api/me');
+    state.user = await api('/api/dash/me');
     if (!state.user.logged_in) state.user = null;
   } catch {
     state.user = null;
