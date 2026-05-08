@@ -423,6 +423,23 @@ tr:last-child td{border-bottom:none;}
   border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto;
 }
 @keyframes spin{to{transform:rotate(360deg);}}
+/* ═══════ SKELETON LOADING ═══════ */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.sk {
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 6px;
+}
+.sk-line   { height: 14px; margin-bottom: 10px; }
+.sk-title  { height: 20px; width: 40%; margin-bottom: 16px; }
+.sk-card   { height: 110px; border-radius: var(--radius); }
+.sk-sm     { height: 10px; width: 60%; }
+.sk-stat   { height: 80px; border-radius: var(--radius); }
+
 .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:12px;color:var(--text2);font-size:13px;}
 
 /* ═══════ IMAGE PREVIEW ═══════ */
@@ -444,12 +461,7 @@ tr:last-child td{border-bottom:none;}
 </head>
 <body>
 
-<div id="app">
-  <div class="loading" style="height:100vh;">
-    <div class="spinner"></div>
-    <span>Đang tải...</span>
-  </div>
-</div>
+<div id="app"></div>
 
 <div id="toast-container"></div>
 
@@ -519,8 +531,15 @@ function toast(msg, type = 'info') {
 function navigate(page) {
   if (state.statusInterval) { clearInterval(state.statusInterval); state.statusInterval = null; }
   state.page = page;
-  render();
-  document.querySelector('.content')?.scrollTo(0, 0);
+  // Update nav active states without full re-render
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('onclick') === `navigate('${page}')`);
+  });
+  const titleEl = document.getElementById('page-title');
+  if (titleEl) titleEl.textContent = pageTitles[page] || '';
+  const content = document.getElementById('content');
+  if (content) { content.scrollTo(0,0); renderPage(); }
+  else render();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -623,9 +642,7 @@ function renderLayout() {
           </div>
         </div>
       </div>
-      <div class="content" id="content">
-        <div class="loading"><div class="spinner"></div><span>Đang tải trang...</span></div>
-      </div>
+      <div class="content" id="content"></div>
     </div>
   </div>`;
 }
@@ -726,10 +743,16 @@ async function renderHome(el) {
 // ROLES PAGE
 // ══════════════════════════════════════════════════════════════
 async function renderRoles(el) {
-  el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải vai trò...</span></div>`;
-  if (!state.roles.length) {
-    state.roles = await api('/api/dash/roles').catch(() => []);
-  }
+  if (state.roles.length) { buildRolesPage(el); return; }
+  // Show skeleton immediately
+  el.innerHTML = `
+  <div class="search-bar" style="pointer-events:none;opacity:.4">
+    <span>🔍</span><input type="text" placeholder="Tìm kiếm vai trò..." disabled/>
+  </div>
+  <div class="role-grid">
+    ${Array(8).fill(0).map(()=>`<div class="card"><div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-sm"></div></div>`).join('')}
+  </div>`;
+  state.roles = await api('/api/dash/roles').catch(() => []);
   buildRolesPage(el);
 }
 
@@ -909,10 +932,12 @@ Xác định và loại bỏ các vai trò nguy hiểm như Thám Trưởng, Cai
 // SETTINGS PAGE
 // ══════════════════════════════════════════════════════════════
 async function renderSettings(el) {
-  el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải server...</span></div>`;
-  if (!state.guilds.length) {
-    state.guilds = await api('/api/dash/guilds').catch(() => []);
-  }
+  if (state.guilds.length) { buildSettingsPage(el); return; }
+  el.innerHTML = `<div style="max-width:600px">
+    <div class="card mb-16"><div class="sk sk-title mb-8"></div>
+    ${Array(3).fill(0).map(()=>`<div class="sk sk-card mb-8" style="height:64px"></div>`).join('')}
+    </div></div>`;
+  state.guilds = await api('/api/dash/guilds').catch(() => []);
   if (!state.guilds.length) {
     el.innerHTML = `
     <div class="empty">
@@ -1063,7 +1088,7 @@ window.saveSettings = async function() {
 // CHANGELOG
 // ══════════════════════════════════════════════════════════════
 async function renderChangelog(el) {
-  el.innerHTML = `<div class="loading"><div class="spinner"></div><span>Đang tải changelog...</span></div>`;
+  if (!state.changelogs.length) el.innerHTML = `<div>${Array(3).fill(0).map(()=>`<div class="card mb-16"><div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-line sk-sm"></div></div>`).join("")}</div>`;
   state.changelogs = await api('/api/dash/changelog').catch(() => []);
   if (!state.changelogs.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Chưa có bản cập nhật nào</div></div>`;
@@ -1087,7 +1112,7 @@ async function renderChangelog(el) {
 // ADMIN — FEEDBACK
 // ══════════════════════════════════════════════════════════════
 async function renderAdminFeedback(el) {
-  el.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
+  if (!state.feedbacks.length) el.innerHTML = `<div class="card"><div class="sk sk-title"></div>${Array(3).fill(0).map(()=>`<div class="sk sk-line mb-8"></div>`).join("")}</div>`;
   state.feedbacks = await api('/api/dash/admin/feedbacks').catch(() => []);
   if (!state.feedbacks.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">💬</div><div class="empty-text">Chưa có feedback nào</div></div>`;
@@ -1278,7 +1303,7 @@ window.unban = async function(uid) {
 // ADMIN — ROOMS
 // ══════════════════════════════════════════════════════════════
 async function renderAdminRooms(el) {
-  el.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
+  if (!state.adminGuilds.length) el.innerHTML=`<div class="card"><div class="sk sk-title"></div>${Array(3).fill(0).map(()=>'<div class="sk sk-card mb-8" style="height:56px"></div>').join("")}</div>`;
   state.adminGuilds = await api('/api/dash/admin/rooms').catch(() => []);
   buildRoomsPage(el);
   state.statusInterval = setInterval(async () => {
