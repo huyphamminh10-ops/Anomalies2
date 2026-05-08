@@ -222,7 +222,7 @@ class CipherBreaker(BaseRole):
         try:
             await self.safe_send(
                 embed=disnake.Embed(
-                    title       = "💀 KẺ GIẢI MÃ — MÃ HÓA HỆTHỐNG",
+                    title       = "💀 KẺ GIẢI MÃ — MÃ HÓA HỆ THỐNG",
                     description = self.dm_message,
                     color       = 0x2c3e50
                 )

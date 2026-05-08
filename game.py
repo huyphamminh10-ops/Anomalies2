@@ -1,5 +1,5 @@
 # ==============================
-# game_engine.py — Anomalies v2.0 STABLE
+# game_engine.py — Anomalies v3.1
 # Production-ready | 65+ players | Extensible
 # ==============================
 #
@@ -38,6 +38,96 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import disnake
+
+
+# ══════════════════════════════════════════════════════════════════════
+# §AI  AI NARRATOR — Tường thuật sự kiện chết/hành động bằng Gemini AI
+# ══════════════════════════════════════════════════════════════════════
+
+try:
+    from google import genai as _genai
+    from google.genai import types as _genai_types
+    _NARRATOR_GENAI_OK = True
+except Exception:
+    _genai = None           # type: ignore
+    _genai_types = None     # type: ignore
+    _NARRATOR_GENAI_OK = False
+
+def _narrator_api_key() -> str:
+    for _k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY"):
+        _v = (os.environ.get(_k) or "").strip()
+        if _v:
+            return _v
+    return ""
+
+_NARRATOR_MODEL = (os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash").strip()
+
+_NARRATOR_SYSTEM = (
+    "Ngươi là NGƯỜI KỂ CHUYỆN huyền bí của trận Ma Sói 'Anomalies'. "
+    "Phong cách: tối tăm, thơ mộng, đầy ám ảnh — như một tiểu thuyết kinh dị hạng sang. "
+    "Ngôn ngữ: Tiếng Việt. "
+    "Độ dài: 1–2 câu ngắn, súc tích, giàu hình ảnh. "
+    "TUYỆT ĐỐI không tiết lộ vai trò của bất kỳ ai. "
+    "TUYỆT ĐỐI không giải thích, không thêm bình luận ngoài lề. "
+    "Chỉ trả về đúng 1 câu tường thuật, không có dấu nháy bao ngoài."
+)
+
+_NARRATOR_PROMPTS = {
+    "night_death": (
+        "Buổi sáng vừa ló dạng tại thị trấn Anomalies. "
+        "Hãy viết 1 câu tường thuật ám ảnh mô tả cảnh người ta phát hiện xác chết của {name} trong đêm. "
+        "Không tiết lộ vai trò. Không ghi tên vào câu này — câu tường thuật đứng độc lập trước dòng thông báo tên."
+    ),
+    "exile_death": (
+        "Dân làng vừa bỏ phiếu trục xuất {name}. "
+        "Hãy viết 1 câu tường thuật ám ảnh kiểu xử tử nơi công cộng — súng nổ, đám đông, sự im lặng sau đó. "
+        "Không tiết lộ vai trò. Câu tường thuật đứng độc lập trước dòng thông báo tên."
+    ),
+    "night_action": (
+        "Đêm nay tại Anomalies, {actor} ({role_hint}) đã thực hiện một hành động bí ẩn nhắm vào {target}. "
+        "Hãy viết 1 câu tường thuật mơ hồ, ám ảnh mô tả hành động đó mà KHÔNG tiết lộ vai trò cụ thể. "
+        "Câu phải gợi lên không khí đêm tối và sự nguy hiểm rình rập."
+    ),
+}
+
+
+async def _ai_narrate(event_type: str, **kwargs) -> str:
+    """
+    Gọi Gemini AI để sinh câu tường thuật. Trả về chuỗi rỗng nếu lỗi.
+    event_type: 'night_death' | 'exile_death' | 'night_action'
+    Dùng chung GEMINI_API_KEY với GeminiHost — không cần key riêng.
+    """
+    if not _NARRATOR_GENAI_OK:
+        return ""
+    api_key = _narrator_api_key()
+    if not api_key:
+        return ""
+
+    prompt_template = _NARRATOR_PROMPTS.get(event_type, "")
+    if not prompt_template:
+        return ""
+
+    try:
+        prompt = prompt_template.format(**kwargs)
+    except KeyError:
+        return ""
+
+    try:
+        client = _genai.Client(api_key=api_key)
+        cfg = _genai_types.GenerateContentConfig(
+            system_instruction=_NARRATOR_SYSTEM,
+            temperature=1.1,
+            top_p=0.95,
+        )
+        resp = await client.aio.models.generate_content(
+            model=_NARRATOR_MODEL,
+            contents=prompt,
+            config=cfg,
+        )
+        text = (getattr(resp, "text", "") or "").strip()
+        return text
+    except Exception:
+        return ""
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1365,7 +1455,8 @@ async def send_morning_will_board(game: "GameEngine"):
         has_will = bool(will_text and will_text.strip())
 
         will_icon = "📜" if has_will else "🚫"
-        dead_lines.append(f"💀 **{name}** — *{role_name}* {will_icon}")
+        will_label = "Có Di Chúc" if has_will else "Không Có Di Chúc"
+        dead_lines.append(f"`{name}` — {will_label} — {will_icon}")
 
         if has_will:
             dead_with_wills.append((pid, name))
@@ -2773,9 +2864,9 @@ class GameEngine:
         for pid, member in self._players_dict.items():
             role      = self.roles.get(pid)
             role_name = role.name if role else "???"
-            team_name = (getattr(role, "team", None) or getattr(role, "faction", "?")) if role else "?"
-            status    = "✅ Còn sống" if self.is_alive(pid) else "💀 Đã chết"
-            lines.append(f"{member.display_name} — **{role_name}** [{team_name}] ({status})")
+            status    = "✅" if self.is_alive(pid) else "💀"
+            # Compact format: Tên · Vai Trò · emoji — mỗi người 1 hàng, ngắn gọn
+            lines.append(f"`{member.display_name}` · {role_name} · {status}")
 
         embed.add_field(name="📋 Danh sách vai trò", value="\n".join(lines) or "—", inline=False)
         result_msg = await self.text_channel.send(embed=embed)
@@ -2921,12 +3012,52 @@ class GameEngine:
         # ── Thông báo xác chết từ đêm qua (defer đến sáng) ─────────────────
         if self.pending_death_announcements:
             for name in self.pending_death_announcements:
-                await self.log(f"💀 **{name}** ĐÃ CHẾT trong đêm qua.", color=0xe74c3c)
+                narration = await _ai_narrate("night_death", name=name)
+                if narration:
+                    await self.log(
+                        f"> {narration}\n💀 **{name}** đã chết trong đêm qua.",
+                        color=0xe74c3c
+                    )
+                else:
+                    await self.log(f"💀 **{name}** đã chết trong đêm qua.", color=0xe74c3c)
             self.pending_death_announcements.clear()
 
         # ── Bảng di chúc sáng — cho người sống xem di chúc người đã chết ────
         try:
             await send_morning_will_board(self)
+        except Exception:
+            pass
+
+        # ── AI Narrator: tường thuật hành động đêm qua (mơ hồ, không tiết lộ vai trò) ────
+        try:
+            action_lines = []
+            for actor_id, target in self.selected_targets.items():
+                if actor_id not in self._players_dict:
+                    continue
+                actor_member = self._players_dict[actor_id]
+                target_name  = getattr(target, "display_name", str(target))
+                actor_role   = self.roles.get(actor_id)
+                # role_hint mơ hồ — chỉ nói team, không nói tên role
+                team = getattr(actor_role, "team", None) if actor_role else None
+                if team == TEAM_ANOMALY:
+                    role_hint = "một thực thể bóng tối"
+                elif team == TEAM_SURVIVOR:
+                    role_hint = "một người trong thị trấn"
+                else:
+                    role_hint = "một bóng ma vô danh"
+                narration = await _ai_narrate(
+                    "night_action",
+                    actor=actor_member.display_name,
+                    role_hint=role_hint,
+                    target=target_name,
+                )
+                if narration:
+                    action_lines.append(f"> {narration}")
+            if action_lines:
+                await self.log(
+                    "🌘 **Những gì xảy ra trong bóng tối...**\n" + "\n".join(action_lines),
+                    color=0x2c3e50
+                )
         except Exception:
             pass
 
@@ -3082,8 +3213,10 @@ class GameEngine:
                         role.on_exile_vote(self, session.votes)
                     except Exception:
                         pass
+                exile_narration = await _ai_narrate("exile_death", name=target.display_name)
                 await self.log(
-                    f"🚫 **{target.display_name}** bị trục xuất!\n*Vai trò: {role_name}*",
+                    (f"> {exile_narration}\n" if exile_narration else "")
+                    + f"🚫 **{target.display_name}** đã bị trục xuất!",
                     color=0xe74c3c
                 )
                 await self.kill_player(
