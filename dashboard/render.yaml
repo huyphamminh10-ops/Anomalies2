@@ -21,3 +21,7 @@ services:
         value: "true"
       - key: RENDER_EXTERNAL_URL
         sync: false
+      - key: TIDB_URI
+        sync: false
+      - key: IS_HTTPS
+        value: "true"

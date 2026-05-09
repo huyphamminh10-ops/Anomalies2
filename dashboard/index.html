@@ -522,16 +522,57 @@ select.form-input { appearance: none; cursor: pointer; }
   background: var(--role-color, var(--accent));
 }
 .role-card:hover { border-color: var(--border2); transform: translateY(-2px); box-shadow: var(--shadow); }
+.role-card { cursor: pointer; }
 .role-card-name { font-size: 14.5px; font-weight: 700; margin-bottom: 4px; }
 .role-card-faction {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   color: var(--role-color, var(--accent));
 }
-.role-card-desc { font-size: 13px; color: var(--text2); line-height: 1.5; }
+.role-card-hint { font-size: 11.5px; color: var(--text3); }
+.role-card-desc { display:none; }
+
+/* Role Detail Modal */
+.role-detail-modal { max-width: 520px; }
+.role-detail-header {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.role-detail-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+}
+.role-detail-name { font-size: 20px; font-weight: 800; }
+.role-detail-faction {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 1px; margin-top: 2px; color: var(--role-color, var(--accent));
+}
+.role-detail-desc {
+  font-size: 13.5px; color: var(--text2); line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 16px; text-align: center;
+}
+.stat-card-value { font-size: 32px; font-weight: 800; color: var(--accent); }
+.stat-card-label { font-size: 12px; color: var(--text3); margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; }
+
+/* Player lookup */
+.lookup-result {
+  margin-top: 16px; padding: 16px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.lookup-banned { border-color: var(--red); background: rgba(240,80,80,0.06); }
+.lookup-clean  { border-color: var(--green); background: rgba(61,214,140,0.06); }
 
 /* ══════════════════════════════════════════
    FEEDBACK
@@ -902,6 +943,12 @@ select.form-input { appearance: none; cursor: pointer; }
       <div class="nav-item active" data-page="roles" onclick="navigate('roles')">
         <span class="nav-icon">🎭</span> Tra Cứu Vai Trò
       </div>
+      <div class="nav-item" data-page="stats" onclick="navigate('stats')">
+        <span class="nav-icon">📊</span> Thống Kê
+      </div>
+      <div class="nav-item" data-page="player-lookup" onclick="navigate('player-lookup')">
+        <span class="nav-icon">🔍</span> Tra Cứu Người Chơi
+      </div>
       <div class="nav-item" data-page="feedback-send" onclick="navigate('feedback-send')">
         <span class="nav-icon">📝</span> Báo Lỗi / Feedback
       </div>
@@ -986,7 +1033,34 @@ select.form-input { appearance: none; cursor: pointer; }
         </div>
       </div>
 
-      <!-- PAGE: FEEDBACK SEND -->
+      <!-- PAGE: STATS -->
+      <div class="page" id="page-stats">
+        <div class="section-title">Thống Kê</div>
+        <div class="section-sub">Tổng quan số liệu hệ thống Anomalies.</div>
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card"><div class="loading-spin"></div></div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px;font-size:15px">🏠 Danh Sách Phòng Đang Hoạt Động</div>
+          <div id="statsRoomsList"><div class="empty-state"><div class="loading-spin"></div></div></div>
+        </div>
+      </div>
+
+      <!-- PAGE: PLAYER LOOKUP -->
+      <div class="page" id="page-player-lookup">
+        <div class="section-title">Tra Cứu Người Chơi</div>
+        <div class="section-sub">Kiểm tra trạng thái ban của người chơi theo Discord User ID.</div>
+        <div class="card" style="max-width:480px">
+          <div class="form-group">
+            <label class="form-label">Discord User ID</label>
+            <input class="form-input" id="lookupId" placeholder="Nhập User ID (vd: 123456789012345678)" style="max-width:100%"/>
+          </div>
+          <button class="btn btn-primary" onclick="doPlayerLookup()">🔍 Tra Cứu</button>
+          <div id="lookupResult"></div>
+        </div>
+      </div>
+
+            <!-- PAGE: FEEDBACK SEND -->
       <div class="page" id="page-feedback-send">
         <div class="section-title">Báo Lỗi / Feedback</div>
         <div class="section-sub">Gửi phản hồi, báo lỗi hoặc đề xuất tính năng cho chủ bot.</div>
@@ -1267,6 +1341,23 @@ select.form-input { appearance: none; cursor: pointer; }
   </div>
 </div>
 
+<!-- MODAL: ROLE DETAIL -->
+<div class="modal-overlay" id="modalRoleDetail">
+  <div class="modal role-detail-modal">
+    <div class="role-detail-header">
+      <div class="role-detail-dot" id="roleDetailDot"></div>
+      <div>
+        <div class="role-detail-name" id="roleDetailName"></div>
+        <div class="role-detail-faction" id="roleDetailFaction" style="color:var(--role-detail-color)"></div>
+      </div>
+    </div>
+    <div class="role-detail-desc" id="roleDetailDesc"></div>
+    <div class="modal-footer" style="margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeModal('modalRoleDetail')">Đóng</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: REPLY FEEDBACK -->
 <div class="modal-overlay" id="modalReply">
   <div class="modal">
@@ -1345,6 +1436,15 @@ async function init() {
       loadRooms();
       startRoomsPolling();
     }
+    // Kiểm tra auth error trong URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('auth_error')) {
+      toast('Lỗi đăng nhập Discord: ' + urlParams.get('auth_error'), 'error');
+      history.replaceState({}, '', '/');
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('anomalies_theme');
+    if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
   } catch(e) {
     document.getElementById('loginScreen').classList.add('visible');
   }
@@ -1364,15 +1464,17 @@ function setupUser() {
 // NAVIGATION
 // ══════════════════════════════════════════
 const PAGE_TITLES = {
-  'roles':        'Tra Cứu Vai Trò',
-  'feedback-send':'Báo Lỗi / Feedback',
-  'guide':        'Hướng Dẫn Chơi',
-  'settings':     'Cài Đặt Phòng',
-  'changelog':    'Update Log',
-  'feedbacks':    'Feedback Người Chơi',
-  'post-update':  'Đăng Update',
-  'bans':         'Quản Lí Ban',
-  'rooms':        'Quản Lí Phòng',
+  'roles':         'Tra Cứu Vai Trò',
+  'stats':         'Thống Kê',
+  'player-lookup': 'Tra Cứu Người Chơi',
+  'feedback-send': 'Báo Lỗi / Feedback',
+  'guide':         'Hướng Dẫn Chơi',
+  'settings':      'Cài Đặt Phòng',
+  'changelog':     'Update Log',
+  'feedbacks':     'Feedback Người Chơi',
+  'post-update':   'Đăng Update',
+  'bans':          'Quản Lí Ban',
+  'rooms':         'Quản Lí Phòng',
 };
 
 function navigate(page) {
@@ -1389,6 +1491,8 @@ function navigate(page) {
   document.getElementById('guildSelector').style.display = (page === 'settings') ? 'flex' : 'none';
   if (page === 'settings') renderSettingsGuild();
   if (page === 'rooms') loadRooms();
+  if (page === 'stats') loadStats();
+  if (page === 'player-lookup') document.getElementById('lookupResult').innerHTML = '';
 }
 
 // ══════════════════════════════════════════
@@ -1397,7 +1501,9 @@ function navigate(page) {
 function toggleTheme() {
   const html = document.documentElement;
   const isDark = html.getAttribute('data-theme') === 'dark';
-  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  const newTheme = isDark ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('anomalies_theme', newTheme);
   document.getElementById('themeIcon').textContent = isDark ? '🌙' : '☀️';
   localStorage.setItem('theme', isDark ? 'light' : 'dark');
 }
@@ -1496,13 +1602,24 @@ function renderRoles() {
     document.getElementById('rolesGrid').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Không tìm thấy vai trò nào.</p></div>';
     return;
   }
-  document.getElementById('rolesGrid').innerHTML = roles.map(r => `
-    <div class="role-card" style="--role-color:${r.color}">
+  document.getElementById('rolesGrid').innerHTML = roles.map((r,i) => `
+    <div class="role-card" style="--role-color:${r.color}" onclick="showRoleDetail(${ALL_ROLES.indexOf(r)})">
       <div class="role-card-name">${r.name}</div>
       <div class="role-card-faction">${r.faction}</div>
-      <div class="role-card-desc">${r.description}</div>
+      <div class="role-card-hint">Nhấn để xem chi tiết →</div>
     </div>
   `).join('');
+}
+
+function showRoleDetail(idx) {
+  const r = ALL_ROLES[idx];
+  if (!r) return;
+  document.getElementById('roleDetailName').textContent    = r.name;
+  document.getElementById('roleDetailFaction').textContent = r.faction + ' · ' + (r.team || r.faction);
+  document.getElementById('roleDetailFaction').style.color = r.color;
+  document.getElementById('roleDetailDot').style.background = r.color;
+  document.getElementById('roleDetailDesc').textContent    = r.description || '(Chưa có mô tả)';
+  openModal('modalRoleDetail');
 }
 
 function setFilter(f, btn) {
@@ -1514,6 +1631,76 @@ function setFilter(f, btn) {
 function filterRoles() { renderRoles(); }
 
 // ══════════════════════════════════════════
+// ══════════════════════════════════════════
+// STATS
+// ══════════════════════════════════════════
+async function loadStats() {
+  try {
+    const [sRes, rRes] = await Promise.all([
+      fetch('/api/dash/stats'),
+      fetch('/api/dash/admin/rooms'),
+    ]);
+    const stats = await sRes.json();
+    const rooms = rRes.ok ? await rRes.json() : [];
+
+    document.getElementById('statsGrid').innerHTML = `
+      <div class="stat-card"><div class="stat-card-value">${stats.total_guilds||0}</div><div class="stat-card-label">Máy Chủ</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--green)">${stats.active_games||0}</div><div class="stat-card-label">Đang Chơi</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--red)">${stats.total_bans||0}</div><div class="stat-card-label">Người Bị Ban</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--yellow)">${stats.total_feedbacks||0}</div><div class="stat-card-label">Feedback</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--cyan)">${stats.total_changelogs||0}</div><div class="stat-card-label">Cập Nhật</div></div>
+    `;
+
+    const el = document.getElementById('statsRoomsList');
+    const active = rooms.filter(r => r.status);
+    if (!active.length) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-icon">🎮</div><p>Không có phòng nào đang chơi.</p></div>';
+    } else {
+      el.innerHTML = active.map(r => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-weight:600;font-size:14px">${escHtml(r.guild_name||r.guild_id)}</div>
+            <div style="font-size:12px;color:var(--text3)">ID: ${r.guild_id}</div>
+          </div>
+          <span style="background:rgba(61,214,140,0.1);color:var(--green);border:1px solid var(--green);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600">${escHtml(String(r.status))}</span>
+        </div>
+      `).join('');
+    }
+  } catch(e) {
+    document.getElementById('statsGrid').innerHTML = '<div style="color:var(--red);padding:16px">Không tải được thống kê.</div>';
+  }
+}
+
+// ══════════════════════════════════════════
+// PLAYER LOOKUP
+// ══════════════════════════════════════════
+async function doPlayerLookup() {
+  const uid = document.getElementById('lookupId').value.trim();
+  if (!uid) { toast('Nhập User ID cần tra cứu!', 'error'); return; }
+  const el = document.getElementById('lookupResult');
+  el.innerHTML = '<div style="padding:12px;color:var(--text3)">Đang tra cứu...</div>';
+  try {
+    const res = await fetch(`/api/dash/player/lookup?user_id=${encodeURIComponent(uid)}`);
+    if (!res.ok) { el.innerHTML = '<div style="color:var(--red);padding:12px">Lỗi tra cứu.</div>'; return; }
+    const data = await res.json();
+    if (data.is_banned) {
+      const b = data.ban;
+      el.innerHTML = `
+        <div class="lookup-result lookup-banned">
+          <div style="font-size:16px;font-weight:700;color:var(--red);margin-bottom:8px">⛔ Đang bị BAN</div>
+          <div style="font-size:13.5px;color:var(--text2)"><b>Lý do:</b> ${escHtml(b.reason)}</div>
+          <div style="font-size:13px;color:var(--text3);margin-top:4px"><b>Chế độ:</b> ${escHtml(b.mode)} — <b>Từ:</b> ${fmtDate(b.created_at)}</div>
+        </div>`;
+    } else {
+      el.innerHTML = `
+        <div class="lookup-result lookup-clean">
+          <div style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:4px">✅ Không bị ban</div>
+          <div style="font-size:13px;color:var(--text3)">User ID <code>${escHtml(uid)}</code> không có trong danh sách ban.</div>
+        </div>`;
+    }
+  } catch(e) { el.innerHTML = '<div style="color:var(--red);padding:12px">Lỗi kết nối.</div>'; }
+}
+
 // FEEDBACK (SEND)
 // ══════════════════════════════════════════
 let fbImages = [];
@@ -1563,8 +1750,13 @@ async function submitFeedback() {
     if (res.ok) {
       toast('✅ Gửi feedback thành công!', 'success');
       clearFeedback();
-    } else { toast('Gửi thất bại, thử lại.', 'error'); }
-  } catch(e) { toast('Lỗi kết nối.', 'error'); }
+    } else if (res.status === 401) {
+      toast('Bạn chưa đăng nhập. Vui lòng đăng nhập lại.', 'error');
+    } else {
+      const err = await res.json().catch(()=>({}));
+      toast('Gửi thất bại: ' + (err.detail || res.status), 'error');
+    }
+  } catch(e) { toast('Lỗi kết nối: ' + e.message, 'error'); }
 }
 
 // Drag-drop upload
@@ -1722,6 +1914,7 @@ async function loadFeedbacks() {
         ${f.reply ? `<div class="feedback-reply-box"><div class="feedback-reply-label">Đã phản hồi</div><div class="feedback-reply-text">${escHtml(f.reply)}</div></div>` : ''}
         <div class="feedback-actions" style="margin-top:10px">
           <button class="btn btn-ghost btn-sm" onclick="openReply('${f.created_at}')">💬 Phản Hồi</button>
+          <button class="btn btn-sm" style="background:rgba(240,80,80,0.1);color:var(--red);border:1px solid var(--red)" onclick="quickBanFromFeedback('${escHtml(f.user_id)}','${escHtml(f.username)}')">⛔ Ban User</button>
         </div>
       </div>
     `).join('');
@@ -1732,6 +1925,25 @@ function openReply(created_at) {
   REPLY_TARGET = created_at;
   document.getElementById('replyText').value = '';
   openModal('modalReply');
+}
+
+function quickBanFromFeedback(user_id, username) {
+  if (!user_id || user_id === 'undefined') { toast('Không tìm được User ID.', 'error'); return; }
+  const reason = `Bị ban từ feedback của ${username}`;
+  document.getElementById('modalBanConfirmText' in document ? 'banConfirmText' : 'banConfirmText').textContent = `Ban user ${username} (${user_id})?`;
+  document.getElementById('banConfirmBtn').onclick = async () => {
+    closeModal('modalBanConfirm');
+    try {
+      const res = await fetch('/api/dash/admin/ban', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ user_id, reason, mode: 'ban' })
+      });
+      if (res.ok) { toast(`⛔ Đã ban ${username}!`, 'success'); loadBans(); }
+      else toast('Ban thất bại.', 'error');
+    } catch(e) { toast('Lỗi kết nối.', 'error'); }
+  };
+  openModal('modalBanConfirm');
 }
 
 async function submitReply() {

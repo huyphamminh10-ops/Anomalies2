@@ -13,7 +13,11 @@ import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
+import re
+import glob
 import httpx
+import pymysql
+import pymysql.cursors
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +52,133 @@ def get_db():
 def col(name: str):
     db = get_db()
     return db[name] if db is not None else None
+
+# ══════════════════════════════════════════════════════════════
+# TIDB — Dùng cho hệ thống BAN
+# ══════════════════════════════════════════════════════════════
+TIDB_URI = os.environ.get(
+    "TIDB_URI",
+    "mysql://pmiJpFtdc5E8WwZ.root:r0QZSVZVEINtmH39@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/sys"
+)
+
+def _parse_tidb_uri(uri: str) -> dict | None:
+    m = re.match(r"mysql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)", uri)
+    if not m:
+        return None
+    return {"user": m.group(1), "password": m.group(2),
+            "host": m.group(3), "port": int(m.group(4)), "database": m.group(5)}
+
+def _get_tidb_conn():
+    info = _parse_tidb_uri(TIDB_URI)
+    if not info:
+        return None
+    try:
+        conn = pymysql.connect(
+            host=info["host"], user=info["user"], password=info["password"],
+            database=info["database"], port=info["port"],
+            ssl={"ssl_mode": "VERIFY_IDENTITY"} if "tidbcloud" in info["host"] else {},
+            connect_timeout=8,
+            cursorclass=pymysql.cursors.DictCursor,
+            charset="utf8mb4",
+        )
+        return conn
+    except Exception as e:
+        print(f"[tidb] Không kết nối được TiDB: {e}")
+        return None
+
+def _tidb_ensure_table():
+    conn = _get_tidb_conn()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS bans (
+                    user_id    VARCHAR(32)  PRIMARY KEY,
+                    reason     VARCHAR(500) NOT NULL DEFAULT '',
+                    mode       VARCHAR(20)  NOT NULL DEFAULT 'ban',
+                    created_at VARCHAR(50)  NOT NULL DEFAULT ''
+                )
+            """)
+        conn.commit()
+    except Exception as e:
+        print(f"[tidb] Lỗi tạo bảng bans: {e}")
+    finally:
+        conn.close()
+
+# Gọi khi khởi động app
+@app.on_event("startup")
+async def _startup():
+    _tidb_ensure_table()
+
+# ══════════════════════════════════════════════════════════════
+# ROLE SCANNER — đọc từ folder roles/ thực tế
+# ══════════════════════════════════════════════════════════════
+_ROLES_CACHE: list = []
+
+def _scan_roles_from_files() -> list:
+    """Đọc description, name, team từ các file .py trong roles/."""
+    global _ROLES_CACHE
+    if _ROLES_CACHE:
+        return _ROLES_CACHE
+
+    roles_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "roles")
+    if not os.path.exists(roles_root):
+        return _default_roles()
+
+    faction_map = {
+        "Survivors": "Survivors", "Anomalies": "Anomalies",
+        "Unknown": "Unknown", "Unknown Entities": "Unknown", "Event": "Event",
+    }
+    color_map = {
+        "Survivors": "#3dd68c", "Anomalies": "#f05050",
+        "Unknown": "#f5c231", "Event": "#a78bfa",
+    }
+    results = []
+    for subfolder in ["survivors", "anomalies", "unknown", "event"]:
+        folder = os.path.join(roles_root, subfolder)
+        if not os.path.isdir(folder):
+            continue
+        for fpath in sorted(glob.glob(os.path.join(folder, "*.py"))):
+            fname = os.path.basename(fpath)
+            if fname.startswith("_"):
+                continue
+            try:
+                content = open(fpath, encoding="utf-8").read()
+                nm = re.search(r'^\s+name\s*=\s*["\'](.+?)["\']', content, re.MULTILINE)
+                tm = re.search(r'^\s+team\s*=\s*["\'](.+?)["\']', content, re.MULTILINE)
+                if not nm:
+                    continue
+                name   = nm.group(1).strip()
+                team   = tm.group(1).strip() if tm else subfolder.capitalize()
+                faction = faction_map.get(team, subfolder.capitalize())
+                color   = color_map.get(faction, "#7c6af7")
+
+                # Lấy description (multi-line string trong ngoặc đơn)
+                dm = re.search(r'description\s*=\s*\(\s*(.*?)\s*\)', content, re.DOTALL)
+                if not dm:
+                    dm = re.search(r'description\s*=\s*["\']([^"\']*)["\']', content)
+                desc = ""
+                if dm:
+                    raw = dm.group(1)
+                    # Xóa quote + concatenation artifacts
+                    raw = re.sub(r'["\'][\s\n]*["\']', ' ', raw)
+                    raw = re.sub(r'^[\s"\']+|[\s"\']+$', '', raw, flags=re.MULTILINE)
+                    # Xóa f-string placeholders
+                    raw = re.sub(r'\{[^}]*\}', '...', raw)
+                    raw = raw.replace("\\n", "\n").replace("\\t", " ").replace("\\\\", "\\")
+                    raw = re.sub(r' +', ' ', raw)
+                    desc = raw.strip()
+
+                results.append({
+                    "name": name, "faction": faction, "team": team,
+                    "description": desc, "color": color,
+                })
+            except Exception as e:
+                print(f"[roles_scan] Lỗi đọc {fpath}: {e}")
+
+    _ROLES_CACHE = results if results else _default_roles()
+    return _ROLES_CACHE
 
 # ══════════════════════════════════════════════════════════════
 # SESSION — cookie có chữ ký HMAC
@@ -184,31 +315,46 @@ async def login():
     return RedirectResponse(url)
 
 @app.get("/auth/discord/callback")
-async def callback(code: str):
-    async with httpx.AsyncClient() as http:
-        token_resp = await http.post(
-            "https://discord.com/api/oauth2/token",
-            data={
-                "client_id":     DISCORD_CLIENT_ID,
-                "client_secret": DISCORD_CLIENT_SECRET,
-                "grant_type":    "authorization_code",
-                "code":          code,
-                "redirect_uri":  DISCORD_REDIRECT_URI,
-            },
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        if token_resp.status_code != 200:
-            raise HTTPException(400, f"Không lấy được token từ Discord: {token_resp.status_code} | {token_resp.text} | redirect_uri={DISCORD_REDIRECT_URI}")
-        token_data   = token_resp.json()
-        access_token = token_data["access_token"]
-
-        user_resp = await http.get(
-            f"{DISCORD_API}/users/@me",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        if user_resp.status_code != 200:
-            raise HTTPException(400, "Không lấy được thông tin user")
-        user = user_resp.json()
+async def callback(code: str = None, error: str = None, error_description: str = None):
+    if error:
+        return RedirectResponse(url=f"/?auth_error={error}", status_code=303)
+    if not code:
+        raise HTTPException(400, "Thiếu code từ Discord")
+    try:
+        async with httpx.AsyncClient() as http:
+            token_resp = await http.post(
+                "https://discord.com/api/oauth2/token",
+                data={
+                    "client_id":     DISCORD_CLIENT_ID,
+                    "client_secret": DISCORD_CLIENT_SECRET,
+                    "grant_type":    "authorization_code",
+                    "code":          code,
+                    "redirect_uri":  DISCORD_REDIRECT_URI,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            if token_resp.status_code != 200:
+                raise HTTPException(400, f"Discord từ chối code: {token_resp.status_code}")
+            try:
+                token_data = token_resp.json()
+            except Exception:
+                raise HTTPException(500, "Discord trả về response không hợp lệ")
+            if "access_token" not in token_data:
+                err  = token_data.get("error", "unknown")
+                desc = token_data.get("error_description", "")
+                raise HTTPException(400, f"Discord OAuth lỗi: {err} — {desc}")
+            access_token = token_data["access_token"]
+            user_resp = await http.get(
+                f"{DISCORD_API}/users/@me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if user_resp.status_code != 200:
+                raise HTTPException(400, "Không lấy được thông tin user")
+            user = user_resp.json()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"Lỗi xác thực OAuth: {exc}")
 
     user_id  = str(user["id"])
     username = user.get("global_name") or user.get("username", "Unknown")
@@ -252,14 +398,9 @@ async def api_me(request: Request):
 
 @app.get("/api/dash/roles")
 async def api_roles(request: Request):
-    """Danh sách vai trò — từ DB hoặc hardcode fallback."""
-    require_auth(request)
-    db_col = col("roles_catalog")
-    if db_col:
-        docs = list(db_col.find({}, {"_id": 0}))
-        if docs:
-            return JSONResponse(docs)
-    return JSONResponse(_default_roles())
+    """Danh sách vai trò — đọc từ file Python thực tế."""
+    # Không cần auth — roles là public
+    return JSONResponse(_scan_roles_from_files())
 
 @app.get("/api/dash/guilds")
 async def api_guilds(request: Request):
@@ -419,11 +560,19 @@ async def api_post_changelog(request: Request):
 @app.get("/api/dash/admin/bans")
 async def api_admin_bans(request: Request):
     require_owner(request)
-    db_col = col("bans")
-    if not db_col:
+    conn = _get_tidb_conn()
+    if not conn:
         return JSONResponse([])
-    docs = list(db_col.find({}, {"_id": 0}).sort("created_at", -1))
-    return JSONResponse(docs)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id, reason, mode, created_at FROM bans ORDER BY created_at DESC")
+            rows = cur.fetchall()
+        return JSONResponse(list(rows))
+    except Exception as e:
+        print(f"[tidb] Lỗi đọc bans: {e}")
+        return JSONResponse([])
+    finally:
+        conn.close()
 
 @app.post("/api/dash/admin/ban")
 async def api_ban_player(request: Request):
@@ -434,27 +583,90 @@ async def api_ban_player(request: Request):
     mode    = data.get("mode", "ban")   # "ban" | "lobby"
     if not user_id:
         raise HTTPException(400, "Thiếu user_id")
-    db_col = col("bans")
-    if db_col:
-        db_col.update_one(
-            {"user_id": user_id},
-            {"$set": {
-                "user_id":    user_id,
-                "reason":     reason,
-                "mode":       mode,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }},
-            upsert=True,
-        )
+    conn = _get_tidb_conn()
+    if not conn:
+        raise HTTPException(503, "Không kết nối được TiDB")
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO bans (user_id, reason, mode, created_at)
+                   VALUES (%s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE reason=%s, mode=%s, created_at=%s""",
+                (user_id, reason, mode, datetime.now(timezone.utc).isoformat(),
+                 reason, mode, datetime.now(timezone.utc).isoformat())
+            )
+        conn.commit()
+    except Exception as e:
+        print(f"[tidb] Lỗi ban: {e}")
+        raise HTTPException(500, "Lỗi TiDB")
+    finally:
+        conn.close()
     return JSONResponse({"ok": True})
 
 @app.delete("/api/dash/admin/ban/{user_id}")
 async def api_unban_player(user_id: str, request: Request):
     require_owner(request)
-    db_col = col("bans")
-    if db_col:
-        db_col.delete_one({"user_id": user_id})
+    conn = _get_tidb_conn()
+    if not conn:
+        raise HTTPException(503, "Không kết nối được TiDB")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM bans WHERE user_id = %s", (user_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"[tidb] Lỗi unban: {e}")
+        raise HTTPException(500, "Lỗi TiDB")
+    finally:
+        conn.close()
     return JSONResponse({"ok": True})
+
+@app.get("/api/dash/player/lookup")
+async def api_player_lookup(user_id: str, request: Request):
+    """Tra cứu trạng thái ban của một user."""
+    require_auth(request)
+    conn = _get_tidb_conn()
+    ban_info = None
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM bans WHERE user_id = %s", (user_id,))
+                ban_info = cur.fetchone()
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    return JSONResponse({
+        "user_id": user_id,
+        "is_banned": ban_info is not None,
+        "ban": ban_info,
+    })
+
+@app.get("/api/dash/stats")
+async def api_stats(request: Request):
+    """Thống kê tổng quát."""
+    require_auth(request)
+    db = get_db()
+    stats = {"total_guilds": 0, "active_games": 0, "total_bans": 0, "total_feedbacks": 0, "total_changelogs": 0}
+    if db:
+        try:
+            stats["total_guilds"]    = db["guild_configs"].count_documents({})
+            stats["active_games"]    = db["guild_configs"].count_documents({"status": {"$ne": None}})
+            stats["total_feedbacks"] = db["feedbacks"].count_documents({})
+            stats["total_changelogs"]= db["changelogs"].count_documents({})
+        except Exception:
+            pass
+    conn = _get_tidb_conn()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) as cnt FROM bans")
+                row = cur.fetchone()
+                stats["total_bans"] = row["cnt"] if row else 0
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    return JSONResponse(stats)
 
 @app.get("/api/dash/admin/rooms")
 async def api_admin_rooms(request: Request):
