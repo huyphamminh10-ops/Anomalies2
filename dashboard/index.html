@@ -1134,8 +1134,18 @@ select.form-input { appearance: none; cursor: pointer; }
 
       <!-- PAGE: SETTINGS -->
       <div class="page" id="page-settings">
-        <div class="section-title">Cài Đặt Phòng</div>
-        <div class="section-sub">Chỉnh sửa cấu hình server. Cần quyền Quản Lí Server hoặc là Chủ Bot.</div>
+        <!-- Server header with avatar + name -->
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px" id="settingsHeader">
+          <div id="settingsServerIcon" style="display:none;width:44px;height:44px;border-radius:12px;overflow:hidden;flex-shrink:0;border:1px solid var(--border)">
+            <img id="settingsServerIconImg" src="" alt="" style="width:100%;height:100%;object-fit:cover"/>
+          </div>
+          <div id="settingsServerInitial" style="display:none;width:44px;height:44px;border-radius:12px;background:var(--accent);place-items:center;font-weight:800;font-size:18px;color:#fff;flex-shrink:0"></div>
+          <div>
+            <div class="section-title" id="settingsServerName">Cài Đặt Phòng</div>
+            <div class="section-sub" style="margin-bottom:0">Chỉnh sửa cấu hình server. Cần quyền Quản Lí Server hoặc là Chủ Bot.</div>
+          </div>
+        </div>
+        <div style="margin-bottom:20px"></div>
 
         <div id="settingsNoGuild" class="empty-state">
           <div class="empty-icon">🏠</div>
@@ -1143,10 +1153,17 @@ select.form-input { appearance: none; cursor: pointer; }
         </div>
 
         <div id="settingsContent" style="display:none">
-          <!-- No permission -->
-          <div id="settingsNoAccess" class="empty-state" style="display:none">
-            <div class="empty-icon">🔒</div>
-            <p>Bạn không có quyền chỉnh sửa cài đặt server này.</p>
+          <!-- No permission error with server name -->
+          <div id="settingsNoAccess" style="display:none">
+            <div class="card" style="border-color:rgba(240,80,80,0.3);background:rgba(240,80,80,0.05);max-width:520px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:28px">🔒</span>
+                <div>
+                  <div style="font-weight:700;font-size:15px;color:var(--red);margin-bottom:4px">Không có quyền truy cập</div>
+                  <div style="font-size:13.5px;color:var(--text2)" id="settingsNoAccessMsg">Bạn không có quyền chỉnh sửa phòng của server này.</div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div id="settingsForm">
@@ -1602,13 +1619,17 @@ function renderRoles() {
     document.getElementById('rolesGrid').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Không tìm thấy vai trò nào.</p></div>';
     return;
   }
-  document.getElementById('rolesGrid').innerHTML = roles.map((r,i) => `
+  document.getElementById('rolesGrid').innerHTML = roles.map((r) => {
+    // First non-empty line of description as preview
+    const preview = (r.description || '').split('\n').find(l => l.trim()) || 'Nhấn để xem chi tiết';
+    const short = preview.length > 72 ? preview.slice(0, 70) + '…' : preview;
+    return `
     <div class="role-card" style="--role-color:${r.color}" onclick="showRoleDetail(${ALL_ROLES.indexOf(r)})">
-      <div class="role-card-name">${r.name}</div>
+      <div class="role-card-name">${escHtml(r.name)}</div>
       <div class="role-card-faction">${r.faction}</div>
-      <div class="role-card-hint">Nhấn để xem chi tiết →</div>
-    </div>
-  `).join('');
+      <div class="role-card-hint">${escHtml(short)}</div>
+    </div>`;
+  }).join('');
 }
 
 function showRoleDetail(idx) {
@@ -1642,14 +1663,20 @@ async function loadStats() {
     ]);
     const stats = await sRes.json();
     const rooms = rRes.ok ? await rRes.json() : [];
+    const na = v => stats.db_ok ? (v ?? '—') : '<span style="color:var(--text3);font-size:18px">—</span>';
+    const naBan = v => v > 0 ? v : '<span style="color:var(--text3);font-size:18px">—</span>';
 
     document.getElementById('statsGrid').innerHTML = `
-      <div class="stat-card"><div class="stat-card-value">${stats.total_guilds||0}</div><div class="stat-card-label">Máy Chủ</div></div>
-      <div class="stat-card"><div class="stat-card-value" style="color:var(--green)">${stats.active_games||0}</div><div class="stat-card-label">Đang Chơi</div></div>
-      <div class="stat-card"><div class="stat-card-value" style="color:var(--red)">${stats.total_bans||0}</div><div class="stat-card-label">Người Bị Ban</div></div>
-      <div class="stat-card"><div class="stat-card-value" style="color:var(--yellow)">${stats.total_feedbacks||0}</div><div class="stat-card-label">Feedback</div></div>
-      <div class="stat-card"><div class="stat-card-value" style="color:var(--cyan)">${stats.total_changelogs||0}</div><div class="stat-card-label">Cập Nhật</div></div>
+      <div class="stat-card"><div class="stat-card-value">${na(stats.total_guilds)}</div><div class="stat-card-label">Máy Chủ</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--green)">${na(stats.active_games)}</div><div class="stat-card-label">Đang Chơi</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--red)">${naBan(stats.total_bans)}</div><div class="stat-card-label">Người Bị Ban</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--yellow)">${na(stats.total_feedbacks)}</div><div class="stat-card-label">Feedback</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--cyan)">${na(stats.total_changelogs)}</div><div class="stat-card-label">Cập Nhật</div></div>
     `;
+    if (!stats.db_ok) {
+      document.getElementById('statsGrid').insertAdjacentHTML('afterend',
+        '<div style="color:var(--text3);font-size:12.5px;margin-bottom:16px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px">⚠️ Không kết nối được cơ sở dữ liệu — đang hiển thị dữ liệu trống.</div>');
+    }
 
     const el = document.getElementById('statsRoomsList');
     const active = rooms.filter(r => r.status);
@@ -1738,14 +1765,37 @@ function clearFeedback() {
   renderFbPreviews();
 }
 
+async function compressImage(dataUrl, maxSide = 800, quality = 0.7) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      if (w > maxSide || h > maxSide) {
+        const ratio = Math.min(maxSide / w, maxSide / h);
+        w = Math.round(w * ratio); h = Math.round(h * ratio);
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 async function submitFeedback() {
   const content = document.getElementById('fbContent').value.trim();
   if (!content && !fbImages.length) { toast('Nhập nội dung hoặc thêm ảnh!', 'error'); return; }
+  const btn = document.querySelector('#page-feedback-send .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang gửi...'; }
   try {
+    // Compress images to keep under 1MB each (base64)
+    const compressed = await Promise.all(fbImages.map(img => compressImage(img)));
     const res = await fetch('/api/dash/feedback', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ content, images: fbImages })
+      body: JSON.stringify({ content, images: compressed })
     });
     if (res.ok) {
       toast('✅ Gửi feedback thành công!', 'success');
@@ -1757,6 +1807,7 @@ async function submitFeedback() {
       toast('Gửi thất bại: ' + (err.detail || res.status), 'error');
     }
   } catch(e) { toast('Lỗi kết nối: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '📤 Gửi Feedback'; } }
 }
 
 // Drag-drop upload
@@ -1782,12 +1833,28 @@ if (uploadArea) {
 function renderSettingsGuild() {
   const noGuild = document.getElementById('settingsNoGuild');
   const content = document.getElementById('settingsContent');
+  const sIcon   = document.getElementById('settingsServerIcon');
+  const sInit   = document.getElementById('settingsServerInitial');
+  const sName   = document.getElementById('settingsServerName');
   if (!SELECTED_GUILD) {
     noGuild.style.display = '';
     content.style.display = 'none';
+    sIcon.style.display = 'none';
+    sInit.style.display = 'none';
+    sName.textContent = 'Cài Đặt Phòng';
   } else {
     noGuild.style.display = 'none';
     content.style.display = '';
+    sName.textContent = SELECTED_GUILD.name;
+    if (SELECTED_GUILD.icon) {
+      document.getElementById('settingsServerIconImg').src = SELECTED_GUILD.icon;
+      sIcon.style.display = '';
+      sInit.style.display = 'none';
+    } else {
+      sInit.textContent = (SELECTED_GUILD.name||'?')[0].toUpperCase();
+      sInit.style.display = 'grid';
+      sIcon.style.display = 'none';
+    }
   }
 }
 
@@ -1795,14 +1862,34 @@ async function loadSettings() {
   if (!SELECTED_GUILD) return;
   try {
     const res = await fetch(`/api/dash/guild/${SELECTED_GUILD.id}/config`);
+    if (res.status === 404) {
+      document.getElementById('settingsNoAccess').style.display = '';
+      document.getElementById('settingsNoAccessMsg').textContent =
+        `Lỗi: Không tìm thấy cấu hình phòng của server ${SELECTED_GUILD.name}`;
+      document.getElementById('settingsForm').style.display = 'none';
+      return;
+    }
     CURRENT_CONFIG = await res.json();
 
-    // Check access: owner or manage_guild
-    const perm = Number(SELECTED_GUILD.permissions || 0);
+    // Check access: owner or manage_guild (MANAGE_GUILD=0x20, ADMINISTRATOR=0x8)
+    const perm = Number(BigInt(SELECTED_GUILD.permissions || '0'));
     CAN_EDIT_GUILD = ME.is_owner || ((perm & 0x20) !== 0) || ((perm & 0x8) !== 0);
 
-    document.getElementById('settingsReadonly').style.display = CAN_EDIT_GUILD ? 'none' : '';
-    document.getElementById('settingsSaveRow').style.display = CAN_EDIT_GUILD ? '' : 'none';
+    const noAccessEl = document.getElementById('settingsNoAccess');
+    const formEl     = document.getElementById('settingsForm');
+
+    if (!CAN_EDIT_GUILD) {
+      noAccessEl.style.display = '';
+      document.getElementById('settingsNoAccessMsg').textContent =
+        `Lỗi: Bạn không có quyền chỉnh sửa phòng của server ${SELECTED_GUILD.name}`;
+      formEl.style.display = 'none';
+      return;
+    }
+
+    noAccessEl.style.display = 'none';
+    formEl.style.display = '';
+    document.getElementById('settingsReadonly').style.display = 'none';
+    document.getElementById('settingsSaveRow').style.display = '';
 
     // Apply values
     setInputVal('cfgCountdown',     CURRENT_CONFIG.countdown_time);
@@ -1817,11 +1904,8 @@ async function loadSettings() {
     setCheckVal('cfgMusic',         CURRENT_CONFIG.music);
     setCheckVal('cfgSkipDiscussion',CURRENT_CONFIG.skip_discussion);
 
-    // Readonly mode — grayscale, disable inputs
-    const form = document.getElementById('settingsForm');
-    form.querySelectorAll('input, select').forEach(inp => inp.disabled = !CAN_EDIT_GUILD);
-    if (!CAN_EDIT_GUILD) form.style.filter = 'grayscale(1)';
-    else form.style.filter = '';
+    formEl.style.filter = '';
+    formEl.querySelectorAll('input, select').forEach(inp => inp.disabled = false);
 
   } catch(e) { toast('Không thể tải cài đặt.', 'error'); }
 }
@@ -1968,6 +2052,8 @@ async function postUpdate() {
   const content = document.getElementById('updateContent').value.trim();
   const version = document.getElementById('updateVersion').value.trim();
   if (!title || !content) { toast('Cần có tiêu đề và nội dung!', 'error'); return; }
+  const btn = document.querySelector('#page-post-update .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang đăng...'; }
   try {
     const res = await fetch('/api/dash/admin/changelog', {
       method: 'POST',
@@ -1980,8 +2066,12 @@ async function postUpdate() {
       document.getElementById('updateContent').value = '';
       document.getElementById('updateVersion').value = '';
       loadChangelog();
-    } else toast('Đăng thất bại.', 'error');
-  } catch(e) { toast('Lỗi kết nối.', 'error'); }
+    } else {
+      const err = await res.json().catch(()=>({}));
+      toast('Đăng thất bại: ' + (err.detail || res.status), 'error');
+    }
+  } catch(e) { toast('Lỗi kết nối: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '📢 Đăng Update'; } }
 }
 
 // ══════════════════════════════════════════

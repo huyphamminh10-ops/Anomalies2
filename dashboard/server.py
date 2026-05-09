@@ -106,11 +106,6 @@ def _tidb_ensure_table():
     finally:
         conn.close()
 
-# Gọi khi khởi động app
-@app.on_event("startup")
-async def _startup():
-    _tidb_ensure_table()
-
 # ══════════════════════════════════════════════════════════════
 # ROLE SCANNER — đọc từ folder roles/ thực tế
 # ══════════════════════════════════════════════════════════════
@@ -298,6 +293,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def _startup():
+    _tidb_ensure_table()
+
 # ══════════════════════════════════════════════════════════════
 # AUTH
 # ══════════════════════════════════════════════════════════════
@@ -406,32 +405,39 @@ async def api_roles(request: Request):
 async def api_guilds(request: Request):
     """Danh sách server user đang ở mà bot cũng có config."""
     session = require_auth(request)
-    async with httpx.AsyncClient() as http:
-        resp = await http.get(
-            f"{DISCORD_API}/users/@me/guilds",
-            headers={"Authorization": f"Bearer {session['access_token']}"},
-        )
-        if resp.status_code != 200:
-            return JSONResponse([])
-        guilds = resp.json()
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            resp = await http.get(
+                f"{DISCORD_API}/users/@me/guilds",
+                headers={"Authorization": f"Bearer {session['access_token']}"},
+            )
+            if resp.status_code != 200:
+                return JSONResponse([])
+            guilds = resp.json()
+    except Exception as e:
+        print(f"[guilds] Discord API error: {e}")
+        return JSONResponse([])
 
     db_col = col("guild_configs")
     result = []
     if db_col:
         for g in guilds:
-            doc = db_col.find_one({"guild_id": str(g["id"])})
-            if doc:
-                icon = g.get("icon")
-                icon_url = (
-                    f"https://cdn.discordapp.com/icons/{g['id']}/{icon}.png"
-                    if icon else None
-                )
-                result.append({
-                    "id":          g["id"],
-                    "name":        g["name"],
-                    "icon":        icon_url,
-                    "permissions": g.get("permissions", 0),
-                })
+            try:
+                doc = db_col.find_one({"guild_id": str(g["id"])})
+                if doc:
+                    icon = g.get("icon")
+                    icon_url = (
+                        f"https://cdn.discordapp.com/icons/{g['id']}/{icon}.png"
+                        if icon else None
+                    )
+                    result.append({
+                        "id":          str(g["id"]),
+                        "name":        g.get("name", "Unknown"),
+                        "icon":        icon_url,
+                        "permissions": str(g.get("permissions", 0)),
+                    })
+            except PyMongoError:
+                continue
     return JSONResponse(result)
 
 @app.get("/api/dash/guild/{guild_id}/config")
@@ -497,13 +503,26 @@ async def api_changelog(request: Request):
 @app.post("/api/dash/feedback")
 async def api_feedback(request: Request):
     session = require_auth(request)
-    data    = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "Request body không hợp lệ")
     content = str(data.get("content", "")).strip()[:2000]
-    images  = data.get("images", [])[:5]
+    raw_images = data.get("images", [])
+    if not isinstance(raw_images, list):
+        raw_images = []
+    # Giới hạn mỗi ảnh tối đa 1MB (base64 ~1.33× raw) để tránh MongoDB 16MB limit
+    MAX_IMG_B64 = 1_400_000  # ~1MB raw
+    images = []
+    for img in raw_images[:5]:
+        if isinstance(img, str) and len(img) <= MAX_IMG_B64:
+            images.append(img)
     if not content and not images:
         raise HTTPException(400, "Nội dung trống")
     db_col = col("feedbacks")
-    if db_col:
+    if db_col is None:
+        raise HTTPException(503, "Cơ sở dữ liệu chưa sẵn sàng")
+    try:
         db_col.insert_one({
             "user_id":    session["user_id"],
             "username":   session["username"],
@@ -513,6 +532,9 @@ async def api_feedback(request: Request):
             "reply":      None,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
+    except PyMongoError as e:
+        print(f"[feedback] MongoDB error: {e}")
+        raise HTTPException(500, "Lỗi lưu dữ liệu")
     return JSONResponse({"ok": True})
 
 # ══════════════════════════════════════════════════════════════
@@ -541,20 +563,28 @@ async def api_reply_feedback_by_index(fb_id: str, request: Request):
 @app.post("/api/dash/admin/changelog")
 async def api_post_changelog(request: Request):
     require_owner(request)
-    data    = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "Request body không hợp lệ")
     title   = str(data.get("title", "")).strip()[:200]
     content = str(data.get("content", "")).strip()[:5000]
     version = str(data.get("version", "")).strip()[:20]
     if not title or not content:
         raise HTTPException(400, "Thiếu tiêu đề hoặc nội dung")
     db_col = col("changelogs")
-    if db_col:
+    if db_col is None:
+        raise HTTPException(503, "Cơ sở dữ liệu chưa sẵn sàng")
+    try:
         db_col.insert_one({
             "title":      title,
             "content":    content,
             "version":    version,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
+    except PyMongoError as e:
+        print(f"[changelog] MongoDB error: {e}")
+        raise HTTPException(500, "Lỗi lưu dữ liệu")
     return JSONResponse({"ok": True})
 
 @app.get("/api/dash/admin/bans")
@@ -646,8 +676,10 @@ async def api_stats(request: Request):
     """Thống kê tổng quát."""
     require_auth(request)
     db = get_db()
-    stats = {"total_guilds": 0, "active_games": 0, "total_bans": 0, "total_feedbacks": 0, "total_changelogs": 0}
+    stats = {"total_guilds": 0, "active_games": 0, "total_bans": 0,
+             "total_feedbacks": 0, "total_changelogs": 0, "db_ok": False}
     if db:
+        stats["db_ok"] = True
         try:
             stats["total_guilds"]    = db["guild_configs"].count_documents({})
             stats["active_games"]    = db["guild_configs"].count_documents({"status": {"$ne": None}})
