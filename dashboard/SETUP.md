@@ -26,7 +26,7 @@ dashboard/
 |-----|---------|
 | `DISCORD_CLIENT_ID` | Client ID từ Discord Dev Portal |
 | `DISCORD_CLIENT_SECRET` | Client Secret |
-| `DISCORD_REDIRECT_URI` | `https://TÊN-APP.onrender.com/auth/callback` |
+| `DISCORD_REDIRECT_URI` | `https://TÊN-APP.onrender.com/auth/discord/callback` |
 | `MONGO_URI` | MongoDB Atlas URI (`mongodb+srv://...`) |
 | `BOT_OWNER_ID` | Discord ID của chủ bot (mặc định đã set trong code) |
 | `SESSION_SECRET` | Tự động generate bởi Render |

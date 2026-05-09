@@ -27,7 +27,7 @@ import uvicorn
 BOT_OWNER_ID          = int(os.environ.get("BOT_OWNER_ID", "1306441206296875099"))
 DISCORD_CLIENT_ID     = os.environ.get("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
-DISCORD_REDIRECT_URI  = os.environ.get("DISCORD_REDIRECT_URI", "http://localhost:8000/auth/callback")
+DISCORD_REDIRECT_URI  = os.environ.get("DISCORD_REDIRECT_URI", "http://localhost:8000/auth/discord/callback")
 SECRET_KEY            = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
 MONGO_URI             = os.environ.get("MONGO_URI", "")
 
@@ -52,32 +52,56 @@ def col(name: str):
 # ══════════════════════════════════════════════════════════════
 # SESSION — cookie có chữ ký HMAC
 # ══════════════════════════════════════════════════════════════
+COOKIE_NAME = "session_data"
+COOKIE_MAX_AGE = 86400 * 7  # 7 ngày
+
 def _sign(data: str) -> str:
     return hmac.new(SECRET_KEY.encode(), data.encode(), hashlib.sha256).hexdigest()
 
-def set_session(response: Response, user_id: str, access_token: str, username: str, avatar: str):
+def set_session(response: Response, user_id: str, username: str, avatar_url: str, access_token: str = ""):
+    """Gắn cookie session_data có chữ ký HMAC vào response.
+    Tương thích với cả RedirectResponse và Response thông thường.
+    """
     import json, base64
-    data = json.dumps({"u": user_id, "t": access_token, "n": username, "a": avatar})
+    payload_dict = {
+        "u": str(user_id),
+        "t": access_token,
+        "n": username,
+        "a": avatar_url,
+        "exp": int(time.time()) + COOKIE_MAX_AGE,
+    }
+    data = json.dumps(payload_dict, separators=(",", ":"))
     payload = base64.urlsafe_b64encode(data.encode()).decode()
     sig = _sign(payload)
     cookie_val = f"{payload}.{sig}"
+    # secure=True bắt buộc trên Render (HTTPS). Với localhost HTTP, đặt biến
+    # env IS_HTTPS=false để tắt.
+    is_https = os.environ.get("IS_HTTPS", "true").lower() != "false"
     response.set_cookie(
-        "session", cookie_val,
-        httponly=True, samesite="lax",
-        max_age=86400 * 7,
-        secure=False  # để False cho cả HTTP lẫn HTTPS đều hoạt động
+        key=COOKIE_NAME,
+        value=cookie_val,
+        httponly=True,
+        secure=is_https,
+        samesite="lax",
+        max_age=COOKIE_MAX_AGE,
+        path="/",
     )
 
 def get_session(request: Request) -> Optional[dict]:
+    """Đọc & xác thực cookie session_data. Trả về None nếu không hợp lệ/hết hạn."""
     import json, base64
-    cookie = request.cookies.get("session", "")
-    if "." not in cookie:
+    cookie = request.cookies.get(COOKIE_NAME, "")
+    if not cookie or "." not in cookie:
         return None
     payload, sig = cookie.rsplit(".", 1)
+    # Xác thực chữ ký HMAC — chống giả mạo
     if not hmac.compare_digest(_sign(payload), sig):
         return None
     try:
         data = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+        # Kiểm tra hết hạn
+        if int(time.time()) > data.get("exp", 0):
+            return None
         user_id      = data["u"]
         access_token = data["t"]
         username     = data["n"]
@@ -91,6 +115,10 @@ def get_session(request: Request) -> Optional[dict]:
         "avatar":       avatar,
         "is_owner":     int(user_id) == BOT_OWNER_ID,
     }
+
+def _clear_session(response: Response):
+    """Xóa cookie session_data (dùng khi cookie không hợp lệ)."""
+    response.delete_cookie(key=COOKIE_NAME, path="/")
 
 def require_auth(request: Request) -> dict:
     session = get_session(request)
@@ -182,27 +210,27 @@ async def callback(code: str):
             raise HTTPException(400, "Không lấy được thông tin user")
         user = user_resp.json()
 
-    user_id  = user["id"]
+    user_id  = str(user["id"])
     username = user.get("global_name") or user.get("username", "Unknown")
-    avatar   = user.get("avatar", "")
-    avatar_url = (
-        f"https://cdn.discordapp.com/avatars/{user_id}/{avatar}.png"
-        if avatar else
-        f"https://cdn.discordapp.com/embed/avatars/{int(user_id) % 5}.png"
-    )
+    avatar   = user.get("avatar") or ""
+    # Discord avatar: ưu tiên .webp (CDN mới nhất), fallback về default
+    if avatar:
+        # Dùng ?size=128 để tải nhanh hơn; format webp hoạt động tốt nhất
+        avatar_url = f"https://cdn.discordapp.com/avatars/{user_id}/{avatar}.webp?size=128"
+    else:
+        default_index = int(user_id) % 6  # Discord dùng 0-5 kể từ 2023
+        avatar_url = f"https://cdn.discordapp.com/embed/avatars/{default_index}.png"
 
-    # Dùng HTMLResponse thay vì RedirectResponse để cookie được gắn chắc chắn
-    html = HTMLResponse(
-        content='<html><head><meta http-equiv="refresh" content="0;url=/"></head><body>Đang chuyển hướng...</body></html>',
-        status_code=200
-    )
-    set_session(html, user_id, access_token, username, avatar_url)
-    return html
+    # FIX: Dùng RedirectResponse (303) thay vì HTMLResponse + meta refresh.
+    # set_session PHẢI được gọi trước khi return để gắn cookie vào response này.
+    redirect = RedirectResponse(url="/", status_code=303)
+    set_session(redirect, user_id=user_id, username=username, avatar_url=avatar_url, access_token=access_token)
+    return redirect
 
 @app.get("/auth/logout")
 async def logout():
-    redirect = RedirectResponse("/", status_code=302)
-    redirect.delete_cookie("session")
+    redirect = RedirectResponse("/", status_code=303)
+    redirect.delete_cookie(key=COOKIE_NAME, path="/")
     return redirect
 
 # ══════════════════════════════════════════════════════════════
