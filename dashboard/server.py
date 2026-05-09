@@ -56,27 +56,34 @@ def _sign(data: str) -> str:
     return hmac.new(SECRET_KEY.encode(), data.encode(), hashlib.sha256).hexdigest()
 
 def set_session(response: Response, user_id: str, access_token: str, username: str, avatar: str):
-    payload = f"{user_id}|{access_token}|{username}|{avatar}"
+    import json, base64
+    data = json.dumps({"u": user_id, "t": access_token, "n": username, "a": avatar})
+    payload = base64.urlsafe_b64encode(data.encode()).decode()
     sig = _sign(payload)
-    cookie_val = f"{payload}||{sig}"
+    cookie_val = f"{payload}.{sig}"
     response.set_cookie(
         "session", cookie_val,
         httponly=True, samesite="lax",
         max_age=86400 * 7,
-        secure=os.environ.get("RENDER") == "true"  # secure chỉ trên HTTPS
+        secure=False  # để False cho cả HTTP lẫn HTTPS đều hoạt động
     )
 
 def get_session(request: Request) -> Optional[dict]:
+    import json, base64
     cookie = request.cookies.get("session", "")
-    if "||" not in cookie:
+    if "." not in cookie:
         return None
-    payload, sig = cookie.rsplit("||", 1)
+    payload, sig = cookie.rsplit(".", 1)
     if not hmac.compare_digest(_sign(payload), sig):
         return None
-    parts = payload.split("|", 3)
-    if len(parts) != 4:
+    try:
+        data = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+        user_id      = data["u"]
+        access_token = data["t"]
+        username     = data["n"]
+        avatar       = data["a"]
+    except Exception:
         return None
-    user_id, access_token, username, avatar = parts
     return {
         "user_id":      user_id,
         "access_token": access_token,
@@ -184,9 +191,13 @@ async def callback(code: str):
         f"https://cdn.discordapp.com/embed/avatars/{int(user_id) % 5}.png"
     )
 
-    redirect = RedirectResponse("/", status_code=302)
-    set_session(redirect, user_id, access_token, username, avatar_url)
-    return redirect
+    # Dùng HTMLResponse thay vì RedirectResponse để cookie được gắn chắc chắn
+    html = HTMLResponse(
+        content='<html><head><meta http-equiv="refresh" content="0;url=/"></head><body>Đang chuyển hướng...</body></html>',
+        status_code=200
+    )
+    set_session(html, user_id, access_token, username, avatar_url)
+    return html
 
 @app.get("/auth/logout")
 async def logout():
