@@ -170,7 +170,7 @@ async def callback(code: str):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         if token_resp.status_code != 200:
-            raise HTTPException(400, "Không lấy được token từ Discord")
+            raise HTTPException(400, f"Không lấy được token từ Discord: {token_resp.status_code} | {token_resp.text} | redirect_uri={DISCORD_REDIRECT_URI}")
         token_data   = token_resp.json()
         access_token = token_data["access_token"]
 
