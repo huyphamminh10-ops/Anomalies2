@@ -318,7 +318,7 @@ async def auth_login(request: Request):
 
 @router.get("/auth/callback")
 @router.get("/auth/discord/callback")
-async def auth_callback(code: str, response: Response, state: str = ""):
+async def auth_callback(request: Request, code: str, response: Response, state: str = ""):
     # Xử lý cả /auth/callback và /auth/discord/callback
     async with httpx.AsyncClient() as http:
         # Tự detect redirect_uri khớp với URL Discord gọi về
@@ -357,7 +357,10 @@ async def auth_callback(code: str, response: Response, state: str = ""):
         if avatar_h else
         f"https://cdn.discordapp.com/embed/avatars/{int(uid) % 5}.png"
     )
-    redir = RedirectResponse("/dashboard", status_code=302)
+    redir = HTMLResponse(
+        content='<html><head><meta http-equiv="refresh" content="0;url=/dashboard"></head><body>Đang chuyển hướng...</body></html>',
+        status_code=200,
+    )
     _set_session(redir, uid, access_token, username, avatar)
     return redir
 
@@ -371,6 +374,7 @@ async def auth_logout():
 
 # ── API — CHUNG ────────────────────────────────────────────────────
 
+@router.get("/api/me")
 @router.get("/api/dash/me")
 async def api_me(request: Request):
     s = _get_session(request)
