@@ -544,11 +544,19 @@ tr:last-child td{border-bottom:none;}
 // ══════════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════════
+// Safe localStorage wrapper
+function _ls(key, fallback) {
+  try { return window.localStorage.getItem(key); } catch(e) { return fallback || null; }
+}
+function _lsSet(key, val) {
+  try { window.localStorage.setItem(key, val); } catch(e) {}
+}
+
 const state = {
   user: null,
   page: 'home',
-  theme: localStorage.getItem('theme') || 'dark',
-  sidebarCollapsed: localStorage.getItem('sidebar') === '1',
+  theme: _ls('theme') || 'dark',
+  sidebarCollapsed: _ls('sidebar') === '1',
   roles: [],
   roleFilter: 'all',
   roleSearch: '',
@@ -729,13 +737,13 @@ function renderLayout() {
 function attachLayoutEvents() {
   document.getElementById('sidebar-toggle').onclick = () => {
     state.sidebarCollapsed = !state.sidebarCollapsed;
-    localStorage.setItem('sidebar', state.sidebarCollapsed ? '1' : '0');
+    _lsSet('sidebar', state.sidebarCollapsed ? '1' : '0');
     document.getElementById('sidebar').classList.toggle('collapsed', state.sidebarCollapsed);
     document.getElementById('sidebar-toggle').innerHTML = state.sidebarCollapsed ? '☰' : '✕';
   };
   document.getElementById('theme-toggle').onclick = () => {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('theme', state.theme);
+    _lsSet('theme', state.theme);
     document.documentElement.setAttribute('data-theme', state.theme);
     document.getElementById('theme-toggle').innerHTML = state.theme === 'dark' ? '☀️' : '🌙';
   };
@@ -1535,8 +1543,12 @@ async function attemptBoot() {
     showDebug('Gọi bootScreen.hide()...', '#4ade80');
     await bootScreen.hide();
     showDebug('Gọi render()...', '#4ade80');
-    render();
-    showDebug('render() XONG!', '#4ade80');
+    try {
+      render();
+      showDebug('render() XONG!', '#4ade80');
+    } catch(renderErr) {
+      showDebug('LỖI render(): ' + renderErr.message, '#ff4757');
+    }
   } catch(e) {
     showDebug('LỖI: ' + e.name + ': ' + e.message, '#ff4757');
     if (bootAttempt < MAX_BOOT_ATTEMPTS) {
@@ -1595,3 +1607,4 @@ boot();
 </script>
 </body>
 </html>
+
