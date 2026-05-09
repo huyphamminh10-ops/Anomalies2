@@ -155,7 +155,7 @@ async def login():
     )
     return RedirectResponse(url)
 
-@app.get("/auth/callback")
+@app.get("/auth/discord/callback")
 async def callback(code: str):
     async with httpx.AsyncClient() as http:
         token_resp = await http.post(
