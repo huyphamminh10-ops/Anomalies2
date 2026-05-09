@@ -1772,16 +1772,22 @@ def _run_bot_in_thread():
         base_delay    = 5
         rate_limit_hits = 0   # Đếm số lần bị 429 liên tiếp
 
+        # FIX: aiohttp 3.9+ yêu cầu ClientTimeout phải chạy bên trong asyncio.Task thực sự.
+        # Dùng loop.run_until_complete(coroutine) trực tiếp không đủ — phải wrap trong Task.
+        async def _start_bot(proxy: str | None = None):
+            if proxy:
+                await bot.start(TOKEN, reconnect=True, proxy=proxy)
+            else:
+                await bot.start(TOKEN, reconnect=True)
+
         while not _shutting_down:
             try:
                 if using_proxy and current_proxy:
                     print(f"[BotThread] Thử kết nối qua proxy: {current_proxy}")
-                    loop.run_until_complete(
-                        bot.start(TOKEN, reconnect=True, proxy=current_proxy)
-                    )
+                    loop.run_until_complete(_start_bot(proxy=current_proxy))
                 else:
                     print("[BotThread] Thử kết nối trực tiếp (không proxy)...")
-                    loop.run_until_complete(bot.start(TOKEN, reconnect=True))
+                    loop.run_until_complete(_start_bot())
 
             except disnake.LoginFailure:
                 print("[BotThread] FATAL: Token Discord không hợp lệ! Kiểm tra DISCORD_TOKEN.")
