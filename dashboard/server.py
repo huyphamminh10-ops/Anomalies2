@@ -1,1028 +1,617 @@
-"""
-dashboard/server.py — Anomalies Web Dashboard v3.1
-FastAPI + Discord OAuth2 + MongoDB + TiDB
-Deploy trên Render.com (.onrender.com)
-
-FIX v3.1:
-  #1 - ID Stringify: guild_id/user_id/channel_id luôn str(), filter chỉ dùng {"guild_id": str(id)}
-  #2 - MongoDB timeout + ping + trả None thay vì crash
-  #3 - TiDB cho Feedbacks (id 10 ký tự), Changelogs (INT AUTO_INCREMENT), Bans
-  #4 - Lobby State: query bổ sung sang lobby_states để lấy is_playing + player_count
-  #5 - Cache Invalidation: Dashboard cập nhật last_updated, Bot so sánh để reload
-"""
 from __future__ import annotations
 
+import asyncio
+import collections
 import os
 import time
-import hmac
-import hashlib
-import secrets
-import string
-import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import AsyncIterator, Deque
 
-import re
-import glob
-import httpx
-import pymysql
-import pymysql.cursors
-from fastapi import FastAPI, Request, Response, HTTPException, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pymongo import MongoClient
-from pymongo.errors import PyMongoError
-import uvicorn
+import disnake
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
-# ══════════════════════════════════════════════════════════════
-# CONFIG — lấy từ biến môi trường Render
-# ══════════════════════════════════════════════════════════════
-BOT_OWNER_ID          = str(os.environ.get("BOT_OWNER_ID", "1306441206296875099"))
-DISCORD_CLIENT_ID     = os.environ.get("DISCORD_CLIENT_ID", "")
-DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
-DISCORD_REDIRECT_URI  = os.environ.get("DISCORD_REDIRECT_URI", "http://localhost:8000/auth/discord/callback")
-SECRET_KEY            = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
-MONGO_URI             = os.environ.get("MONGO_URI", "")
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 
-IS_RENDER = bool(os.environ.get("RENDER_EXTERNAL_URL", ""))
+TOKEN: str = os.environ["DISCORD_TOKEN"]
+MAX_LOG_ENTRIES: int = 200
+MAX_METRIC_POINTS: int = 120  # ~2 hours at 1 sample/min
 
-DISCORD_API  = "https://discord.com/api/v10"
-OAUTH_SCOPES = "identify guilds"
+# ---------------------------------------------------------------------------
+# In-memory stores (shared across all endpoints via the same event loop)
+# ---------------------------------------------------------------------------
 
-# ══════════════════════════════════════════════════════════════
-# MONGODB
-# FIX #2: serverSelectionTimeoutMS=5000, connectTimeoutMS=10000,
-#         ping trước khi trả DB, trả None thay vì crash nếu lỗi.
-# ══════════════════════════════════════════════════════════════
-_client: Optional[MongoClient] = None
+# Rolling event log — populated by bot events
+event_log: Deque[dict] = collections.deque(maxlen=MAX_LOG_ENTRIES)
 
-def get_db():
-    global _client
-    if _client is None and MONGO_URI:
-        try:
-            _client = MongoClient(
-                MONGO_URI,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=10000,
-            )
-            _client.admin.command("ping")
-            print("[mongo] Kết nối MongoDB thành công.")
-        except Exception as e:
-            print(f"[mongo] Không kết nối được MongoDB: {e}")
-            _client = None
-            return None
-    return _client["Anomalies_DB"] if _client else None
+# Latency history — populated by the metrics background task
+latency_history: Deque[dict] = collections.deque(maxlen=MAX_METRIC_POINTS)
 
-def col(name: str):
-    try:
-        db = get_db()
-        return db[name] if db is not None else None
-    except Exception as e:
-        print(f"[mongo] Lỗi lấy collection {name}: {e}")
-        return None
+# Connected WebSocket clients for live-push
+_ws_clients: set[WebSocket] = set()
 
-# FIX #1: Tất cả filter MongoDB chỉ dùng str(id) — không dùng $in nữa để tránh xung đột index
-def _gf(guild_id) -> dict:
-    """Guild filter — luôn dùng str để nhất quán với index unique."""
-    return {"guild_id": str(guild_id)}
 
-def _uf(user_id) -> dict:
-    """User filter — luôn str."""
-    return {"user_id": str(user_id)}
+def _log(kind: str, **payload) -> None:
+    event_log.appendleft(
+        {"ts": datetime.now(timezone.utc).isoformat(), "kind": kind, **payload}
+    )
 
-def _cf(channel_id) -> dict:
-    """Channel filter — luôn str."""
-    return {"channel_id": str(channel_id)}
 
-# ══════════════════════════════════════════════════════════════
-# TIDB — Dùng cho Feedbacks, Changelogs, Bans
-# FIX #3: Feedbacks + Changelogs chuyển sang TiDB theo yêu cầu
-# ══════════════════════════════════════════════════════════════
-TIDB_URI = os.environ.get(
-    "TIDB_URI",
-    "mysql://pmiJpFtdc5E8WwZ.root:r0QZSVZVEINtmH39@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/sys"
-)
+# ---------------------------------------------------------------------------
+# Bot setup
+# ---------------------------------------------------------------------------
 
-def _parse_tidb_uri(uri: str) -> dict | None:
-    m = re.match(r"mysql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)", uri)
-    if not m:
-        return None
-    db_name = m.group(5)
-    if db_name.lower() == "sys":
-        db_name = "test"
-    return {"user": m.group(1), "password": m.group(2),
-            "host": m.group(3), "port": int(m.group(4)), "database": db_name}
+intents = disnake.Intents.default()
+intents.members = True
+intents.message_content = True
 
-def _get_tidb_conn():
-    info = _parse_tidb_uri(TIDB_URI)
-    if not info:
-        return None
-    if "tidbcloud" in info["host"]:
-        ssl_config = {"ca": "/etc/ssl/certs/ca-certificates.crt"} if IS_RENDER else {"ssl_mode": "VERIFY_IDENTITY"}
-    else:
-        ssl_config = {}
-    try:
-        conn = pymysql.connect(
-            host=info["host"], user=info["user"], password=info["password"],
-            database=info["database"], port=info["port"],
-            ssl=ssl_config,
-            connect_timeout=8,
-            autocommit=True,
-            cursorclass=pymysql.cursors.DictCursor,
-            charset="utf8mb4",
-        )
-        return conn
-    except Exception as e:
-        print(f"[tidb] Không kết nối được TiDB: {e}")
-        return None
+bot = disnake.AutoShardedInteractionBot(intents=intents)
 
-def _rand_id(n=10) -> str:
-    """Tạo chuỗi ngẫu nhiên n ký tự (chữ + số) dùng làm Feedback ID."""
-    alphabet = string.ascii_letters + string.digits
-    return ''.join(secrets.choice(alphabet) for _ in range(n))
 
-def _tidb_ensure_tables():
-    """Tạo tất cả bảng TiDB nếu chưa tồn tại."""
-    conn = _get_tidb_conn()
-    if not conn:
+@bot.event
+async def on_ready() -> None:
+    _log("ready", bot_id=str(bot.user.id), bot_name=str(bot.user))
+    print(f"[bot] Logged in as {bot.user} (id={bot.user.id})")
+
+
+@bot.event
+async def on_guild_join(guild: disnake.Guild) -> None:
+    _log("guild_join", guild_id=str(guild.id), guild_name=guild.name)
+
+
+@bot.event
+async def on_guild_remove(guild: disnake.Guild) -> None:
+    _log("guild_leave", guild_id=str(guild.id), guild_name=guild.name)
+
+
+@bot.event
+async def on_member_join(member: disnake.Member) -> None:
+    _log(
+        "member_join",
+        guild_id=str(member.guild.id),
+        user_id=str(member.id),
+        username=str(member),
+    )
+
+
+@bot.event
+async def on_member_remove(member: disnake.Member) -> None:
+    _log(
+        "member_leave",
+        guild_id=str(member.guild.id),
+        user_id=str(member.id),
+        username=str(member),
+    )
+
+
+@bot.event
+async def on_message(message: disnake.Message) -> None:
+    if message.author.bot:
         return
-    try:
-        with conn.cursor() as cur:
-            # Bảng Bans — quản lý user bị cấm
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS bans (
-                    user_id    VARCHAR(32)  PRIMARY KEY,
-                    reason     VARCHAR(500) NOT NULL DEFAULT '',
-                    mode       VARCHAR(20)  NOT NULL DEFAULT 'ban',
-                    created_at VARCHAR(50)  NOT NULL DEFAULT ''
-                )
-            """)
-            # FIX #3: Bảng Feedbacks — ID 10 ký tự ngẫu nhiên
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS feedbacks (
-                    id         VARCHAR(10)   PRIMARY KEY,
-                    user_id    VARCHAR(32)   NOT NULL DEFAULT '',
-                    username   VARCHAR(100)  NOT NULL DEFAULT '',
-                    avatar     VARCHAR(300)  NOT NULL DEFAULT '',
-                    content    TEXT,
-                    images     TEXT,
-                    reply      TEXT,
-                    created_at VARCHAR(50)   NOT NULL DEFAULT ''
-                )
-            """)
-            # FIX #3: Bảng Changelogs — INT AUTO_INCREMENT PK
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS changelogs (
-                    id         INT AUTO_INCREMENT PRIMARY KEY,
-                    version    VARCHAR(20)   NOT NULL DEFAULT '',
-                    title      VARCHAR(200)  NOT NULL DEFAULT '',
-                    content    TEXT,
-                    created_at VARCHAR(50)   NOT NULL DEFAULT ''
-                )
-            """)
-        conn.commit()
-    except Exception as e:
-        print(f"[tidb] Lỗi tạo bảng: {e}")
-    finally:
-        conn.close()
-
-# ══════════════════════════════════════════════════════════════
-# ROLE SCANNER
-# ══════════════════════════════════════════════════════════════
-_ROLES_CACHE: list = []
-
-def _scan_roles_from_files() -> list:
-    global _ROLES_CACHE
-    if _ROLES_CACHE:
-        return _ROLES_CACHE
-
-    roles_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "roles")
-    if not os.path.exists(roles_root):
-        return _default_roles()
-
-    faction_map = {
-        "Survivors": "Survivors", "Anomalies": "Anomalies",
-        "Unknown": "Unknown", "Unknown Entities": "Unknown", "Event": "Event",
-    }
-    color_map = {
-        "Survivors": "#3dd68c", "Anomalies": "#f05050",
-        "Unknown": "#f5c231", "Event": "#a78bfa",
-    }
-    results = []
-    for subfolder in ["survivors", "anomalies", "unknown", "event"]:
-        folder = os.path.join(roles_root, subfolder)
-        if not os.path.isdir(folder):
-            continue
-        for fpath in sorted(glob.glob(os.path.join(folder, "*.py"))):
-            fname = os.path.basename(fpath)
-            if fname.startswith("_"):
-                continue
-            try:
-                content = open(fpath, encoding="utf-8").read()
-                nm = re.search(r'^\s+name\s*=\s*["\'](.*?)["\']', content, re.MULTILINE)
-                tm = re.search(r'^\s+team\s*=\s*["\'](.*?)["\']', content, re.MULTILINE)
-                if not nm:
-                    continue
-                name    = nm.group(1).strip()
-                team    = tm.group(1).strip() if tm else subfolder.capitalize()
-                faction = faction_map.get(team, subfolder.capitalize())
-                color   = color_map.get(faction, "#7c6af7")
-
-                dm = re.search(r'description\s*=\s*\(\s*(.*?)\s*\)', content, re.DOTALL)
-                if not dm:
-                    dm = re.search(r'description\s*=\s*["\'](.*?)["\']', content)
-                desc = ""
-                if dm:
-                    raw = dm.group(1)
-                    raw = re.sub(r'["\']\s*["\']+', ' ', raw)
-                    raw = re.sub(r'^[\s"\']+|[\s"\']+$', '', raw, flags=re.MULTILINE)
-                    raw = re.sub(r'\{[^}]*\}', '...', raw)
-                    raw = raw.replace("\\n", "\n").replace("\\t", " ").replace("\\\\", "\\")
-                    raw = re.sub(r' +', ' ', raw)
-                    desc = raw.strip()
-
-                results.append({
-                    "name": name, "faction": faction, "team": team,
-                    "description": desc, "color": color,
-                })
-            except Exception as e:
-                print(f"[roles_scan] Lỗi đọc {fpath}: {e}")
-
-    _ROLES_CACHE = results if results else _default_roles()
-    return _ROLES_CACHE
-
-# ══════════════════════════════════════════════════════════════
-# SESSION — cookie có chữ ký HMAC
-# ══════════════════════════════════════════════════════════════
-COOKIE_NAME    = "session_data"
-COOKIE_MAX_AGE = 86400 * 7  # 7 ngày
-
-def _sign(data: str) -> str:
-    return hmac.new(SECRET_KEY.encode(), data.encode(), hashlib.sha256).hexdigest()
-
-def set_session(response: Response, user_id: str, username: str, avatar_url: str, access_token: str = ""):
-    import base64
-    payload_dict = {
-        "u": str(user_id),
-        "t": access_token,
-        "n": username,
-        "a": avatar_url,
-        "exp": int(time.time()) + COOKIE_MAX_AGE,
-    }
-    data    = json.dumps(payload_dict, separators=(",", ":"))
-    payload = base64.urlsafe_b64encode(data.encode()).decode()
-    sig         = _sign(payload)
-    cookie_val  = f"{payload}.{sig}"
-    is_https    = os.environ.get("IS_HTTPS", "true").lower() != "false"
-    response.set_cookie(
-        key=COOKIE_NAME, value=cookie_val,
-        httponly=True, secure=is_https, samesite="lax",
-        max_age=COOKIE_MAX_AGE, path="/",
+    _log(
+        "message",
+        guild_id=str(message.guild.id) if message.guild else None,
+        channel_id=str(message.channel.id),
+        user_id=str(message.author.id),
+        preview=message.content[:80],
     )
 
-def get_session(request: Request) -> Optional[dict]:
-    import base64
-    cookie = request.cookies.get(COOKIE_NAME, "")
-    if not cookie or "." not in cookie:
-        return None
-    payload, sig = cookie.rsplit(".", 1)
-    if not hmac.compare_digest(_sign(payload), sig):
-        return None
-    try:
-        data = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
-        if int(time.time()) > data.get("exp", 0):
-            return None
-        return {
-            "user_id":      str(data["u"]),
-            "access_token": data["t"],
-            "username":     data["n"],
-            "avatar":       data["a"],
-            "is_owner":     str(data["u"]) == BOT_OWNER_ID,
-        }
-    except Exception:
-        return None
 
-def _clear_session(response: Response):
-    response.delete_cookie(key=COOKIE_NAME, path="/")
+# ---------------------------------------------------------------------------
+# Background task — collect latency metrics every 60 s
+# ---------------------------------------------------------------------------
 
-def require_auth(request: Request) -> dict:
-    session = get_session(request)
-    if not session:
-        raise HTTPException(status_code=401, detail="Chưa đăng nhập")
-    return session
-
-def require_owner(request: Request) -> dict:
-    session = require_auth(request)
-    if not session["is_owner"]:
-        raise HTTPException(status_code=403, detail="Chỉ dành cho chủ bot")
-    return session
-
-def _has_manage_guild(permissions: int) -> bool:
-    return bool(permissions & 0x20) or bool(permissions & 0x8)
-
-def _assert_guild_access(session: dict, guild_id: str, guilds_list: list = None):
-    if session["is_owner"]:
-        return True
-    if guilds_list:
-        for g in guilds_list:
-            if str(g["id"]) == str(guild_id):
-                return _has_manage_guild(int(g.get("permissions", 0)))
-    raise HTTPException(status_code=403, detail="Không có quyền truy cập server này")
-
-# ══════════════════════════════════════════════════════════════
-# APP
-# ══════════════════════════════════════════════════════════════
-app = FastAPI(title="Anomalies Dashboard v3.1")
-
-RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "")
-origins = ["http://localhost:8000", "http://127.0.0.1:8000"]
-if RENDER_URL:
-    origins.append(RENDER_URL)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.on_event("startup")
-async def _startup():
-    _tidb_ensure_tables()
-
-# ══════════════════════════════════════════════════════════════
-# AUTH
-# ══════════════════════════════════════════════════════════════
-@app.get("/auth/login")
-async def login():
-    state = secrets.token_hex(16)
-    url = (
-        f"https://discord.com/oauth2/authorize"
-        f"?client_id={DISCORD_CLIENT_ID}"
-        f"&redirect_uri={DISCORD_REDIRECT_URI}"
-        f"&response_type=code"
-        f"&scope={OAUTH_SCOPES.replace(' ', '%20')}"
-        f"&state={state}"
-    )
-    return RedirectResponse(url)
-
-@app.get("/auth/discord/callback")
-async def callback(code: str = None, error: str = None, error_description: str = None):
-    if error:
-        return RedirectResponse(url=f"/?auth_error={error}", status_code=303)
-    if not code:
-        raise HTTPException(400, "Thiếu code từ Discord")
-    try:
-        async with httpx.AsyncClient() as http:
-            token_resp = await http.post(
-                "https://discord.com/api/oauth2/token",
-                data={
-                    "client_id":     DISCORD_CLIENT_ID,
-                    "client_secret": DISCORD_CLIENT_SECRET,
-                    "grant_type":    "authorization_code",
-                    "code":          code,
-                    "redirect_uri":  DISCORD_REDIRECT_URI,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-            if token_resp.status_code != 200:
-                raise HTTPException(400, f"Discord từ chối code: {token_resp.status_code}")
-            token_data = token_resp.json()
-            if "access_token" not in token_data:
-                err  = token_data.get("error", "unknown")
-                desc = token_data.get("error_description", "")
-                raise HTTPException(400, f"Discord OAuth lỗi: {err} — {desc}")
-            access_token = token_data["access_token"]
-            user_resp = await http.get(
-                f"{DISCORD_API}/users/@me",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            if user_resp.status_code != 200:
-                raise HTTPException(400, "Không lấy được thông tin user")
-            user = user_resp.json()
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(500, f"Lỗi xác thực OAuth: {exc}")
-
-    user_id  = str(user["id"])
-    username = user.get("global_name") or user.get("username", "Unknown")
-    avatar   = user.get("avatar") or ""
-    if avatar:
-        avatar_url = f"https://cdn.discordapp.com/avatars/{user_id}/{avatar}.webp?size=128"
-    else:
-        default_index = int(user_id) % 6
-        avatar_url = f"https://cdn.discordapp.com/embed/avatars/{default_index}.png"
-
-    redirect = RedirectResponse(url="/", status_code=303)
-    set_session(redirect, user_id=user_id, username=username, avatar_url=avatar_url, access_token=access_token)
-    return redirect
-
-@app.get("/auth/logout")
-async def logout():
-    redirect = RedirectResponse("/", status_code=303)
-    redirect.delete_cookie(key=COOKIE_NAME, path="/")
-    return redirect
-
-# ══════════════════════════════════════════════════════════════
-# API — PUBLIC
-# ══════════════════════════════════════════════════════════════
-@app.get("/api/me")
-@app.get("/api/dash/me")
-async def api_me(request: Request):
-    session = get_session(request)
-    if not session:
-        return JSONResponse({"logged_in": False})
-    return JSONResponse({
-        "logged_in": True,
-        "user_id":   session["user_id"],
-        "username":  session["username"],
-        "avatar":    session["avatar"],
-        "is_owner":  session["is_owner"],
-    })
-
-@app.get("/api/dash/roles")
-async def api_roles(request: Request):
-    return JSONResponse(_scan_roles_from_files())
-
-@app.get("/api/dash/guilds")
-async def api_guilds(request: Request):
-    """Danh sách server user đang ở + bot có config.
-    FIX #4: Query bổ sung vào lobby_states để lấy is_playing + player_count thực tế.
-    FIX #1: guild_id luôn str().
-    """
-    session = require_auth(request)
-    try:
-        async with httpx.AsyncClient(timeout=10) as http:
-            resp = await http.get(
-                f"{DISCORD_API}/users/@me/guilds",
-                headers={"Authorization": f"Bearer {session['access_token']}"},
-            )
-            if resp.status_code != 200:
-                return JSONResponse([])
-            guilds = resp.json()
-    except Exception as e:
-        print(f"[guilds] Discord API error: {e}")
-        return JSONResponse([])
-
-    db_configs = col("guild_configs")
-    db_lobbies = col("lobby_states")
-    result = []
-    if db_configs:
-        for g in guilds:
-            try:
-                gid = str(g["id"])
-                # FIX #1: filter chỉ dùng str()
-                cfg_doc = db_configs.find_one(
-                    _gf(gid),
-                    {"_id": 0, "status": 1, "max_players": 1}
-                )
-                if cfg_doc is None:
-                    continue
-
-                icon = g.get("icon")
-                icon_url = (
-                    f"https://cdn.discordapp.com/icons/{gid}/{icon}.png"
-                    if icon else None
-                )
-
-                # FIX #4: Lấy trạng thái phòng chơi thực tế từ lobby_states
-                is_playing   = False
-                player_count = 0
-                if db_lobbies:
-                    try:
-                        lobby_doc = db_lobbies.find_one(
-                            _gf(gid),
-                            {"_id": 0, "is_playing": 1, "player_count": 1, "player_ids": 1}
-                        )
-                        if lobby_doc:
-                            is_playing   = bool(lobby_doc.get("is_playing", False))
-                            # Hỗ trợ cả player_count (số) lẫn player_ids (list)
-                            player_count = (
-                                lobby_doc.get("player_count")
-                                or len(lobby_doc.get("player_ids", []))
-                                or 0
-                            )
-                    except PyMongoError:
-                        pass
-
-                result.append({
-                    "id":            gid,
-                    "name":          g.get("name", "Unknown"),
-                    "icon":          icon_url,
-                    "permissions":   str(g.get("permissions", 0)),
-                    "status":        cfg_doc.get("status"),
-                    "max_players":   cfg_doc.get("max_players", 65),
-                    "is_playing":    is_playing,
-                    "active_players": player_count,
-                })
-            except PyMongoError as e:
-                print(f"[guilds] MongoDB error cho guild {g.get('id')}: {e}")
-                continue
-            except Exception as e:
-                print(f"[guilds] Lỗi cho guild {g.get('id')}: {e}")
-                continue
-    return JSONResponse(result)
-
-@app.get("/api/dash/guild/{guild_id}/config")
-async def api_guild_config(guild_id: str, request: Request):
-    session = require_auth(request)
-    db_col = col("guild_configs")
-    if not db_col:
-        return JSONResponse({})
-    try:
-        # FIX #1: filter chỉ str()
-        doc = db_col.find_one(_gf(guild_id))
-    except PyMongoError as e:
-        print(f"[guild_config] MongoDB error: {e}")
-        return JSONResponse({})
-    if doc:
-        doc.pop("_id", None)
-    return JSONResponse(doc or {})
-
-@app.post("/api/dash/guild/{guild_id}/config")
-async def api_update_config(guild_id: str, request: Request):
-    session = require_auth(request)
-
-    guilds = []
-    if not session["is_owner"]:
-        try:
-            async with httpx.AsyncClient() as http:
-                resp = await http.get(
-                    f"{DISCORD_API}/users/@me/guilds",
-                    headers={"Authorization": f"Bearer {session['access_token']}"},
-                )
-                if resp.status_code == 200:
-                    guilds = resp.json()
-        except Exception as e:
-            print(f"[update_config] Lỗi lấy guild list: {e}")
-        _assert_guild_access(session, guild_id, guilds)
-
-    data = await request.json()
-    allowed = {
-        "max_players", "min_players", "countdown_time", "allow_chat",
-        "mute_dead", "no_remove_roles", "music", "skip_discussion",
-        "day_time", "vote_time", "skip_discussion_delay",
-    }
-    update = {k: v for k, v in data.items() if k in allowed}
-    # FIX #5: Cập nhật last_updated để Bot biết cần reload cache
-    update["last_updated"] = time.time()
-    db_col = col("guild_configs")
-    if db_col and update:
-        try:
-            # FIX #1: filter chỉ str()
-            db_col.update_one(_gf(guild_id), {"$set": update}, upsert=True)
-        except PyMongoError as e:
-            print(f"[update_config] MongoDB error: {e}")
-            raise HTTPException(500, "Lỗi lưu cấu hình")
-    return JSONResponse({"ok": True})
-
-@app.get("/api/dash/guild/{guild_id}/status")
-async def api_guild_status(guild_id: str, request: Request):
-    require_auth(request)
-    db_col = col("guild_configs")
-    db_lobbies = col("lobby_states")
-    if not db_col:
-        return JSONResponse({"status": None})
-    try:
-        cfg = db_col.find_one(_gf(guild_id), {"status": 1, "max_players": 1, "_id": 0})
-    except PyMongoError as e:
-        print(f"[guild_status] MongoDB error: {e}")
-        return JSONResponse({"status": None})
-
-    # FIX #4: Bổ sung query lobby_states để lấy player_count thực tế
-    is_playing   = False
-    player_count = 0
-    if db_lobbies:
-        try:
-            lobby = db_lobbies.find_one(
-                _gf(guild_id),
-                {"_id": 0, "is_playing": 1, "player_count": 1, "player_ids": 1}
-            )
-            if lobby:
-                is_playing   = bool(lobby.get("is_playing", False))
-                player_count = lobby.get("player_count") or len(lobby.get("player_ids", [])) or 0
-        except PyMongoError:
-            pass
-
-    return JSONResponse({
-        "status":         cfg.get("status") if cfg else None,
-        "max_players":    cfg.get("max_players", 65) if cfg else 65,
-        "is_playing":     is_playing,
-        "active_players": player_count,
-    })
-
-@app.get("/api/dash/changelog")
-async def api_changelog(request: Request):
-    """FIX #3: Đọc changelogs từ TiDB (INT AUTO_INCREMENT PK)."""
-    require_auth(request)
-    conn = _get_tidb_conn()
-    if not conn:
-        return JSONResponse([])
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, version, title, content, created_at FROM changelogs ORDER BY id DESC LIMIT 30")
-            rows = cur.fetchall()
-        return JSONResponse(list(rows))
-    except Exception as e:
-        print(f"[changelog] TiDB error: {e}")
-        return JSONResponse([])
-    finally:
-        conn.close()
-
-@app.post("/api/dash/feedback")
-async def api_feedback(request: Request):
-    """FIX #3: Lưu feedback vào TiDB với ID 10 ký tự ngẫu nhiên."""
-    session = require_auth(request)
-    try:
-        data = await request.json()
-    except Exception:
-        raise HTTPException(400, "Request body không hợp lệ")
-    content    = str(data.get("content", "")).strip()[:2000]
-    raw_images = data.get("images", [])
-    if not isinstance(raw_images, list):
-        raw_images = []
-    MAX_IMG_B64 = 1_400_000
-    images = [img for img in raw_images[:5] if isinstance(img, str) and len(img) <= MAX_IMG_B64]
-    if not content and not images:
-        raise HTTPException(400, "Nội dung trống")
-
-    conn = _get_tidb_conn()
-    if not conn:
-        raise HTTPException(503, "Cơ sở dữ liệu chưa sẵn sàng")
-    try:
-        fb_id = _rand_id(10)
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO feedbacks (id, user_id, username, avatar, content, images, reply, created_at)
-                   VALUES (%s, %s, %s, %s, %s, %s, NULL, %s)""",
-                (
-                    fb_id,
-                    str(session["user_id"]),     # FIX #1: luôn str()
-                    session["username"],
-                    session["avatar"],
-                    content,
-                    json.dumps(images, ensure_ascii=False),
-                    datetime.now(timezone.utc).isoformat(),
-                )
-            )
-        return JSONResponse({"ok": True, "id": fb_id})
-    except Exception as e:
-        print(f"[feedback] TiDB error: {e}")
-        raise HTTPException(500, "Lỗi lưu dữ liệu")
-    finally:
-        conn.close()
-
-# ══════════════════════════════════════════════════════════════
-# API — OWNER ONLY
-# ══════════════════════════════════════════════════════════════
-@app.get("/api/dash/admin/feedbacks")
-async def api_admin_feedbacks(request: Request):
-    """FIX #3: Đọc feedbacks từ TiDB."""
-    require_owner(request)
-    conn = _get_tidb_conn()
-    if not conn:
-        return JSONResponse([])
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, user_id, username, avatar, content, images, reply, created_at FROM feedbacks ORDER BY created_at DESC LIMIT 50")
-            rows = cur.fetchall()
-        # Parse images JSON string thành list
-        for row in rows:
-            if isinstance(row.get("images"), str):
+async def _metrics_collector() -> None:
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        latency_history.append(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "latency_ms": round(bot.latency * 1000, 2),
+                "guild_count": len(bot.guilds),
+                "shard_count": bot.shard_count or 1,
+            }
+        )
+        # Push live update to all connected WS clients
+        if _ws_clients:
+            snapshot = latency_history[0]
+            dead: set[WebSocket] = set()
+            for ws in _ws_clients:
                 try:
-                    row["images"] = json.loads(row["images"])
+                    await ws.send_json({"event": "metrics", "data": snapshot})
                 except Exception:
-                    row["images"] = []
-        return JSONResponse(list(rows))
-    except Exception as e:
-        print(f"[admin_feedbacks] TiDB error: {e}")
-        return JSONResponse([])
+                    dead.add(ws)
+            _ws_clients.difference_update(dead)
+        await asyncio.sleep(60)
+
+
+# ---------------------------------------------------------------------------
+# Lifespan — single event loop shared by bot + FastAPI
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    bot_task = asyncio.create_task(bot.start(TOKEN), name="discord-bot")
+    metrics_task = asyncio.create_task(_metrics_collector(), name="metrics-collector")
+
+    try:
+        yield
     finally:
-        conn.close()
-
-@app.post("/api/dash/admin/feedback/{fb_id}/reply_by_index")
-async def api_reply_feedback_by_index(fb_id: str, request: Request):
-    """FIX #3: Cập nhật reply trên TiDB — dùng id (PK) hoặc created_at fallback."""
-    require_owner(request)
-    data       = await request.json()
-    reply      = str(data.get("reply", "")).strip()[:1000]
-    created_at = data.get("created_at", "")
-    conn = _get_tidb_conn()
-    if not conn:
-        raise HTTPException(503, "Không kết nối được TiDB")
-    try:
-        with conn.cursor() as cur:
-            if fb_id and fb_id != "by_index":
-                cur.execute("UPDATE feedbacks SET reply=%s WHERE id=%s", (reply, fb_id))
-            elif created_at:
-                cur.execute("UPDATE feedbacks SET reply=%s WHERE created_at=%s", (reply, created_at))
-        return JSONResponse({"ok": True})
-    except Exception as e:
-        print(f"[reply_feedback] TiDB error: {e}")
-        raise HTTPException(500, "Lỗi lưu reply")
-    finally:
-        conn.close()
-
-@app.post("/api/dash/admin/changelog")
-async def api_post_changelog(request: Request):
-    """FIX #3: Lưu changelog vào TiDB với INT AUTO_INCREMENT PK."""
-    require_owner(request)
-    try:
-        data = await request.json()
-    except Exception:
-        raise HTTPException(400, "Request body không hợp lệ")
-    title   = str(data.get("title", "")).strip()[:200]
-    content = str(data.get("content", "")).strip()[:5000]
-    version = str(data.get("version", "")).strip()[:20]
-    if not title or not content:
-        raise HTTPException(400, "Thiếu tiêu đề hoặc nội dung")
-    conn = _get_tidb_conn()
-    if not conn:
-        raise HTTPException(503, "Cơ sở dữ liệu chưa sẵn sàng")
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO changelogs (version, title, content, created_at) VALUES (%s, %s, %s, %s)",
-                (version, title, content, datetime.now(timezone.utc).isoformat())
-            )
-        return JSONResponse({"ok": True})
-    except Exception as e:
-        print(f"[changelog] TiDB error: {e}")
-        raise HTTPException(500, "Lỗi lưu dữ liệu")
-    finally:
-        conn.close()
-
-@app.get("/api/dash/admin/bans")
-async def api_admin_bans(request: Request):
-    require_owner(request)
-    conn = _get_tidb_conn()
-    if not conn:
-        return JSONResponse([])
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT user_id, reason, mode, created_at FROM bans ORDER BY created_at DESC")
-            rows = cur.fetchall()
-        return JSONResponse(list(rows))
-    except Exception as e:
-        print(f"[tidb] Lỗi đọc bans: {e}")
-        return JSONResponse([])
-    finally:
-        conn.close()
-
-@app.post("/api/dash/admin/ban")
-async def api_ban_player(request: Request):
-    require_owner(request)
-    data    = await request.json()
-    user_id = str(data.get("user_id", "")).strip()   # FIX #1: str()
-    reason  = str(data.get("reason", "Không có lý do")).strip()[:500]
-    mode    = data.get("mode", "ban")
-    if not user_id:
-        raise HTTPException(400, "Thiếu user_id")
-    conn = _get_tidb_conn()
-    if not conn:
-        raise HTTPException(503, "Không kết nối được TiDB")
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO bans (user_id, reason, mode, created_at)
-                   VALUES (%s, %s, %s, %s)
-                   ON DUPLICATE KEY UPDATE reason=%s, mode=%s, created_at=%s""",
-                (user_id, reason, mode, datetime.now(timezone.utc).isoformat(),
-                 reason, mode, datetime.now(timezone.utc).isoformat())
-            )
-        conn.commit()
-    except Exception as e:
-        print(f"[tidb] Lỗi ban: {e}")
-        raise HTTPException(500, "Lỗi TiDB")
-    finally:
-        conn.close()
-    return JSONResponse({"ok": True})
-
-@app.delete("/api/dash/admin/ban/{user_id}")
-async def api_unban_player(user_id: str, request: Request):
-    require_owner(request)
-    conn = _get_tidb_conn()
-    if not conn:
-        raise HTTPException(503, "Không kết nối được TiDB")
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM bans WHERE user_id = %s", (str(user_id),))  # FIX #1: str()
-        conn.commit()
-    except Exception as e:
-        print(f"[tidb] Lỗi unban: {e}")
-        raise HTTPException(500, "Lỗi TiDB")
-    finally:
-        conn.close()
-    return JSONResponse({"ok": True})
-
-@app.get("/api/dash/player/lookup")
-async def api_player_lookup(user_id: str, request: Request):
-    require_auth(request)
-    conn = _get_tidb_conn()
-    ban_info = None
-    if conn:
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT * FROM bans WHERE user_id = %s", (str(user_id),))  # FIX #1: str()
-                ban_info = cur.fetchone()
-        except Exception as e:
-            print(f"[player_lookup] Lỗi TiDB: {e}")
-        finally:
-            conn.close()
-    return JSONResponse({
-        "user_id": str(user_id),
-        "is_banned": ban_info is not None,
-        "ban": ban_info,
-    })
-
-@app.get("/api/dash/stats")
-async def api_stats(request: Request):
-    require_auth(request)
-    db = get_db()
-    stats = {"total_guilds": 0, "active_games": 0, "total_bans": 0,
-             "total_feedbacks": 0, "total_changelogs": 0, "db_ok": False}
-    if db:
-        stats["db_ok"] = True
-        try:
-            stats["total_guilds"] = db["guild_configs"].count_documents({})
-        except Exception as e:
-            print(f"[stats] Lỗi đếm total_guilds: {e}")
-        try:
-            stats["active_games"] = db["lobby_states"].count_documents({"is_playing": True})
-        except Exception as e:
-            print(f"[stats] Lỗi đếm active_games: {e}")
-    # FIX #3: Đếm từ TiDB
-    conn = _get_tidb_conn()
-    if conn:
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) as cnt FROM bans")
-                row = cur.fetchone()
-                stats["total_bans"] = row["cnt"] if row else 0
-                cur.execute("SELECT COUNT(*) as cnt FROM feedbacks")
-                row = cur.fetchone()
-                stats["total_feedbacks"] = row["cnt"] if row else 0
-                cur.execute("SELECT COUNT(*) as cnt FROM changelogs")
-                row = cur.fetchone()
-                stats["total_changelogs"] = row["cnt"] if row else 0
-        except Exception as e:
-            print(f"[stats] Lỗi TiDB: {e}")
-        finally:
-            conn.close()
-    return JSONResponse(stats)
-
-@app.get("/api/dash/admin/rooms")
-async def api_admin_rooms(request: Request):
-    """FIX #4: Bổ sung lookup lobby_states để lấy is_playing + player_count thực tế."""
-    require_owner(request)
-    db_col = col("guild_configs")
-    db_lobbies = col("lobby_states")
-    if not db_col:
-        return JSONResponse([])
-    try:
-        docs = list(db_col.find({}, {
-            "_id": 0, "guild_id": 1, "guild_name": 1,
-            "status": 1, "max_players": 1, "min_players": 1,
-        }))
-    except PyMongoError as e:
-        print(f"[admin_rooms] MongoDB error: {e}")
-        return JSONResponse([])
-
-    # FIX #4: Gắn thêm thông tin phòng từ lobby_states
-    if db_lobbies:
-        for doc in docs:
-            gid = str(doc.get("guild_id", ""))
-            doc["guild_id"] = gid
+        for task in (metrics_task, bot_task):
+            task.cancel()
             try:
-                lobby = db_lobbies.find_one(
-                    _gf(gid),
-                    {"_id": 0, "is_playing": 1, "player_count": 1, "player_ids": 1}
-                )
-                if lobby:
-                    doc["is_playing"]    = bool(lobby.get("is_playing", False))
-                    doc["active_players"] = (
-                        lobby.get("player_count")
-                        or len(lobby.get("player_ids", []))
-                        or 0
-                    )
-                else:
-                    doc["is_playing"]    = False
-                    doc["active_players"] = 0
-            except PyMongoError:
-                doc["is_playing"]    = False
-                doc["active_players"] = 0
-    return JSONResponse(docs)
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        if not bot.is_closed():
+            await bot.close()
 
-@app.get("/api/dash/admin/guild/{guild_id}/config")
-async def api_admin_guild_config(guild_id: str, request: Request):
-    require_owner(request)
-    db_col = col("guild_configs")
-    if not db_col:
-        return JSONResponse({})
-    try:
-        doc = db_col.find_one(_gf(guild_id))  # FIX #1: str()
-    except PyMongoError as e:
-        print(f"[admin_guild_config] MongoDB error: {e}")
-        return JSONResponse({})
-    if doc:
-        doc.pop("_id", None)
-    return JSONResponse(doc or {})
 
-@app.post("/api/dash/admin/guild/{guild_id}/config")
-async def api_admin_update_config(guild_id: str, request: Request):
-    require_owner(request)
-    data = await request.json()
-    allowed = {
-        "max_players", "min_players", "countdown_time", "allow_chat",
-        "mute_dead", "no_remove_roles", "music", "skip_discussion",
-        "day_time", "vote_time", "skip_discussion_delay",
-        "text_channel_id", "voice_channel_id", "dead_role_id", "alive_role_id",
-    }
-    update = {k: v for k, v in data.items() if k in allowed}
-    # FIX #5: Đặt last_updated để Bot reload cache
-    update["last_updated"] = time.time()
-    db_col = col("guild_configs")
-    if db_col and update:
-        try:
-            db_col.update_one(_gf(guild_id), {"$set": update}, upsert=True)  # FIX #1: str()
-        except PyMongoError as e:
-            print(f"[admin_update_config] MongoDB error: {e}")
-            raise HTTPException(500, "Lỗi lưu cấu hình")
-    return JSONResponse({"ok": True})
+# ---------------------------------------------------------------------------
+# FastAPI application
+# ---------------------------------------------------------------------------
 
-# ══════════════════════════════════════════════════════════════
-# SPA
-# ══════════════════════════════════════════════════════════════
-@app.get("/{full_path:path}", response_class=HTMLResponse)
-async def serve_spa(full_path: str):
-    html_path = os.path.join(os.path.dirname(__file__), "index.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    return HTMLResponse("<h1>Anomalies Dashboard đang khởi động...</h1>", status_code=503)
+app = FastAPI(title="Anomalies Dashboard", version="2.0.0", lifespan=lifespan)
 
-# ══════════════════════════════════════════════════════════════
-# DEFAULT ROLES CATALOG
-# ══════════════════════════════════════════════════════════════
-def _default_roles() -> list:
-    return [
-        # Survivors
-        {"name":"Thường Dân",         "faction":"Survivors","team":"Survivors","description":"Không có kỹ năng đặc biệt. Tồn tại đến cuối game là chiến thắng.","color":"#4ade80"},
-        {"name":"Thám Trưởng",        "faction":"Survivors","team":"Survivors","description":"Điều tra một người mỗi đêm để biết phe của họ.","color":"#60a5fa"},
-        {"name":"Cai Ngục",           "faction":"Survivors","team":"Survivors","description":"Giam cầm một người mỗi đêm. Có thể thẩm vấn và xử tử tù nhân.","color":"#f59e0b"},
-        {"name":"Thị Trưởng",         "faction":"Survivors","team":"Survivors","description":"Có thể lộ diện để nhận 3 phiếu bầu. Rất mạnh nhưng nguy hiểm.","color":"#a78bfa"},
-        {"name":"Trợ Lý Thị Trưởng", "faction":"Survivors","team":"Survivors","description":"Hỗ trợ Thị Trưởng và nhận quyền bầu cử đặc biệt.","color":"#c4b5fd"},
-        {"name":"Thám Tử",            "faction":"Survivors","team":"Survivors","description":"Điều tra sâu hơn, nhận thêm thông tin về vai trò.","color":"#38bdf8"},
-        {"name":"Pháp Quan",          "faction":"Survivors","team":"Survivors","description":"Giao tiếp với người đã chết để lấy thông tin.","color":"#94a3b8"},
-        {"name":"Điệp Viên",          "faction":"Survivors","team":"Survivors","description":"Theo dõi ai đó và biết họ đã làm gì đêm qua.","color":"#34d399"},
-        {"name":"Cảnh Sát",           "faction":"Survivors","team":"Survivors","description":"Bắn chết một người vào ban ngày. Chỉ 1 lần.","color":"#fb923c"},
-        {"name":"Bẫy Thủ",           "faction":"Survivors","team":"Survivors","description":"Đặt bẫy để phát hiện và bắt Dị Thể.","color":"#84cc16"},
-        {"name":"Kiến Trúc Sư",       "faction":"Survivors","team":"Survivors","description":"Xây dựng công trình phòng thủ cho người chơi khác.","color":"#06b6d4"},
-        {"name":"Nhà Lưu Trữ",        "faction":"Survivors","team":"Survivors","description":"Bảo quản thông tin và bằng chứng qua các đêm.","color":"#8b5cf6"},
-        {"name":"Phục Sinh Sư",       "faction":"Survivors","team":"Survivors","description":"Hồi sinh một người đã chết. Cực kỳ hiếm và mạnh.","color":"#ec4899"},
-        {"name":"Giám Hộ Viên",       "faction":"Survivors","team":"Survivors","description":"Canh gác mục tiêu — kẻ tấn công sẽ bị tiêu diệt.","color":"#f97316"},
-        {"name":"Tâm Lý Gia",         "faction":"Survivors","team":"Survivors","description":"Đọc tâm trí và phát hiện vai trò qua hành vi.","color":"#6366f1"},
-        {"name":"Người Ngủ",          "faction":"Survivors","team":"Survivors","description":"Ngủ rất ngon. Nhưng có điều gì đó kỳ lạ xảy ra khi ngủ.","color":"#64748b"},
-        {"name":"Dược Sĩ Điên",       "faction":"Survivors","team":"Survivors","description":"Tạo ra các loại thuốc ngẫu nhiên — có thể cứu người hoặc giết người.","color":"#ef4444"},
-        {"name":"Người Báo Thù",      "faction":"Survivors","team":"Survivors","description":"Sau khi chết, có thể tiêu diệt kẻ đã giết mình.","color":"#dc2626"},
-        # Anomalies
-        {"name":"Dị Thể",               "faction":"Anomalies","team":"Anomalies","description":"Dị Thể cơ bản. Giết một người mỗi đêm để loại bỏ Survivors.","color":"#f87171"},
-        {"name":"Người Hành Quyết",     "faction":"Anomalies","team":"Anomalies","description":"Dị Thể mạnh mẽ với khả năng xử tử đặc biệt.","color":"#ef4444"},
-        {"name":"Lãnh Chúa",            "faction":"Anomalies","team":"Anomalies","description":"Chỉ huy các Dị Thể. Biết danh sách đồng đội.","color":"#dc2626"},
-        {"name":"Nhà Vệ Sinh",          "faction":"Anomalies","team":"Anomalies","description":"Xóa di chúc và bằng chứng của nạn nhân.","color":"#b91c1c"},
-        {"name":"Phát Tín Hiệu Giả",   "faction":"Anomalies","team":"Anomalies","description":"Gửi thông tin sai lệch cho Thám Tử và Thám Trưởng.","color":"#991b1b"},
-        {"name":"Kẻ Hút Não",           "faction":"Anomalies","team":"Anomalies","description":"Điều khiển hành động của người chơi khác.","color":"#7f1d1d"},
-        {"name":"Bóng Tối Kiến Trúc Sư","faction":"Anomalies","team":"Anomalies","description":"Dị Thể xây dựng bẫy để chống lại Survivors.","color":"#450a0a"},
-        {"name":"Ký Sinh Thần Kinh",    "faction":"Anomalies","team":"Anomalies","description":"Ký sinh vào não nạn nhân và điều khiển từ xa.","color":"#fca5a5"},
-        {"name":"Kẻ Rình Rập Lỗi",      "faction":"Anomalies","team":"Anomalies","description":"Theo dõi mục tiêu qua nhiều đêm rồi tấn công bất ngờ.","color":"#fecaca"},
-        {"name":"Tên Trộm Thì Thầm",    "faction":"Anomalies","team":"Anomalies","description":"Nghe lén thông tin riêng tư và sử dụng chống lại Survivors.","color":"#fee2e2"},
-        {"name":"Người Phát Sóng Tĩnh", "faction":"Anomalies","team":"Anomalies","description":"Gây nhiễu thông tin liên lạc trong team Survivors.","color":"#fef2f2"},
-        {"name":"Người Cắt Xé",         "faction":"Anomalies","team":"Anomalies","description":"Vô hiệu hóa khả năng đặc biệt của nạn nhân.","color":"#ef4444"},
-        {"name":"Kẻ Ăn Chân Lý",        "faction":"Anomalies","team":"Anomalies","description":"Tiên tri giả — cung cấp kết quả điều tra sai.","color":"#dc2626"},
-        # Unknown
-        {"name":"Sát Nhân Hàng Loạt","faction":"Unknown","team":"Unknown","description":"Chiến thắng một mình. Giết mọi người còn sống.","color":"#fbbf24"},
-        {"name":"Kẻ Tâm Thần",       "faction":"Unknown","team":"Unknown","description":"Mục tiêu ẩn. Hoàn thành mục tiêu để thắng một mình.","color":"#f59e0b"},
-        {"name":"AI Bị Hỏng",         "faction":"Unknown","team":"Unknown","description":"AI không còn tuân theo lập trình. Mục tiêu bí ẩn.","color":"#d97706"},
-        {"name":"Đồng Hồ Tận Thế",   "faction":"Unknown","team":"Unknown","description":"Đếm ngược. Khi hết giờ, mọi người đều thua.","color":"#b45309"},
-        {"name":"Người Dệt Giấc Mơ", "faction":"Unknown","team":"Unknown","description":"Điều khiển giấc mơ. Thắng khi gây đủ hỗn loạn.","color":"#92400e"},
-        {"name":"Con Tàu Ma",          "faction":"Unknown","team":"Unknown","description":"Linh hồn lang thang. Thắng bằng cách khiến hai phe nghi ngờ nhau.","color":"#78350f"},
-        {"name":"Con Sâu Lỗi",         "faction":"Unknown","team":"Unknown","description":"Ký sinh vào game. Thắng khi game bị hủy.","color":"#451a03"},
-        {"name":"Kẻ Dệt Thời Gian",   "faction":"Unknown","team":"Unknown","description":"Thao túng thứ tự hành động và timeline của game.","color":"#fde68a"},
-        # Event
-        {"name":"Người Mù",                       "faction":"Event","team":"Event","description":"Không thể thấy username người khác.","color":"#a855f7"},
-        {"name":"Người Giải Mật Mã",               "faction":"Event","team":"Event","description":"Giải mã các mật mã để nhận thông tin quan trọng.","color":"#9333ea"},
-        {"name":"Người Kiểm Tra Chuyên Nghiệp",   "faction":"Event","team":"Event","description":"Vai trò test cho các server đặc biệt.","color":"#7c3aed"},
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _require_bot_ready() -> None:
+    if bot.user is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Bot is still starting up — please retry in a moment.",
+        )
+
+
+def _get_guild(guild_id: int) -> disnake.Guild:
+    _require_bot_ready()
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        raise HTTPException(status_code=404, detail="Guild not found or bot is not a member.")
+    return guild
+
+
+# ---------------------------------------------------------------------------
+# Pydantic request bodies
+# ---------------------------------------------------------------------------
+
+class SendMessageBody(BaseModel):
+    guild_id: int
+    channel_id: int
+    content: str
+    tts: bool = False
+
+
+class UpdateStatusBody(BaseModel):
+    # "online" | "idle" | "dnd" | "invisible"
+    status: str = "online"
+    # "playing" | "listening" | "watching" | "streaming" | "competing"
+    activity_type: str = "playing"
+    activity_name: str = ""
+
+
+# ---------------------------------------------------------------------------
+# ① /api/dash/info — overview (original, preserved)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dash/info")
+async def dash_info() -> JSONResponse:
+    _require_bot_ready()
+    guilds = [
+        {
+            "id": str(g.id),
+            "name": g.name,
+            "member_count": g.member_count,
+            "icon": str(g.icon.url) if g.icon else None,
+        }
+        for g in bot.guilds
     ]
+    return JSONResponse(
+        {
+            "bot": {
+                "id": str(bot.user.id),
+                "name": bot.user.name,
+                "discriminator": bot.user.discriminator,
+                "avatar": str(bot.user.avatar.url) if bot.user.avatar else None,
+                "shard_count": bot.shard_count,
+            },
+            "stats": {
+                "guild_count": len(bot.guilds),
+                "user_count": sum(g.member_count or 0 for g in bot.guilds),
+                "latency_ms": round(bot.latency * 1000, 2),
+            },
+            "guilds": guilds,
+        }
+    )
 
-# ══════════════════════════════════════════════════════════════
-# ENTRYPOINT
-# ══════════════════════════════════════════════════════════════
-if __name__ == "__main__":
-    uvicorn.run(
-        "server:app",
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8000)),
-        reload=False,
+
+# ---------------------------------------------------------------------------
+# ② /api/dash/guild/{guild_id} — guild detail (original, preserved)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dash/guild/{guild_id}")
+async def guild_info(guild_id: int) -> JSONResponse:
+    guild = _get_guild(guild_id)
+    return JSONResponse(
+        {
+            "id": str(guild.id),
+            "name": guild.name,
+            "member_count": guild.member_count,
+            "icon": str(guild.icon.url) if guild.icon else None,
+            "owner_id": str(guild.owner_id),
+            "channels": [
+                {"id": str(c.id), "name": c.name, "type": str(c.type)}
+                for c in guild.channels
+            ],
+            "roles": [
+                {"id": str(r.id), "name": r.name, "color": str(r.color)}
+                for r in guild.roles
+            ],
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# ③ NEW — /api/dash/members/{guild_id}?q=name&limit=50
+#    Search / list members of a guild
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dash/members/{guild_id}")
+async def guild_members(
+    guild_id: int, q: str = "", limit: int = 50
+) -> JSONResponse:
+    guild = _get_guild(guild_id)
+    limit = min(max(1, limit), 500)
+
+    members = [
+        m for m in guild.members
+        if q.lower() in m.display_name.lower() or q.lower() in str(m).lower()
+    ][:limit]
+
+    return JSONResponse(
+        {
+            "guild_id": str(guild_id),
+            "total_matched": len(members),
+            "members": [
+                {
+                    "id": str(m.id),
+                    "username": str(m),
+                    "display_name": m.display_name,
+                    "bot": m.bot,
+                    "avatar": str(m.avatar.url) if m.avatar else None,
+                    "joined_at": m.joined_at.isoformat() if m.joined_at else None,
+                    "roles": [str(r.id) for r in m.roles if r.name != "@everyone"],
+                    "top_role": m.top_role.name,
+                }
+                for m in members
+            ],
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# ④ NEW — /api/dash/channels/{guild_id}
+#    Detailed channel list with topic, slowmode, NSFW, permissions
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dash/channels/{guild_id}")
+async def guild_channels(guild_id: int) -> JSONResponse:
+    guild = _get_guild(guild_id)
+
+    channels_out = []
+    for ch in sorted(guild.channels, key=lambda c: c.position):
+        entry: dict = {
+            "id": str(ch.id),
+            "name": ch.name,
+            "type": str(ch.type),
+            "position": ch.position,
+        }
+        if isinstance(ch, disnake.TextChannel):
+            entry.update(
+                {
+                    "topic": ch.topic,
+                    "slowmode_delay": ch.slowmode_delay,
+                    "nsfw": ch.nsfw,
+                    "last_message_id": str(ch.last_message_id) if ch.last_message_id else None,
+                }
+            )
+        elif isinstance(ch, disnake.VoiceChannel):
+            entry.update({"bitrate": ch.bitrate, "user_limit": ch.user_limit})
+        elif isinstance(ch, disnake.CategoryChannel):
+            entry["child_count"] = len(ch.channels)
+        channels_out.append(entry)
+
+    return JSONResponse({"guild_id": str(guild_id), "channels": channels_out})
+
+
+# ---------------------------------------------------------------------------
+# ⑤ NEW — /api/dash/roles/{guild_id}
+#    Full role list with permission value breakdown
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dash/roles/{guild_id}")
+async def guild_roles(guild_id: int) -> JSONResponse:
+    guild = _get_guild(guild_id)
+
+    roles_out = []
+    for role in sorted(guild.roles, key=lambda r: r.position, reverse=True):
+        perms = {p: v for p, v in role.permissions}
+        roles_out.append(
+            {
+                "id": str(role.id),
+                "name": role.name,
+                "color": str(role.color),
+                "hoist": role.hoist,
+                "mentionable": role.mentionable,
+                "position": role.position,
+                "managed": role.managed,
+                "member_count": sum(1 for m in guild.members if role in m.roles),
+                "permissions": perms,
+            }
+        )
+
+    return JSONResponse({"guild_id": str(guild_id), "roles": roles_out})
+
+
+# ---------------------------------------------------------------------------
+# ⑥ NEW — POST /api/dash/message
+#    Send a message to any channel the bot can see
+# ---------------------------------------------------------------------------
+
+@app.post("/api/dash/message")
+async def send_message(body: SendMessageBody) -> JSONResponse:
+    _require_bot_ready()
+
+    channel = bot.get_channel(body.channel_id)
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found.")
+    if not isinstance(channel, (disnake.TextChannel, disnake.Thread)):
+        raise HTTPException(status_code=400, detail="Target channel is not a text channel.")
+    if not channel.permissions_for(channel.guild.me).send_messages:
+        raise HTTPException(status_code=403, detail="Bot lacks Send Messages permission.")
+    if len(body.content) > 2000:
+        raise HTTPException(status_code=400, detail="Content exceeds 2000 characters.")
+
+    msg = await channel.send(body.content, tts=body.tts)
+    _log(
+        "api_message_sent",
+        channel_id=str(body.channel_id),
+        guild_id=str(body.guild_id),
+        message_id=str(msg.id),
+    )
+    return JSONResponse(
+        {"ok": True, "message_id": str(msg.id), "channel_id": str(body.channel_id)}
+    )
+
+
+# ---------------------------------------------------------------------------
+# ⑦ NEW — PUT /api/dash/status
+#    Change bot presence / activity at runtime without restarting
+# ---------------------------------------------------------------------------
+
+_ACTIVITY_MAP = {
+    "playing": disnake.ActivityType.playing,
+    "listening": disnake.ActivityType.listening,
+    "watching": disnake.ActivityType.watching,
+    "competing": disnake.ActivityType.competing,
+}
+
+_STATUS_MAP = {
+    "online": disnake.Status.online,
+    "idle": disnake.Status.idle,
+    "dnd": disnake.Status.dnd,
+    "invisible": disnake.Status.invisible,
+}
+
+
+@app.put("/api/dash/status")
+async def update_status(body: UpdateStatusBody) -> JSONResponse:
+    _require_bot_ready()
+
+    status = _STATUS_MAP.get(body.status)
+    if status is None:
+        raise HTTPException(status_code=400, detail=f"Invalid status '{body.status}'. Use: online, idle, dnd, invisible.")
+
+    activity_type = _ACTIVITY_MAP.get(body.activity_type)
+    if activity_type is None:
+        raise HTTPException(status_code=400, detail=f"Invalid activity_type '{body.activity_type}'.")
+
+    activity = disnake.Activity(type=activity_type, name=body.activity_name) if body.activity_name else None
+    await bot.change_presence(status=status, activity=activity)
+
+    _log("status_changed", status=body.status, activity_type=body.activity_type, activity_name=body.activity_name)
+    return JSONResponse({"ok": True, "status": body.status, "activity": body.activity_name})
+
+
+# ---------------------------------------------------------------------------
+# ⑧ NEW — GET /api/dash/logs?kind=&limit=50
+#    In-memory rolling event log (bot events + API actions)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dash/logs")
+async def get_logs(kind: str = "", limit: int = 50) -> JSONResponse:
+    limit = min(max(1, limit), MAX_LOG_ENTRIES)
+    entries = [e for e in event_log if not kind or e.get("kind") == kind][:limit]
+    return JSONResponse({"total": len(entries), "entries": entries})
+
+
+# ---------------------------------------------------------------------------
+# ⑨ NEW — GET /api/dash/metrics
+#    Historical latency + guild count snapshots (sampled every 60 s)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dash/metrics")
+async def get_metrics() -> JSONResponse:
+    _require_bot_ready()
+    return JSONResponse(
+        {
+            "current": {
+                "latency_ms": round(bot.latency * 1000, 2),
+                "guild_count": len(bot.guilds),
+                "uptime_since": event_log[-1]["ts"] if event_log else None,
+            },
+            "history": list(latency_history),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# ⑩ NEW — WebSocket /ws/stats
+#    Persistent connection receives a live metrics push every 60 s
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/stats")
+async def ws_stats(websocket: WebSocket) -> None:
+    await websocket.accept()
+    _ws_clients.add(websocket)
+
+    # Send current snapshot immediately on connect
+    if bot.user is not None:
+        await websocket.send_json(
+            {
+                "event": "connected",
+                "data": {
+                    "bot_name": str(bot.user),
+                    "latency_ms": round(bot.latency * 1000, 2),
+                    "guild_count": len(bot.guilds),
+                },
+            }
+        )
+
+    try:
+        while True:
+            # Keep connection alive; wait for client ping or disconnect
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _ws_clients.discard(websocket)
+
+
+# ---------------------------------------------------------------------------
+# ⑪ NEW — GET /api/dash/audit/{guild_id}
+#    Kéo audit log Discord: ai kick, đổi role, xóa tin nhắn...
+#    Params: limit (1-100), action (tên hành động, ví dụ "member_kick")
+# ---------------------------------------------------------------------------
+
+_AUDIT_ACTION_MAP: dict[str, disnake.AuditLogAction] = {
+    "guild_update":        disnake.AuditLogAction.guild_update,
+    "channel_create":      disnake.AuditLogAction.channel_create,
+    "channel_update":      disnake.AuditLogAction.channel_update,
+    "channel_delete":      disnake.AuditLogAction.channel_delete,
+    "kick":                disnake.AuditLogAction.kick,
+    "member_prune":        disnake.AuditLogAction.member_prune,
+    "ban":                 disnake.AuditLogAction.ban,
+    "unban":               disnake.AuditLogAction.unban,
+    "member_update":       disnake.AuditLogAction.member_update,
+    "member_role_update":  disnake.AuditLogAction.member_role_update,
+    "member_move":         disnake.AuditLogAction.member_move,
+    "member_disconnect":   disnake.AuditLogAction.member_disconnect,
+    "role_create":         disnake.AuditLogAction.role_create,
+    "role_update":         disnake.AuditLogAction.role_update,
+    "role_delete":         disnake.AuditLogAction.role_delete,
+    "invite_create":       disnake.AuditLogAction.invite_create,
+    "invite_delete":       disnake.AuditLogAction.invite_delete,
+    "message_delete":      disnake.AuditLogAction.message_delete,
+    "message_bulk_delete": disnake.AuditLogAction.message_bulk_delete,
+    "message_pin":         disnake.AuditLogAction.message_pin,
+    "message_unpin":       disnake.AuditLogAction.message_unpin,
+    "bot_add":             disnake.AuditLogAction.bot_add,
+    "thread_create":       disnake.AuditLogAction.thread_create,
+    "thread_update":       disnake.AuditLogAction.thread_update,
+    "thread_delete":       disnake.AuditLogAction.thread_delete,
+}
+
+
+@app.get("/api/dash/audit/{guild_id}")
+async def guild_audit(
+    guild_id: int,
+    limit: int = 50,
+    action: str = "",
+) -> JSONResponse:
+    guild = _get_guild(guild_id)
+
+    # Check bot has permission to view audit log
+    if not guild.me.guild_permissions.view_audit_log:
+        raise HTTPException(status_code=403, detail="Bot lacks View Audit Log permission.")
+
+    limit = min(max(1, limit), 100)
+    action_filter: disnake.AuditLogAction | None = None
+
+    if action:
+        action_filter = _AUDIT_ACTION_MAP.get(action)
+        if action_filter is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown action '{action}'. Valid values: {', '.join(_AUDIT_ACTION_MAP)}",
+            )
+
+    entries = []
+    async for entry in guild.audit_logs(limit=limit, action=action_filter):
+        target_info: dict | None = None
+        if isinstance(entry.target, disnake.Member):
+            target_info = {"type": "member", "id": str(entry.target.id), "name": str(entry.target)}
+        elif isinstance(entry.target, disnake.User):
+            target_info = {"type": "user", "id": str(entry.target.id), "name": str(entry.target)}
+        elif isinstance(entry.target, (disnake.TextChannel, disnake.VoiceChannel, disnake.CategoryChannel)):
+            target_info = {"type": "channel", "id": str(entry.target.id), "name": entry.target.name}
+        elif isinstance(entry.target, disnake.Role):
+            target_info = {"type": "role", "id": str(entry.target.id), "name": entry.target.name}
+        elif entry.target is not None:
+            target_info = {"type": "unknown", "id": str(getattr(entry.target, "id", "?"))}
+
+        changes: list[dict] = []
+        for change in entry.changes.before.__dict__:
+            before_val = getattr(entry.changes.before, change, None)
+            after_val = getattr(entry.changes.after, change, None)
+            changes.append({"field": change, "before": str(before_val), "after": str(after_val)})
+
+        entries.append(
+            {
+                "id": str(entry.id),
+                "action": str(entry.action).replace("AuditLogAction.", ""),
+                "user": {
+                    "id": str(entry.user.id) if entry.user else None,
+                    "name": str(entry.user) if entry.user else None,
+                },
+                "target": target_info,
+                "reason": entry.reason,
+                "created_at": entry.created_at.isoformat(),
+                "changes": changes,
+            }
+        )
+
+    return JSONResponse(
+        {
+            "guild_id": str(guild_id),
+            "action_filter": action or None,
+            "count": len(entries),
+            "entries": entries,
+            "valid_actions": list(_AUDIT_ACTION_MAP.keys()),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+@app.get("/health")
+async def health() -> JSONResponse:
+    return JSONResponse(
+        {
+            "status": "ok",
+            "bot_ready": bot.user is not None,
+            "latency_ms": round(bot.latency * 1000, 2) if bot.user else None,
+            "guild_count": len(bot.guilds) if bot.user else 0,
+            "ws_clients": len(_ws_clients),
+            "log_entries": len(event_log),
+        }
     )
