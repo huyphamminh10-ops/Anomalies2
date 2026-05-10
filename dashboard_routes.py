@@ -636,7 +636,7 @@ async def api_guilds(request: Request):
             continue
 
         has_config = False
-        if cfg_col:
+        if cfg_col is not None:
             has_config = cfg_col.count_documents({"guild_id": gid}, limit=1) > 0
 
         bot_in_guild = False
