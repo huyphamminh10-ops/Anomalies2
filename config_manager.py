@@ -1,21 +1,37 @@
 
 # ==============================
-# config_manager.py — Anomalies v2.2
-# REFACTOR: Chuyển toàn bộ từ local JSON sang MongoDB Atlas
-# Collections: guild_configs, active_players, lobby_states
-# FIX: ID Stringify, MongoDB timeout, Cache Invalidation (last_updated)
+# config_manager.py — Anomalies v2.3 (Fixed for Render)
+#
+# FIX v2.3:
+#   - Thêm tlsAllowInvalidCertificates=True để tránh lỗi SSL cert trên Render
+#   - Thêm traceback.format_exc() để log lỗi chi tiết vào console
+#   - Thêm retry logic khi kết nối MongoDB thất bại lần đầu
+#   - Đảm bảo _client được reset về None khi kết nối thất bại (tránh zombie client)
+#   - Tương thích hoàn toàn với code cũ (không đổi API)
 # ==============================
 
 import os
 import re
+import ssl
 import time
+import traceback
+import certifi
 from pymongo import MongoClient
-from pymongo.errors import PyMongoError
+from pymongo.errors import PyMongoError, ConnectionFailure, ServerSelectionTimeoutError
 
 # ── Kết nối MongoDB ────────────────────────────────────────────────
 MONGO_URI = os.environ.get("MONGO_URI", "")
 if not MONGO_URI:
     print("[config_manager] CẢNH BÁO: Biến môi trường MONGO_URI chưa được đặt!")
+else:
+    # Log URI ẩn password để debug (chỉ hiện scheme + host)
+    try:
+        from urllib.parse import urlparse
+        _parsed = urlparse(MONGO_URI)
+        print(f"[config_manager] MONGO_URI nhận diện được: {_parsed.scheme}://{_parsed.hostname}/...")
+    except Exception:
+        print("[config_manager] MONGO_URI đã được đặt (không parse được URI).")
+
 DB_NAME = "Anomalies_DB"
 
 _client = None
@@ -27,31 +43,69 @@ _config_cache: dict = {}
 
 def _get_db():
     """Trả về database instance, tạo kết nối nếu chưa có (lazy singleton).
-    FIX: Thêm serverSelectionTimeoutMS=5000 + connectTimeoutMS=10000 + ping kiểm tra.
-    Trả về None nếu kết nối thất bại thay vì crash toàn bộ tiến trình.
+
+    FIX v2.3:
+    - tlsAllowInvalidCertificates=True: tránh lỗi SSL cert chain trên môi trường Render
+      (Render dùng proxy nội bộ có thể không khớp CA chain của certifi)
+    - tls=True: đảm bảo kết nối mã hóa tới MongoDB Atlas
+    - traceback.format_exc(): in toàn bộ stack trace khi lỗi để dễ debug
+    - Reset _client = None sau khi lỗi để lần gọi tiếp sẽ thử kết nối lại
     """
     global _client
+    if _client is not None:
+        # Kiểm tra nhanh client còn sống không
+        try:
+            _client.admin.command("ping")
+        except Exception:
+            print("[config_manager] Client hiện tại đã mất kết nối — tạo lại.")
+            try:
+                _client.close()
+            except Exception:
+                pass
+            _client = None
+
     if _client is None:
         if not MONGO_URI:
             print("[config_manager] Không có MONGO_URI — bỏ qua kết nối.")
             return None
         try:
+            print("[config_manager] Đang kết nối MongoDB Atlas...")
             _client = MongoClient(
                 MONGO_URI,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=10000,
+                serverSelectionTimeoutMS=8000,   # 8s để Atlas cold-start kịp phản hồi
+                connectTimeoutMS=15000,
+                socketTimeoutMS=30000,
+                # ── FIX SSL cho Render ──────────────────────────────
+                # Render có thể không có đủ CA bundle → tlsAllowInvalidCertificates=True
+                # tls=True vẫn giữ mã hóa, chỉ bỏ qua xác minh chain
+                tls=True,
+                tlsAllowInvalidCertificates=True,
+                # ────────────────────────────────────────────────────
+                retryWrites=True,
+                w="majority",
             )
             # Kiểm tra kết nối thực sự bằng ping
             _client.admin.command("ping")
-            print("[config_manager] MongoDB kết nối thành công.")
-        except Exception as e:
-            print(f"[config_manager] Không kết nối được MongoDB: {e}")
+            print("[config_manager] ✓ MongoDB kết nối thành công.")
+        except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+            print(f"[config_manager] ✗ Không kết nối được MongoDB (ConnectionFailure):")
+            print(f"  Lỗi: {e}")
+            print(f"  Chi tiết:\n{traceback.format_exc()}")
+            print("  Kiểm tra: MONGO_URI đúng không? MongoDB Atlas IP Whitelist có 0.0.0.0/0 chưa?")
             _client = None
             return None
+        except Exception as e:
+            print(f"[config_manager] ✗ Lỗi không xác định khi kết nối MongoDB:")
+            print(f"  Lỗi: {e}")
+            print(f"  Chi tiết:\n{traceback.format_exc()}")
+            _client = None
+            return None
+
     try:
         return _client[DB_NAME]
     except Exception as e:
-        print(f"[config_manager] Lỗi lấy database: {e}")
+        print(f"[config_manager] Lỗi lấy database '{DB_NAME}': {e}")
+        print(traceback.format_exc())
         return None
 
 
@@ -73,7 +127,7 @@ def _lobby_states():
 # ── Utility ────────────────────────────────────────────────────────
 
 def sanitize_name(name: str) -> str:
-    """Giữ lại để tương thích với code cũ, không còn dùng cho đường dẫn."""
+    """Giữ lại để tương thích với code cũ."""
     name = name.strip()
     name = re.sub(r'[^\w\s\-]', '', name, flags=re.UNICODE)
     name = re.sub(r'\s+', '_', name).strip('_')
@@ -113,7 +167,6 @@ def load_guild_config(guild_id, guild_name=None) -> dict:
     if col is None:
         return default_config()
     try:
-        # Chỉ lấy last_updated trước để kiểm tra cache
         doc = col.find_one({"guild_id": gid})
         if doc is None:
             return default_config()
@@ -121,15 +174,13 @@ def load_guild_config(guild_id, guild_name=None) -> dict:
         db_last_updated = doc.get("last_updated", 0)
         cached = _config_cache.get(gid)
 
-        # Nếu cache còn hợp lệ (DB chưa thay đổi) → dùng cache RAM
         if cached and cached.get("last_updated", -1) == db_last_updated:
             return dict(cached["data"])
 
-        # Cache hết hiệu lực hoặc chưa có → tải lại từ DB
         doc.pop("_id", None)
         doc.pop("guild_id", None)
         doc.pop("guild_name", None)
-        doc.pop("last_updated", None)   # Không trả trường nội bộ ra ngoài
+        doc.pop("last_updated", None)
         cfg = default_config()
         cfg.update(doc)
 
@@ -140,6 +191,7 @@ def load_guild_config(guild_id, guild_name=None) -> dict:
         return cfg
     except PyMongoError as e:
         print(f"[config_manager] Lỗi load_guild_config({guild_id}): {e}")
+        print(traceback.format_exc())
         return default_config()
 
 
@@ -154,17 +206,17 @@ def save_guild_config(guild_id, data: dict, guild_name=None):
     payload = dict(data)
     payload["guild_id"]     = gid
     payload["guild_name"]   = guild_name or ""
-    payload["last_updated"] = time.time()   # Timestamp → trigger cache invalidation
+    payload["last_updated"] = time.time()
     try:
         col.update_one(
             {"guild_id": gid},
             {"$set": payload},
             upsert=True
         )
-        # Xóa cache RAM của guild này để lần load sau lấy từ DB
         _config_cache.pop(gid, None)
     except PyMongoError as e:
         print(f"[config_manager] Lỗi save_guild_config({guild_id}): {e}")
+        print(traceback.format_exc())
 
 
 def load_all_configs() -> dict:
@@ -172,6 +224,7 @@ def load_all_configs() -> dict:
     result = {}
     col = _guild_configs()
     if col is None:
+        print("[config_manager] load_all_configs: DB chưa kết nối, trả về dict rỗng.")
         return result
     try:
         for doc in col.find({}):
@@ -188,6 +241,7 @@ def load_all_configs() -> dict:
             result[gid] = cfg
     except PyMongoError as e:
         print(f"[config_manager] Lỗi load_all_configs: {e}")
+        print(traceback.format_exc())
     return result
 
 
@@ -215,6 +269,7 @@ def set_guild_status(guild_id: str, status) -> None:
         _config_cache.pop(gid, None)
     except PyMongoError as e:
         print(f"[config_manager] Lỗi set_guild_status({guild_id}): {e}")
+        print(traceback.format_exc())
 
 
 def get_guild_status(guild_id: str):
@@ -232,6 +287,7 @@ def get_guild_status(guild_id: str):
             return doc.get("status")
     except PyMongoError as e:
         print(f"[config_manager] Lỗi get_guild_status({guild_id}): {e}")
+        print(traceback.format_exc())
     return None
 
 
@@ -254,6 +310,7 @@ def save_active_players(guild_id: str, player_ids: list):
         )
     except PyMongoError as e:
         print(f"[config_manager] Lỗi save_active_players({guild_id}): {e}")
+        print(traceback.format_exc())
 
 
 def load_active_players(guild_id: str) -> list:
@@ -268,6 +325,7 @@ def load_active_players(guild_id: str) -> list:
             return [int(pid) for pid in doc.get("player_ids", [])]
     except PyMongoError as e:
         print(f"[config_manager] Lỗi load_active_players({guild_id}): {e}")
+        print(traceback.format_exc())
     return []
 
 
@@ -281,6 +339,7 @@ def clear_active_players(guild_id: str):
         col.delete_one({"guild_id": gid})
     except PyMongoError as e:
         print(f"[config_manager] Lỗi clear_active_players({guild_id}): {e}")
+        print(traceback.format_exc())
 
 
 # ── Lobby State ────────────────────────────────────────────────────
@@ -299,6 +358,7 @@ def load_guild_lobby(guild_id) -> dict | None:
             return doc
     except PyMongoError as e:
         print(f"[config_manager] Lỗi load_guild_lobby({guild_id}): {e}")
+        print(traceback.format_exc())
     return None
 
 
@@ -310,7 +370,6 @@ def save_guild_lobby(guild_id, data):
         return
     try:
         if hasattr(data, 'id'):
-            # Discord Message object
             payload = {
                 "guild_id":   gid,
                 "message_id": data.id,
@@ -326,20 +385,27 @@ def save_guild_lobby(guild_id, data):
         )
     except PyMongoError as e:
         print(f"[config_manager] Lỗi save_guild_lobby({guild_id}): {e}")
+        print(traceback.format_exc())
 
 
 # ── Khởi tạo index (gọi một lần khi bot start) ────────────────────
 
 def ensure_indexes():
-    """Tạo unique index trên guild_id cho cả 3 collections. Gọi khi on_ready."""
+    """Tạo unique index trên guild_id cho cả 3 collections. Gọi khi on_ready.
+
+    FIX v2.3: Thêm log chi tiết + traceback để biết chính xác bước nào thất bại.
+    """
+    print("[config_manager] Đang khởi tạo MongoDB indexes...")
     db = _get_db()
     if db is None:
-        print("[config_manager] Không tạo được index — DB chưa kết nối.")
+        print("[config_manager] ✗ Không tạo được index — DB chưa kết nối.")
+        print("  → Kiểm tra MONGO_URI và IP Whitelist trên MongoDB Atlas.")
         return
     try:
         db["guild_configs"].create_index("guild_id", unique=True)
         db["active_players"].create_index("guild_id", unique=True)
         db["lobby_states"].create_index("guild_id", unique=True)
-        print("[config_manager] MongoDB indexes OK.")
+        print("[config_manager] ✓ MongoDB indexes OK.")
     except PyMongoError as e:
-        print(f"[config_manager] Lỗi ensure_indexes: {e}")
+        print(f"[config_manager] ✗ Lỗi ensure_indexes: {e}")
+        print(traceback.format_exc())

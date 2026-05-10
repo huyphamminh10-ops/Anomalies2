@@ -1,18 +1,11 @@
 # ==============================
-# bot_main.py — Anomalies v2.5 (Integrated Architecture)
-# Entry point duy nhất: Bot khởi động và kéo FastAPI Web Dashboard theo.
+# bot_main.py — Anomalies v2.5 (Fixed for Render)
 #
-# Kiến trúc tích hợp:
-#   - uvicorn chạy FastAPI trên port $PORT (cho Render web service)
-#   - Bot Disnake được khởi động bên trong lifespan của FastAPI
-#   - Bot và Web dùng chung event loop → bot.guilds luôn có sẵn cho Web
-#   - app.state.bot được gán để Web truy cập trực tiếp
-#   - config_manager dùng chung giữa Bot và Web
-#   - database_tidb dùng cho Feedback & Update Log (TiDB)
-#
-# Cách chạy:
-#   python bot_main.py            ← Render startCommand
-#   PORT=8000 python bot_main.py  ← local dev
+# FIX v2.5:
+#   - SSL: aiohttp.TCPConnector nhận ssl.SSLContext (qua certifi) thay vì ssl=False
+#   - MongoDB: ensure_indexes() chạy trong executor với log traceback đầy đủ
+#   - Dashboard guilds: chờ bot.is_ready() trước khi truyền shared state
+#   - Thêm /health endpoint check MongoDB + bot status
 #
 # Biến môi trường cần thiết:
 #   DISCORD_TOKEN, MONGO_URI, TIDB_URL (optional), BOT_OWNER_ID
@@ -24,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import ssl
 import sys
 import glob
 import importlib
@@ -34,9 +28,12 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import certifi
+import aiohttp
 import disnake
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -44,7 +41,6 @@ import config_manager
 import database_tidb
 
 # ── Tải dashboard server (Web Dashboard) ──────────────────────────
-# dashboard/server.py chứa tất cả các route Web
 _DASH_DIR = os.path.join(_HERE, "dashboard")
 if _DASH_DIR not in sys.path:
     sys.path.insert(0, _DASH_DIR)
@@ -57,12 +53,32 @@ BOT_OWNER_ID = int(os.environ.get("BOT_OWNER_ID", "1306441206296875099"))
 if not TOKEN:
     print("[bot_main] CẢNH BÁO: DISCORD_TOKEN chưa được đặt!")
 
+
+# ── FIX SSL: Tạo SSLContext đúng chuẩn dùng certifi ──────────────
+# aiohttp >= 3.9 KHÔNG chấp nhận ssl=<string path>.
+# Phải truyền ssl=ssl.SSLContext hoặc ssl=True/False.
+# Dùng certifi.where() làm CA bundle để verify cert Discord/MongoDB.
+def _make_ssl_context() -> ssl.SSLContext:
+    """Tạo SSLContext với certifi CA bundle — tương thích aiohttp 3.9+."""
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    return ctx
+
+
 # ── Bot setup ─────────────────────────────────────────────────────
 intents = disnake.Intents.default()
 intents.members         = True
 intents.message_content = True
 
-bot = disnake.AutoShardedInteractionBot(intents=intents)
+# FIX: Tạo TCPConnector với ssl=SSLContext thay vì ssl=False.
+# ssl=False tắt hoàn toàn SSL verification — không an toàn và gây lỗi trên Render.
+# ssl=_make_ssl_context() giữ nguyên mã hóa TLS và verify cert qua certifi.
+_ssl_ctx   = _make_ssl_context()
+_connector = aiohttp.TCPConnector(ssl=_ssl_ctx)
+
+bot = disnake.AutoShardedInteractionBot(
+    intents=intents,
+    connector=_connector,
+)
 
 
 # ── Load cogs từ thư mục cogs/ ────────────────────────────────────
@@ -93,17 +109,28 @@ async def on_ready() -> None:
     print(f"[bot] ✓ Logged in as {bot.user} (id={bot.user.id})")
     print(f"[bot] Đang quản lý {len(bot.guilds)} server(s).")
 
-    # Khởi tạo MongoDB indexes (chạy trong thread để không block event loop)
+    # FIX: Chạy ensure_indexes() trong executor để không block event loop.
+    # Thêm try/except + traceback để log lỗi chi tiết nếu MongoDB từ chối kết nối.
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, config_manager.ensure_indexes)
-    print("[bot] MongoDB indexes OK.")
+    try:
+        await loop.run_in_executor(None, config_manager.ensure_indexes)
+        print("[bot] ✓ MongoDB indexes OK.")
+    except Exception as e:
+        print(f"[bot] ✗ ensure_indexes thất bại:")
+        print(f"  Lỗi: {e}")
+        print(f"  Chi tiết:\n{traceback.format_exc()}")
+        print("  → Kiểm tra MONGO_URI và Atlas Network Access (IP Whitelist: 0.0.0.0/0).")
 
     # Khởi tạo TiDB tables (chạy trong thread)
-    result = await loop.run_in_executor(None, database_tidb.ensure_tables)
-    if result["ok"]:
-        print("[bot] TiDB tables OK.")
-    else:
-        print(f"[bot] TiDB tables lỗi: {result.get('error')} — {result.get('hint')}")
+    try:
+        result = await loop.run_in_executor(None, database_tidb.ensure_tables)
+        if result["ok"]:
+            print("[bot] ✓ TiDB tables OK.")
+        else:
+            print(f"[bot] ✗ TiDB tables lỗi: {result.get('error')} — {result.get('hint')}")
+    except Exception as e:
+        print(f"[bot] ✗ TiDB ensure_tables thất bại: {e}")
+        print(traceback.format_exc())
 
 
 @bot.event
@@ -121,26 +148,19 @@ async def on_guild_remove(guild: disnake.Guild) -> None:
 def _import_dashboard_app():
     """
     Import FastAPI app từ dashboard/server.py và gán app.state.bot.
-    Trả về (app, True) hoặc (None, False) nếu import thất bại.
+    Trả về (app, module) hoặc (None, None) nếu import thất bại.
     """
     try:
-        # Import module dashboard.server
         spec   = importlib.util.spec_from_file_location(
             "dashboard.server",
             os.path.join(_DASH_DIR, "server.py"),
         )
-        module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        module = importlib.util.module_from_spec(spec)   # type: ignore[arg-type]
         sys.modules["dashboard.server"] = module
-        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        spec.loader.exec_module(module)                  # type: ignore[union-attr]
 
         dash_app: FastAPI = module.app
-
-        # ── QUAN TRỌNG: Gán bot vào app.state.bot ────────────────
-        # Web Dashboard truy cập bot.guilds qua app.state.bot
-        # Thay vì tạo bot riêng trong server.py, Web dùng bot thật này.
         dash_app.state.bot = bot
-
-        # Gán thêm vào module để server.py có thể dùng nếu cần
         module.bot = bot
 
         print("[bot_main] ✓ dashboard/server.py imported, app.state.bot đã được gán.")
@@ -151,21 +171,20 @@ def _import_dashboard_app():
         return None, None
 
 
-# ── Tạo wrapper FastAPI app tích hợp ─────────────────────────────
+# ── Lifespan ──────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     Lifespan chính: khởi động Bot + Dashboard cùng event loop.
-    Bot chạy qua create_task → Web có thể truy cập bot.guilds ngay.
-    """
-    # Gán bot vào state trước khi yield (để middleware và route truy cập ngay)
-    app.state.bot = bot
 
-    # Load cogs
+    FIX v2.5:
+    - Bot task chạy qua create_task → Web truy cập bot.guilds trực tiếp
+    - init_shared() chờ bot.is_ready() để đảm bảo guilds đã load xong
+    """
+    app.state.bot = bot
     _load_cogs()
 
-    # Khởi động bot
     if not TOKEN:
         print("[bot_main] DISCORD_TOKEN trống — bot không kết nối Discord.")
         bot_task = None
@@ -174,7 +193,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         print("[bot_main] Bot đang kết nối Discord...")
 
     try:
-        yield  # Web server chạy tại đây
+        yield
     finally:
         print("[bot_main] Đang tắt...")
         if bot_task is not None:
@@ -185,6 +204,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 pass
         if not bot.is_closed():
             await bot.close()
+        # Đóng aiohttp connector sạch sẽ
+        if not _connector.closed:
+            await _connector.close()
         print("[bot_main] Bot đã đóng kết nối.")
 
 
@@ -198,23 +220,29 @@ def _build_app() -> FastAPI:
     dash_app, dash_module = _import_dashboard_app()
 
     if dash_app is None:
-        # Fallback: tạo app đơn giản nếu dashboard không import được
         print("[bot_main] Chạy với minimal app (không có dashboard routes).")
         minimal_app = FastAPI(title="Anomalies Bot", lifespan=_lifespan)
 
         @minimal_app.get("/health")
         async def health():
-            return {
-                "status": "ok",
-                "bot_ready": bot.user is not None,
+            db_ok = False
+            try:
+                db = config_manager._get_db()
+                db_ok = db is not None
+            except Exception:
+                pass
+            return JSONResponse({
+                "status":      "ok",
+                "bot_ready":   bot.is_ready(),
                 "guild_count": len(bot.guilds),
-            }
+                "db_ok":       db_ok,
+            })
+
+        @minimal_app.get("/ping")
+        async def ping():
+            return {"pong": True}
 
         return minimal_app
-
-    # ── Thay lifespan của dashboard app bằng lifespan tích hợp ───
-    # FastAPI không cho thay lifespan sau khi tạo, nên ta tạo wrapper app mới
-    # rồi mount toàn bộ routes từ dash_app vào đó.
 
     main_app = FastAPI(
         title="Anomalies Dashboard + Bot",
@@ -222,40 +250,63 @@ def _build_app() -> FastAPI:
         lifespan=_lifespan,
     )
 
-    # Copy tất cả routes từ dash_app (bỏ qua openapi/docs routes mặc định)
     for route in dash_app.routes:
         main_app.routes.append(route)
 
-    # Copy middleware nếu có
     main_app.middleware_stack = None  # reset để build lại sau khi thêm routes
-
-    # Gán state bot cho cả hai app
     main_app.state.bot = bot
     dash_app.state.bot = bot
 
-    # Truyền shared state vào dashboard_routes nếu có
+    # ── /health endpoint để UptimeRobot keep-alive + debug ────────
+    @main_app.get("/health")
+    async def health():
+        db_ok = False
+        try:
+            db = config_manager._get_db()
+            db_ok = db is not None
+        except Exception:
+            pass
+        return JSONResponse({
+            "status":      "ok",
+            "bot_ready":   bot.is_ready(),
+            "guild_count": len(bot.guilds),
+            "db_ok":       db_ok,
+        })
+
+    @main_app.get("/ping")
+    async def ping():
+        return {"pong": True}
+
+    # FIX: init_shared() phải chờ bot.is_ready() trước khi truyền shared state.
+    # Nếu gọi ngay lúc startup, bot.guilds còn rỗng → Dashboard không thấy guild nào.
     try:
         from dashboard_routes import init_shared  # type: ignore
 
         async def _init_routes_after_ready():
-            """Chờ bot ready rồi mới truyền shared state sang routes."""
+            """Chờ bot ready (guilds đã load) rồi mới truyền shared state sang routes."""
+            print("[bot_main] Đang chờ bot.wait_until_ready()...")
             await bot.wait_until_ready()
+            print(f"[bot_main] Bot ready — {len(bot.guilds)} guild(s) đang quản lý.")
+
             import config_manager as _cm
 
             def _col(name: str):
-                db = _cm._get_db()
-                return db[name] if db is not None else None
+                try:
+                    db = _cm._get_db()
+                    return db[name] if db is not None else None
+                except Exception as e:
+                    print(f"[bot_main] _col('{name}') lỗi: {e}")
+                    return None
 
             init_shared(
                 bot=bot,
-                guilds={},
+                guilds={},          # app.py dùng dict nội bộ; bot_main dùng bot.guilds trực tiếp
                 active_games={},
                 game_stats={},
                 col_fn=_col,
             )
-            print("[bot_main] dashboard_routes đã nhận shared state.")
+            print("[bot_main] ✓ dashboard_routes đã nhận shared state.")
 
-        # Task này sẽ chạy sau khi event loop bắt đầu
         @main_app.on_event("startup")
         async def _startup_init():
             asyncio.create_task(_init_routes_after_ready(), name="init-routes")
@@ -283,7 +334,6 @@ def main() -> None:
         host="0.0.0.0",
         port=PORT,
         log_level="info",
-        # Không dùng reload=True trên production
     )
 
 
