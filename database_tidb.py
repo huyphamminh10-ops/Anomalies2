@@ -317,6 +317,9 @@ def ensure_tables() -> dict:
     try:
         conn = _get_connection()
         cur  = conn.cursor()
+        _db_name = _TIDB_PARAMS.get("database", "")
+        if _db_name:
+            cur.execute(f"USE `{_db_name}`")
         cur.execute(ddl_feedbacks)
         cur.execute(ddl_update_logs)
         cur.close()
@@ -371,6 +374,9 @@ def insert_feedback(
     try:
         conn = _get_connection()
         cur  = conn.cursor()
+        _db_name = _TIDB_PARAMS.get("database", "")
+        if _db_name:
+            cur.execute(f"USE `{_db_name}`")
         cur.execute(sql, (fb_id, str(user_id), username, avatar, content, images_str, now))
         cur.close()
         conn.close()
@@ -418,6 +424,9 @@ def insert_update_log(
     try:
         conn = _get_connection()
         cur  = conn.cursor()
+        _db_name = _TIDB_PARAMS.get("database", "")
+        if _db_name:
+            cur.execute(f"USE `{_db_name}`")
         cur.execute(sql, (log_id, title, content, version, str(user_id), now))
         cur.close()
         conn.close()
@@ -680,6 +689,9 @@ def count_feedbacks() -> int:
     try:
         conn = _get_connection()
         cur  = conn.cursor()
+        _db_name = _TIDB_PARAMS.get("database", "")
+        if _db_name:
+            cur.execute(f"USE `{_db_name}`")
         cur.execute("SELECT COUNT(*) FROM feedbacks")
         (n,) = cur.fetchone()
         cur.close()
@@ -707,6 +719,9 @@ def count_update_logs() -> int:
     try:
         conn = _get_connection()
         cur  = conn.cursor()
+        _db_name = _TIDB_PARAMS.get("database", "")
+        if _db_name:
+            cur.execute(f"USE `{_db_name}`")
         cur.execute("SELECT COUNT(*) FROM update_logs")
         (n,) = cur.fetchone()
         cur.close()

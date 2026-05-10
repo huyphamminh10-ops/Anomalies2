@@ -1090,140 +1090,44 @@ select.form-input { appearance: none; cursor: pointer; }
       <!-- PAGE: GUIDE -->
       <div class="page" id="page-guide">
         <div class="section-title">Hướng Dẫn Chơi</div>
-        <div class="section-sub">Luật chơi, cơ chế và danh sách 43 vai trò trong Anomalies.</div>
+        <div class="section-sub">Tổng hợp luật chơi và cách thức hoạt động trong Anomalies.</div>
 
-        <!-- Tab selector -->
-        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-          <button class="btn btn-primary" id="guideTabBtn0" onclick="switchGuideTab(0)">📖 Cơ bản</button>
-          <button class="btn btn-ghost" id="guideTabBtn1" onclick="switchGuideTab(1)">🌙 Chu kỳ game</button>
-          <button class="btn btn-ghost" id="guideTabBtn2" onclick="switchGuideTab(2)">💬 Kênh chat</button>
-          <button class="btn btn-ghost" id="guideTabBtn3" onclick="switchGuideTab(3)">🃏 43 Vai Trò</button>
-        </div>
+        <div class="card" style="max-width:720px">
+          <div class="guide-section">
+            <h3>🎮 Cách bắt đầu</h3>
+            <p>Bot Anomalies là game nhập vai nhiều người chơi trên Discord. Người chơi sẽ được phân vai ngẫu nhiên và phải hoàn thành mục tiêu theo phe của mình.</p>
+            <div class="guide-tip">Dùng lệnh <code style="font-family:monospace;background:var(--bg3);padding:1px 6px;border-radius:4px">/join</code> trong kênh text để tham gia phòng chờ.</div>
+          </div>
 
-        <!-- Tab 0: Cơ bản -->
-        <div id="guideTab0">
-          <div class="card" style="max-width:720px;margin-bottom:16px">
-            <div class="guide-section">
-              <h3>🎮 Cách tham gia &amp; bắt đầu</h3>
-              <ol style="padding-left:20px;color:var(--text2);font-size:14px;line-height:1.9">
-                <li>Vào <strong>kênh thoại</strong> của bot (kênh được thiết lập khi /setup).</li>
-                <li>Bot nhận diện và thêm bạn vào phòng chờ tự động.</li>
-                <li>Khi đủ số người tối thiểu, bắt đầu đếm ngược rồi tự động khởi động trận.</li>
-                <li>Vai trò gửi qua <strong>DM</strong> — bật nhận tin nhắn từ server trước khi chơi.</li>
-              </ol>
-              <div class="guide-tip" style="margin-top:12px">💡 Dùng <code style="font-family:monospace;background:var(--bg3);padding:1px 6px;border-radius:4px">/role</code> để xem và điều chỉnh tỉ lệ xuất hiện của từng vai trò.</div>
-            </div>
-            <div class="guide-section">
-              <h3>⚙️ Các phe trong game</h3>
-              <ul style="padding-left:20px;color:var(--text2);font-size:14px;line-height:1.9">
-                <li><strong style="color:var(--survivors)">🟢 Survivors</strong> — Sống sót &amp; loại bỏ tất cả Dị Thể.</li>
-                <li><strong style="color:var(--anomalies)">🔴 Anomalies (Dị Thể)</strong> — Chiếm đa số so với Survivors.</li>
-                <li><strong style="color:var(--unknown)">⚫ Unknown</strong> — Thực thể trung lập, điều kiện thắng riêng biệt.</li>
-                <li><strong style="color:var(--event)">🟣 Event</strong> — Vai trò sự kiện đặc biệt, chỉ xuất hiện theo mùa.</li>
-              </ul>
-            </div>
-            <div class="guide-section">
-              <h3>📜 Luật cơ bản</h3>
-              <ul style="padding-left:20px;color:var(--text2);font-size:14px;line-height:1.9">
-                <li>Không chia sẻ DM bot ra kênh công khai trực tiếp.</li>
-                <li>Không spam hoặc cố tình làm gián đoạn game.</li>
-                <li>Tôn trọng quyết định của ban quản trị phòng.</li>
-                <li>Người chơi bị ban sẽ không thể tham gia bất kỳ phòng nào có bot.</li>
-              </ul>
-            </div>
+          <div class="guide-section">
+            <h3>⚙️ Các phe trong game</h3>
+            <ul>
+              <li><strong style="color:var(--survivors)">Survivors</strong> — Sống sót đến cuối hoặc loại bỏ tất cả Anomalies.</li>
+              <li><strong style="color:var(--anomalies)">Anomalies</strong> — Loại bỏ Survivors đến khi chiếm đa số.</li>
+              <li><strong style="color:var(--unknown)">Unknown</strong> — Vai trò trung lập với điều kiện chiến thắng riêng.</li>
+              <li><strong style="color:var(--event)">Event</strong> — Vai trò sự kiện đặc biệt, chỉ xuất hiện theo mùa.</li>
+            </ul>
           </div>
-        </div>
 
-        <!-- Tab 1: Chu kỳ game -->
-        <div id="guideTab1" style="display:none">
-          <div class="card" style="max-width:720px;margin-bottom:16px">
-            <div class="guide-section">
-              <h3>🌙 Chu kỳ Ngày / Đêm</h3>
-              <p style="font-size:14px;color:var(--text2);line-height:1.8">Game diễn ra theo chu kỳ liên tục: <strong>Đêm → Sáng → Thảo luận → Bỏ phiếu → Đêm...</strong></p>
-              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:14px">
-                <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-                  <div style="font-size:24px;margin-bottom:6px">🌙</div>
-                  <div style="font-weight:700;font-size:13px">Ban Đêm</div>
-                  <div style="font-size:12px;color:var(--text2);margin-top:4px">Mỗi vai trò thực hiện hành động qua DM. Tất cả bị mute.</div>
-                </div>
-                <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-                  <div style="font-size:24px;margin-bottom:6px">☀️</div>
-                  <div style="font-weight:700;font-size:13px">Buổi Sáng</div>
-                  <div style="font-size:12px;color:var(--text2);margin-top:4px">Bot thông báo kết quả đêm qua. Di chúc người chết xuất hiện.</div>
-                </div>
-                <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-                  <div style="font-size:24px;margin-bottom:6px">💬</div>
-                  <div style="font-weight:700;font-size:13px">Thảo Luận</div>
-                  <div style="font-size:12px;color:var(--text2);margin-top:4px">Unmute tất cả. Suy luận, tranh luận, thuyết phục.</div>
-                </div>
-                <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-                  <div style="font-size:24px;margin-bottom:6px">🗳️</div>
-                  <div style="font-weight:700;font-size:13px">Bỏ Phiếu</div>
-                  <div style="font-size:12px;color:var(--text2);margin-top:4px">Người nhiều phiếu nhất bị trục xuất. Hòa → không ai bị trục xuất.</div>
-                </div>
-              </div>
-            </div>
-            <div class="guide-section">
-              <h3>🏆 Điều kiện thắng</h3>
-              <ul style="padding-left:20px;color:var(--text2);font-size:14px;line-height:1.9">
-                <li><strong style="color:var(--survivors)">Survivors:</strong> Loại bỏ tất cả Dị Thể và thực thể đe dọa.</li>
-                <li><strong style="color:var(--anomalies)">Anomalies:</strong> Số Dị Thể sống ≥ số Survivor còn lại.</li>
-                <li><strong style="color:var(--unknown)">Unknown:</strong> Mỗi vai trò có điều kiện riêng (xem DM khi nhận vai).</li>
-              </ul>
-            </div>
-            <div class="guide-section">
-              <h3>📜 Di chúc</h3>
-              <p style="font-size:14px;color:var(--text2);line-height:1.8">Nhắn DM bot <code style="font-family:monospace;background:var(--bg3);padding:1px 6px;border-radius:4px">Nhập di chúc</code> để bắt đầu ghi. Tối đa 45 dòng, 60 ký tự/dòng. Di chúc tự khóa khi bạn chết.</p>
-            </div>
+          <div class="guide-section">
+            <h3>🌙 Chu kỳ ngày/đêm</h3>
+            <p>Game diễn ra theo chu kỳ Ngày → Thảo luận → Bỏ phiếu → Đêm. Ban đêm, mỗi vai trò sẽ thực hiện hành động của mình thông qua DM với bot.</p>
+            <div class="guide-tip">Thời gian mỗi giai đoạn có thể được chủ phòng tùy chỉnh trong phần Cài Đặt Phòng.</div>
           </div>
-        </div>
 
-        <!-- Tab 2: Kênh chat -->
-        <div id="guideTab2" style="display:none">
-          <div class="card" style="max-width:720px;margin-bottom:16px">
-            <div class="guide-section">
-              <h3>🔴 Kênh Dị Thể</h3>
-              <p style="font-size:14px;color:var(--text2);line-height:1.8">Kênh riêng tư chỉ dành cho phe Dị Thể. Thảo luận chiến thuật mà không bị Survivors biết. Mỗi ngày bot gửi log sự kiện đêm qua vào kênh này.</p>
-            </div>
-            <div class="guide-section">
-              <h3>⚫ Dead Chat</h3>
-              <p style="font-size:14px;color:var(--text2);line-height:1.8">Kênh người đã chết. Có thể nói chuyện nhưng không can thiệp trận. Nhà Ngoại Cảm có thể hỏi han người trong Dead Chat vào ban đêm.</p>
-            </div>
-            <div class="guide-section">
-              <h3>📩 DM (Tin nhắn riêng)</h3>
-              <p style="font-size:14px;color:var(--text2);line-height:1.8">Bot gửi DM khi: nhận vai trò, thực hiện hành động đêm, nhận kết quả điều tra, bị tấn công, và xem di chúc. <strong>Bật nhận DM từ server</strong> trước khi chơi!</p>
-            </div>
-            <div class="guide-section">
-              <h3>🔇 Hệ thống Mute</h3>
-              <ul style="padding-left:20px;color:var(--text2);font-size:14px;line-height:1.9">
-                <li><strong>Ban đêm:</strong> Tất cả bị mute trong kênh thoại.</li>
-                <li><strong>Ban ngày:</strong> Tất cả người sống được unmute.</li>
-                <li><strong>Khi chết:</strong> Bị mute vĩnh viễn (có thể tắt trong /setting).</li>
-              </ul>
-            </div>
-            <div class="guide-section">
-              <h3>👻 Spectator</h3>
-              <p style="font-size:14px;color:var(--text2);line-height:1.8">Vào kênh thoại sau khi trận bắt đầu → tự động vào chế độ Khán Giả. Có thể xem nhưng không thể tham gia. Nickname tự trả lại sau trận.</p>
-            </div>
+          <div class="guide-section">
+            <h3>📜 Luật cơ bản</h3>
+            <ul>
+              <li>Không chia sẻ thông tin từ DM bot ra kênh công khai trực tiếp.</li>
+              <li>Không spam hoặc cố tình làm gián đoạn game.</li>
+              <li>Tôn trọng quyết định của ban quản trị phòng.</li>
+              <li>Người chơi bị ban sẽ không thể tham gia bất kỳ phòng nào có bot.</li>
+            </ul>
           </div>
-        </div>
 
-        <!-- Tab 3: 43 Vai Trò -->
-        <div id="guideTab3" style="display:none">
-          <!-- Search bar -->
-          <div style="position:relative;max-width:400px;margin-bottom:16px">
-            <input class="form-input" type="text" id="roleSearchGuide" placeholder="🔍 Tìm kiếm kỹ năng, tên vai trò..."
-              oninput="filterGuideRoles()" style="padding-left:14px"/>
-          </div>
-          <!-- Faction filter -->
-          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm guide-faction-btn active" data-faction="all" onclick="filterGuideFaction(this,'all')">Tất cả</button>
-            <button class="btn btn-ghost btn-sm guide-faction-btn" data-faction="Survivors" onclick="filterGuideFaction(this,'Survivors')" style="color:var(--survivors)">🟢 Survivors</button>
-            <button class="btn btn-ghost btn-sm guide-faction-btn" data-faction="Anomalies" onclick="filterGuideFaction(this,'Anomalies')" style="color:var(--anomalies)">🔴 Anomalies</button>
-            <button class="btn btn-ghost btn-sm guide-faction-btn" data-faction="Unknown" onclick="filterGuideFaction(this,'Unknown')" style="color:var(--unknown)">⚫ Unknown</button>
-          </div>
-          <div id="guideRolesGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
-            <div class="empty-state"><div class="loading-spin"></div></div>
+          <div class="guide-section">
+            <h3>💬 Hệ thống chat</h3>
+            <p>Nếu chủ phòng bật tính năng chat, người chơi có thể nhắn tin ẩn danh trong kênh game. Người chết có thể bị mute tùy cài đặt.</p>
           </div>
         </div>
       </div>
@@ -1465,6 +1369,7 @@ select.form-input { appearance: none; cursor: pointer; }
       </div>
     </div>
     <div class="role-detail-desc" id="roleDetailDesc"></div>
+    <div id="roleDetailNotes"></div>
     <div class="modal-footer" style="margin-top:20px">
       <button class="btn btn-ghost" onclick="closeModal('modalRoleDetail')">Đóng</button>
     </div>
@@ -1523,7 +1428,6 @@ let SELECTED_GUILD = null;
 let CAN_EDIT_GUILD = false;
 let CURRENT_CONFIG = {};
 let REPLY_TARGET = null;
-let REPLY_FB_ID  = '';
 let ROOMS_INTERVAL = null;
 
 // ══════════════════════════════════════════
@@ -1722,7 +1626,12 @@ function renderRoles() {
   const query = document.getElementById('roleSearch').value.toLowerCase();
   let roles = ALL_ROLES;
   if (CURRENT_FILTER !== 'all') roles = roles.filter(r => r.faction === CURRENT_FILTER);
-  if (query) roles = roles.filter(r => r.name.toLowerCase().includes(query) || r.description.toLowerCase().includes(query));
+  if (query) roles = roles.filter(r =>
+    r.name.toLowerCase().includes(query) ||
+    (r.description || '').toLowerCase().includes(query) ||
+    (r.team || '').toLowerCase().includes(query) ||
+    (r.faction || '').toLowerCase().includes(query)
+  );
 
   if (!roles.length) {
     document.getElementById('rolesGrid').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Không tìm thấy vai trò nào.</p></div>';
@@ -1734,7 +1643,7 @@ function renderRoles() {
     const short = preview.length > 72 ? preview.slice(0, 70) + '…' : preview;
     return `
     <div class="role-card" style="--role-color:${r.color}" onclick="showRoleDetail(${ALL_ROLES.indexOf(r)})">
-      <div class="role-card-name">${escHtml(r.name)}</div>
+      <div class="role-card-name">${escHtml(r.name)}${r.fake_good ? ' <span title="Có khả năng giả mạo (fake_good)" style="font-size:11px;opacity:0.75">🎭</span>' : ''}${r.anomaly_chat_mgr ? ' <span title="Truy cập kênh Dị Thể" style="font-size:11px;opacity:0.75">📡</span>' : ''}</div>
       <div class="role-card-faction">${r.faction}</div>
       <div class="role-card-hint">${escHtml(short)}</div>
     </div>`;
@@ -1748,7 +1657,14 @@ function showRoleDetail(idx) {
   document.getElementById('roleDetailFaction').textContent = r.faction + ' · ' + (r.team || r.faction);
   document.getElementById('roleDetailFaction').style.color = r.color;
   document.getElementById('roleDetailDot').style.background = r.color;
-  document.getElementById('roleDetailDesc').textContent    = r.description || '(Chưa có mô tả)';
+  let descText = r.description || '(Chưa có mô tả)';
+  let notes = [];
+  if (r.fake_good) notes.push('⚠️ Vai trò này có khả năng giả mạo (fake_good) — Thám Trưởng sẽ nhận kết quả "Không đáng ngờ" thay vì tên vai trò thật.');
+  if (r.anomaly_chat_mgr) notes.push('📡 Vai trò này có quyền truy cập kênh chat bí mật của phe Dị Thể (anomaly_chat_mgr).');
+  const noteHtml = notes.map(n => `<div style="margin-top:10px;padding:8px 12px;background:rgba(245,194,49,0.08);border:1px solid rgba(245,194,49,0.25);border-radius:8px;font-size:12.5px;color:var(--yellow)">${n}</div>`).join('');
+  document.getElementById('roleDetailDesc').textContent = descText;
+  const notesEl = document.getElementById('roleDetailNotes');
+  if (notesEl) notesEl.innerHTML = noteHtml;
   openModal('modalRoleDetail');
 }
 
@@ -1817,9 +1733,8 @@ async function loadStats() {
 // PLAYER LOOKUP
 // ══════════════════════════════════════════
 async function doPlayerLookup() {
-  // Luôn ép về String — Discord ID là BigInt, JS float64 sẽ mất chính xác
-  const uid = String(document.getElementById('lookupId').value.trim());
-  if (!uid || uid === 'null') { toast('Nhập User ID cần tra cứu!', 'error'); return; }
+  const uid = document.getElementById('lookupId').value.trim();
+  if (!uid) { toast('Nhập User ID cần tra cứu!', 'error'); return; }
   const el = document.getElementById('lookupResult');
   el.innerHTML = '<div style="padding:12px;color:var(--text3)">Đang tra cứu...</div>';
   try {
@@ -2113,9 +2028,9 @@ async function loadFeedbacks() {
         ${f.content ? `<div class="feedback-content">${escHtml(f.content)}</div>` : ''}
         ${f.images?.length ? `<div class="feedback-images">${f.images.map(img=>`<img src="${img}" onclick="viewImg('${img}')" alt=""/>`).join('')}</div>` : ''}
         ${f.reply ? `<div class="feedback-reply-box"><div class="feedback-reply-label">Đã phản hồi</div><div class="feedback-reply-text">${escHtml(f.reply)}</div></div>` : ''}
-        <div class="feedback-actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick="openReply('${f.created_at}','${escHtml(f.id||'')}')">💬 Phản Hồi</button>
-          <button class="btn btn-sm" style="background:rgba(240,80,80,0.08);color:var(--red);border:1px solid rgba(240,80,80,0.3)" onclick="deleteFeedback('${escHtml(f.id||f.created_at)}','${escHtml(f.username)}')">🗑️ Xóa</button>
+        <div class="feedback-actions" style="margin-top:10px">
+          <button class="btn btn-ghost btn-sm" onclick="openReply('${f.created_at}')">💬 Phản Hồi</button>
+          <button class="btn btn-sm" style="background:rgba(240,80,80,0.1);color:var(--red);border:1px solid var(--red)" onclick="deleteFeedback('${escHtml(f._id || f.created_at)}', this)">🗑 Xóa</button>
           <button class="btn btn-sm" style="background:rgba(240,80,80,0.1);color:var(--red);border:1px solid var(--red)" onclick="quickBanFromFeedback('${escHtml(f.user_id)}','${escHtml(f.username)}')">⛔ Ban User</button>
         </div>
       </div>
@@ -2123,9 +2038,8 @@ async function loadFeedbacks() {
   } catch(e) {}
 }
 
-function openReply(created_at, fb_id) {
+function openReply(created_at) {
   REPLY_TARGET = created_at;
-  REPLY_FB_ID  = fb_id || '';
   document.getElementById('replyText').value = '';
   openModal('modalReply');
 }
@@ -2149,29 +2063,30 @@ function quickBanFromFeedback(user_id, username) {
   openModal('modalBanConfirm');
 }
 
+async function deleteFeedback(fbId, btn) {
+  if (!fbId || !confirm('Xóa feedback này?')) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/dash/admin/feedback/${encodeURIComponent(fbId)}`, {
+      method: 'DELETE',
+      credentials: 'same-origin'
+    });
+    if (res.ok) { toast('🗑 Đã xóa feedback!', 'success'); loadFeedbacks(); }
+    else { const e = await res.json().catch(()=>({detail:'Lỗi'})); toast('Xóa thất bại: ' + e.detail, 'error'); btn.disabled = false; }
+  } catch(e) { toast('Lỗi kết nối.', 'error'); btn.disabled = false; }
+}
+
 async function submitReply() {
   const reply = document.getElementById('replyText').value.trim();
   if (!reply) { toast('Nhập nội dung phản hồi!', 'error'); return; }
   try {
-    const res = await fetch('/api/dash/admin/feedback/reply', {
+    const res = await fetch(`/api/dash/admin/feedback/reply`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ reply, created_at: REPLY_TARGET, fb_id: REPLY_FB_ID || '' })
+      body: JSON.stringify({ reply, created_at: REPLY_TARGET })
     });
-    if (res.ok) {
-      const data = await res.json();
-      toast('✅ Đã gửi phản hồi!' + (data.webhook_sent ? ' (Webhook ✓)' : ''), 'success');
-      closeModal('modalReply'); loadFeedbacks();
-    } else toast('Gửi thất bại.', 'error');
-  } catch(e) { toast('Lỗi kết nối.', 'error'); }
-}
-
-async function deleteFeedback(fb_id, username) {
-  if (!confirm(\`Xóa feedback của ${username}?\`)) return;
-  try {
-    const res = await fetch(\`/api/dash/admin/feedback/\${encodeURIComponent(fb_id)}\`, { method: 'DELETE' });
-    if (res.ok) { toast('🗑️ Đã xóa feedback!', 'success'); loadFeedbacks(); }
-    else { const d = await res.json(); toast('Xóa thất bại: ' + (d.detail || ''), 'error'); }
+    if (res.ok) { toast('✅ Đã gửi phản hồi!', 'success'); closeModal('modalReply'); loadFeedbacks(); }
+    else toast('Gửi thất bại.', 'error');
   } catch(e) { toast('Lỗi kết nối.', 'error'); }
 }
 
