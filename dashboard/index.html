@@ -1658,9 +1658,15 @@ function filterRoles() { renderRoles(); }
 async function loadStats() {
   try {
     const [sRes, rRes] = await Promise.all([
-      fetch('/api/dash/stats'),
-      fetch('/api/dash/admin/rooms'),
+      fetch('/api/dash/stats', { credentials: 'same-origin' }),
+      fetch('/api/dash/admin/rooms', { credentials: 'same-origin' }),
     ]);
+    if (!sRes.ok) {
+      const detail = sRes.status === 401 ? 'Phiên đăng nhập hết hạn — vui lòng đăng nhập lại.' : ('Lỗi ' + sRes.status);
+      document.getElementById('statsGrid').innerHTML = '<div style="color:var(--red);padding:16px">' + detail + '</div>';
+      document.getElementById('statsRoomsList').innerHTML = '<div class="empty-state"><p>Không tải được danh sách phòng.</p></div>';
+      return;
+    }
     const stats = await sRes.json();
     const rooms = rRes.ok ? await rRes.json() : [];
     const na = v => stats.db_ok ? (v ?? '—') : '<span style="color:var(--text3);font-size:18px">—</span>';

@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import os
@@ -26,6 +27,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
+
+import config_manager
+import database_tidb
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -742,20 +746,61 @@ async def api_feedback(request: Request):
 
 @router.get("/api/dash/stats")
 async def api_stats(request: Request):
-    """Thống kê tổng quan — owner only."""
-    _require_owner(request)
+    """
+    Thống kê tổng quan — mọi user đã đăng nhập.
+    Schema khớp dashboard/index.html (total_guilds, db_ok, tidb_ok, …).
+    """
+    _require_auth(request)
+
+    active_games = _shared.get("active_games") or {}
+    active_games_count = len(active_games)
+
+    mongo_ok = config_manager._get_db() is not None
+    total_guilds = 0
+    total_bans = 0
+    if mongo_ok:
+        try:
+
+            def _mongo_counts():
+                db = config_manager._get_db()
+                if db is None:
+                    return (0, 0)
+                return (
+                    db["guild_configs"].count_documents({}),
+                    db["bans"].count_documents({}),
+                )
+
+            loop = asyncio.get_event_loop()
+            total_guilds, total_bans = await loop.run_in_executor(None, _mongo_counts)
+        except Exception as e:
+            print(f"[api_stats] Lỗi MongoDB count: {e}")
+            mongo_ok = False
+
+    tidb_ok = False
+    total_feedbacks = 0
+    total_changelogs = 0
     try:
-        server_count  = _col("guild_configs").count_documents({}) if _col("guild_configs") else 0
-        player_count  = _col("players").count_documents({})       if _col("players")       else 0
-        ban_count     = _col("bans").count_documents({})          if _col("bans")           else 0
-        fb_count      = _col("feedbacks").count_documents({})     if _col("feedbacks")      else 0
-    except Exception:
-        server_count = player_count = ban_count = fb_count = 0
+        loop = asyncio.get_event_loop()
+
+        def _tidb_counts():
+            return (database_tidb.count_feedbacks(), database_tidb.count_update_logs())
+
+        total_feedbacks, total_changelogs = await loop.run_in_executor(None, _tidb_counts)
+        tidb_ok = True
+    except Exception as e:
+        print(f"[api_stats] Lỗi TiDB count: {e}")
+
     return JSONResponse({
-        "serverCount":   server_count,
-        "playerCount":   player_count,
-        "banCount":      ban_count,
-        "feedbackCount": fb_count,
+        "total_guilds":     total_guilds,
+        "active_games":     active_games_count,
+        "total_bans":       total_bans,
+        "total_feedbacks":  total_feedbacks,
+        "total_changelogs": total_changelogs,
+        "db_ok":            mongo_ok,
+        "tidb_ok":          tidb_ok,
+        "serverCount":      total_guilds,
+        "banCount":         total_bans,
+        "feedbackCount":    total_feedbacks,
     })
 
 
@@ -867,8 +912,8 @@ async def api_unban(user_id: str, request: Request):
 
 @router.get("/api/dash/admin/rooms")
 async def api_admin_rooms(request: Request):
-    """Real-time trạng thái tất cả phòng từ in-memory state."""
-    _require_owner(request)
+    """Real-time trạng thái phòng (dùng trên trang Thống Kê cho mọi user đã đăng nhập)."""
+    _require_auth(request)
     return JSONResponse(_guild_state_summary())
 
 
