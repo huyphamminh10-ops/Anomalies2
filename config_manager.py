@@ -1,11 +1,15 @@
 
 # ==============================
-# config_manager.py — Anomalies v2.3 (Fixed for Render)
+# config_manager.py — Anomalies v2.4 (Fixed for Render)
+#
+# FIX v2.4:
+#   - Đọc URI theo thứ tự: MONGO_URI → MONGODB_URI → DATABASE_URL (chỉ nếu là mongodb:// / mongodb+srv://)
+#   - Báo lỗi rõ ràng nếu thiếu URI MongoDB (Render thường đặt DATABASE_URL cho Postgres — không dùng nhầm)
+#   - Retry kết nối: tối đa 5 lần, cách nhau 5 giây, kèm phân loại lỗi (timeout / xác thực / khác)
 #
 # FIX v2.3:
 #   - Thêm tlsAllowInvalidCertificates=True để tránh lỗi SSL cert trên Render
 #   - Thêm traceback.format_exc() để log lỗi chi tiết vào console
-#   - Thêm retry logic khi kết nối MongoDB thất bại lần đầu
 #   - Đảm bảo _client được reset về None khi kết nối thất bại (tránh zombie client)
 #   - Tương thích hoàn toàn với code cũ (không đổi API)
 # ==============================
@@ -17,20 +21,67 @@ import time
 import traceback
 import certifi
 from pymongo import MongoClient
-from pymongo.errors import PyMongoError, ConnectionFailure, ServerSelectionTimeoutError
+from pymongo.errors import PyMongoError, ConnectionFailure, ServerSelectionTimeoutError, OperationFailure
 
 # ── Kết nối MongoDB ────────────────────────────────────────────────
-MONGO_URI = os.environ.get("MONGO_URI", "")
+_CONNECT_RETRIES = 5
+_CONNECT_RETRY_DELAY_SEC = 5
+
+
+def _resolve_mongo_uri() -> str:
+    """
+    Render / các PaaS đôi khi chỉ cung cấp DATABASE_URL (Postgres) hoặc tên khác.
+    Chỉ chấp nhận DATABASE_URL nếu rõ ràng là MongoDB.
+    """
+    for key in ("MONGO_URI", "MONGODB_URI"):
+        v = (os.environ.get(key) or "").strip()
+        if v:
+            return v
+    du = (os.environ.get("DATABASE_URL") or "").strip()
+    if du.startswith(("mongodb://", "mongodb+srv://")):
+        return du
+    return ""
+
+
+MONGO_URI = _resolve_mongo_uri()
+
 if not MONGO_URI:
-    print("[config_manager] CẢNH BÁO: Biến môi trường MONGO_URI chưa được đặt!")
+    print(
+        "[config_manager] LỖI CẤU HÌNH: Chưa có URI MongoDB.\n"
+        "  → Trên Render, thêm Environment:\n"
+        "     MONGO_URI=mongodb+srv://user:pass@cluster... (khuyến nghị)\n"
+        "     hoặc MONGODB_URI=...\n"
+        "     hoặc DATABASE_URL=... chỉ khi giá trị bắt đầu bằng mongodb:// hoặc mongodb+srv://\n"
+        "  → Nếu bạn dùng PostgreSQL trên Render, biến DATABASE_URL đó KHÔNG dùng được cho app này;\n"
+        "     cần MongoDB Atlas (hoặc URI Mongo tương đương)."
+    )
 else:
     # Log URI ẩn password để debug (chỉ hiện scheme + host)
     try:
         from urllib.parse import urlparse
         _parsed = urlparse(MONGO_URI)
-        print(f"[config_manager] MONGO_URI nhận diện được: {_parsed.scheme}://{_parsed.hostname}/...")
+        _src = "MONGO_URI/MONGODB_URI/DATABASE_URL(mongo)"
+        print(f"[config_manager] MongoDB URI ({_src}): {_parsed.scheme}://{_parsed.hostname}/...")
     except Exception:
-        print("[config_manager] MONGO_URI đã được đặt (không parse được URI).")
+        print("[config_manager] MongoDB URI đã được đặt (không parse được URI).")
+
+
+def _classify_mongo_connect_error(exc: BaseException) -> str:
+    """Nhãn ngắn cho log — phân biệt timeout, xác thực, mạng."""
+    msg = str(exc).lower()
+    if isinstance(exc, ServerSelectionTimeoutError) or "serverselectiontimeout" in msg:
+        return "timeout/lựa chọn server (Atlas IP whitelist, DNS, hoặc cluster đang sleep)"
+    if isinstance(exc, ConnectionFailure):
+        if "timed out" in msg or "timeout" in msg:
+            return "timeout kết nối TCP/TLS"
+        if "authentication failed" in msg or "bad auth" in msg:
+            return "xác thực MongoDB (sai user/password hoặc user chưa có quyền)"
+        return "lỗi kết nối mạng/TLS"
+    if isinstance(exc, OperationFailure) and "authentication" in msg:
+        return "xác thực MongoDB"
+    if "ssl" in msg or "tls" in msg or "certificate" in msg:
+        return "SSL/TLS hoặc chứng chỉ"
+    return f"{type(exc).__name__}"
 
 DB_NAME = "Anomalies_DB"
 
@@ -66,39 +117,56 @@ def _get_db():
 
     if _client is None:
         if not MONGO_URI:
-            print("[config_manager] Không có MONGO_URI — bỏ qua kết nối.")
+            print("[config_manager] Không có URI MongoDB — bỏ qua kết nối (xem log LỖI CẤU HÌNH ở trên).")
             return None
-        try:
-            print("[config_manager] Đang kết nối MongoDB Atlas...")
-            _client = MongoClient(
-                MONGO_URI,
-                serverSelectionTimeoutMS=8000,   # 8s để Atlas cold-start kịp phản hồi
-                connectTimeoutMS=15000,
-                socketTimeoutMS=30000,
-                # ── FIX SSL cho Render ──────────────────────────────
-                # Render có thể không có đủ CA bundle → tlsAllowInvalidCertificates=True
-                # tls=True vẫn giữ mã hóa, chỉ bỏ qua xác minh chain
-                tls=True,
-                tlsAllowInvalidCertificates=True,
-                # ────────────────────────────────────────────────────
-                retryWrites=True,
-                w="majority",
+        last_err: BaseException | None = None
+        for attempt in range(1, _CONNECT_RETRIES + 1):
+            try:
+                print(f"[config_manager] Đang kết nối MongoDB (lần {attempt}/{_CONNECT_RETRIES})...")
+                _client = MongoClient(
+                    MONGO_URI,
+                    serverSelectionTimeoutMS=8000,   # 8s để Atlas cold-start kịp phản hồi
+                    connectTimeoutMS=15000,
+                    socketTimeoutMS=30000,
+                    # ── FIX SSL cho Render ──────────────────────────────
+                    tls=True,
+                    tlsAllowInvalidCertificates=True,
+                    # ────────────────────────────────────────────────────
+                    retryWrites=True,
+                    w="majority",
+                )
+                _client.admin.command("ping")
+                if attempt > 1:
+                    print(f"[config_manager] ✓ MongoDB kết nối thành công sau {attempt} lần thử.")
+                else:
+                    print("[config_manager] ✓ MongoDB kết nối thành công.")
+                last_err = None
+                break
+            except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+                last_err = e
+                kind = _classify_mongo_connect_error(e)
+                print(f"[config_manager] ✗ Lần {attempt}/{_CONNECT_RETRIES}: [{kind}] {e}")
+                print(traceback.format_exc())
+                _client = None
+                if attempt < _CONNECT_RETRIES:
+                    print(f"[config_manager] Chờ {_CONNECT_RETRY_DELAY_SEC}s rồi thử lại...")
+                    time.sleep(_CONNECT_RETRY_DELAY_SEC)
+            except Exception as e:
+                last_err = e
+                kind = _classify_mongo_connect_error(e)
+                print(f"[config_manager] ✗ Lần {attempt}/{_CONNECT_RETRIES}: [{kind}] {e}")
+                print(traceback.format_exc())
+                _client = None
+                if attempt < _CONNECT_RETRIES:
+                    print(f"[config_manager] Chờ {_CONNECT_RETRY_DELAY_SEC}s rồi thử lại...")
+                    time.sleep(_CONNECT_RETRY_DELAY_SEC)
+
+        if last_err is not None and _client is None:
+            print(
+                "[config_manager] ✗ Hết số lần thử MongoDB.\n"
+                "  Kiểm tra: MONGO_URI / Atlas Network Access (0.0.0.0/0 hoặc IP outbound Render),\n"
+                "  user/password trong URI, và database user có quyền trên Anomalies_DB."
             )
-            # Kiểm tra kết nối thực sự bằng ping
-            _client.admin.command("ping")
-            print("[config_manager] ✓ MongoDB kết nối thành công.")
-        except (ConnectionFailure, ServerSelectionTimeoutError) as e:
-            print(f"[config_manager] ✗ Không kết nối được MongoDB (ConnectionFailure):")
-            print(f"  Lỗi: {e}")
-            print(f"  Chi tiết:\n{traceback.format_exc()}")
-            print("  Kiểm tra: MONGO_URI đúng không? MongoDB Atlas IP Whitelist có 0.0.0.0/0 chưa?")
-            _client = None
-            return None
-        except Exception as e:
-            print(f"[config_manager] ✗ Lỗi không xác định khi kết nối MongoDB:")
-            print(f"  Lỗi: {e}")
-            print(f"  Chi tiết:\n{traceback.format_exc()}")
-            _client = None
             return None
 
     try:

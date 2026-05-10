@@ -37,6 +37,8 @@ from __future__ import annotations
 import os
 import random
 import string
+import time
+import traceback
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -63,10 +65,8 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════
 
 # Format: mysql://user:password@host:port/database
-TIDB_URL = os.environ.get(
-    "TIDB_URL",
-    "mysql://pmiJpFtdc5E8WwZ.root:r0QZSVZVEINtmH39@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/sys",
-)
+# Không dùng URL mặc định trong code — đặt TIDB_URL trên Render / .env.
+TIDB_URL = (os.environ.get("TIDB_URL") or "").strip()
 
 BOT_OWNER_ID = int(os.environ.get("BOT_OWNER_ID", "1306441206296875099"))
 
@@ -83,6 +83,9 @@ def _parse_tidb_url(url: str) -> dict:
       mysql://user:pass@host:port/db
       mysql+mysqlconnector://user:pass@host:port/db
     """
+    url = (url or "").strip()
+    if not url:
+        return {}
     try:
         # Bỏ scheme
         rest = url
@@ -134,6 +137,8 @@ _TIDB_PARAMS = _parse_tidb_url(TIDB_URL)
 if _TIDB_PARAMS:
     print(f"[database_tidb] TiDB host={_TIDB_PARAMS.get('host')} "
           f"port={_TIDB_PARAMS.get('port')} db={_TIDB_PARAMS.get('database')}")
+elif not TIDB_URL:
+    print("[database_tidb] TIDB_URL trống — tính năng feedback/changelog trên TiDB sẽ không dùng được.")
 else:
     print("[database_tidb] CẢNH BÁO: Không parse được TIDB_URL!")
 
@@ -141,31 +146,76 @@ else:
 # CONNECTION
 # ══════════════════════════════════════════════════════════════════
 
+_TIDB_CONNECT_RETRIES = 5
+_TIDB_RETRY_DELAY_SEC = 5
+
+
+def _classify_mysql_connect_error(exc: BaseException) -> str:
+    msg = str(exc).lower()
+    if "access denied" in msg or "1045" in msg:
+        return "xác thực MySQL/TiDB (sai user/password)"
+    if "timed out" in msg or "timeout" in msg:
+        return "timeout"
+    if "can't connect" in msg or "connection refused" in msg or "2003" in msg:
+        return "không tới được server (host/port/firewall/IP whitelist)"
+    if "ssl" in msg or "certificate" in msg or "tls" in msg:
+        return "SSL/TLS"
+    if "unknown database" in msg:
+        return "database không tồn tại"
+    return type(exc).__name__
+
+
 def _get_connection():
     """
-    Tạo kết nối mới đến TiDB Cloud.
+    Tạo kết nối mới đến TiDB Cloud, có retry (5 lần, cách nhau 5s).
 
     TiDB Cloud bắt buộc SSL. Dùng certifi CA nếu có,
     không thì để mysql.connector tự xử lý.
-    Raise Exception nếu kết nối thất bại (caller tự bắt).
+    Raise Exception nếu kết nối thất bại sau hết số lần thử.
     """
     if not _HAS_CONNECTOR:
         raise RuntimeError("mysql-connector-python chưa được cài. "
                            "Chạy: pip install mysql-connector-python")
     if not _TIDB_PARAMS:
-        raise RuntimeError("TIDB_URL không hợp lệ hoặc chưa được đặt.")
+        raise RuntimeError(
+            "TIDB_URL chưa được đặt hoặc không hợp lệ. "
+            "Trên Render thêm biến TIDB_URL dạng mysql://user:pass@host:4000/dbname"
+        )
 
     ssl_args = {}
     if _SSL_CA:
         ssl_args["ssl_ca"] = _SSL_CA
 
-    return mysql.connector.connect(
+    connect_kw = {
         **_TIDB_PARAMS,
-        ssl_disabled=False,       # TiDB Cloud bắt buộc SSL
-        connection_timeout=10,
-        autocommit=True,
+        "ssl_disabled": False,
+        "connection_timeout": 10,
+        "autocommit": True,
         **ssl_args,
-    )
+    }
+
+    last_exc: BaseException | None = None
+    for attempt in range(1, _TIDB_CONNECT_RETRIES + 1):
+        try:
+            conn = mysql.connector.connect(**connect_kw)
+            if attempt > 1:
+                print(f"[database_tidb] ✓ Kết nối TiDB thành công sau {attempt} lần thử.")
+            return conn
+        except Exception as e:
+            last_exc = e
+            kind = _classify_mysql_connect_error(e)
+            hint = _connection_hint(str(e))
+            print(
+                f"[database_tidb] ✗ Lần {attempt}/{_TIDB_CONNECT_RETRIES}: [{kind}] {e}\n"
+                f"  Gợi ý: {hint}"
+            )
+            print(traceback.format_exc())
+            if attempt < _TIDB_CONNECT_RETRIES:
+                print(f"[database_tidb] Chờ {_TIDB_RETRY_DELAY_SEC}s rồi thử lại kết nối TiDB...")
+                time.sleep(_TIDB_RETRY_DELAY_SEC)
+
+    assert last_exc is not None
+    raise last_exc
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -209,6 +259,13 @@ def ensure_tables() -> dict:
             "ok": False,
             "error": "mysql-connector-python chưa cài",
             "hint": "pip install mysql-connector-python",
+        }
+
+    if not _TIDB_PARAMS:
+        return {
+            "ok": False,
+            "error": "TIDB_URL chưa được đặt hoặc không parse được",
+            "hint": "Trên Render: Environment → TIDB_URL = mysql://user:pass@host:4000/db",
         }
 
     ddl_feedbacks = """
