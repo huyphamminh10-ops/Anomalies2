@@ -1798,7 +1798,8 @@ async function submitFeedback() {
       body: JSON.stringify({ content, images: compressed })
     });
     if (res.ok) {
-      toast('✅ Gửi feedback thành công!', 'success');
+      const data = await res.json().catch(()=>({}));
+      toast('✅ Gửi feedback thành công!' + (data.id ? ` (ID: ${data.id})` : ''), 'success');
       clearFeedback();
     } else if (res.status === 401) {
       toast('Bạn chưa đăng nhập. Vui lòng đăng nhập lại.', 'error');
@@ -2160,10 +2161,17 @@ async function loadRooms() {
     if (!rooms.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏠</div><p>Chưa có phòng nào được thiết lập.</p></div>'; return; }
     el.innerHTML = rooms.map(r => {
       const status = r.status || null;
+      // FIX #4: Ưu tiên dữ liệu is_playing từ lobby_states (Bot ghi), fallback về status
       let statusHtml = '';
-      if (!status) statusHtml = `<div class="status-pill status-idle"><div class="status-dot"></div>Chờ</div>`;
-      else if (status === 'lobby' || status?.includes?.('lobby')) statusHtml = `<div class="status-pill status-lobby"><div class="status-dot"></div>Lobby</div>`;
-      else statusHtml = `<div class="status-pill status-game"><div class="status-dot"></div>Đang chơi</div>`;
+      if (r.is_playing) {
+        statusHtml = `<div class="status-pill status-game"><div class="status-dot"></div>Đang chơi (${r.active_players ?? 0} người)</div>`;
+      } else if (!status) {
+        statusHtml = `<div class="status-pill status-idle"><div class="status-dot"></div>Chờ</div>`;
+      } else if (status === 'lobby' || status?.includes?.('lobby')) {
+        statusHtml = `<div class="status-pill status-lobby"><div class="status-dot"></div>Lobby</div>`;
+      } else {
+        statusHtml = `<div class="status-pill status-game"><div class="status-dot"></div>Đang chơi</div>`;
+      }
       return `
         <div class="room-card">
           <div class="room-card-header">
@@ -2179,7 +2187,11 @@ async function loadRooms() {
               <div class="room-stat-label">Tối đa</div>
             </div>
             <div class="room-stat">
-              <div class="room-stat-value" style="color:var(--accent)">${status ? '🎮' : '—'}</div>
+              <div class="room-stat-value" style="color:var(--accent)">${r.active_players ?? 0}</div>
+              <div class="room-stat-label">Người chơi</div>
+            </div>
+            <div class="room-stat">
+              <div class="room-stat-value" style="color:${r.is_playing ? 'var(--green)' : 'var(--text3)'}">${r.is_playing ? '🎮 Live' : '—'}</div>
               <div class="room-stat-label">Trạng thái</div>
             </div>
           </div>

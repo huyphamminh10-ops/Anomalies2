@@ -1,7 +1,14 @@
 """
-dashboard/server.py — Anomalies Web Dashboard v3.0
-FastAPI + Discord OAuth2 + MongoDB
+dashboard/server.py — Anomalies Web Dashboard v3.1
+FastAPI + Discord OAuth2 + MongoDB + TiDB
 Deploy trên Render.com (.onrender.com)
+
+FIX v3.1:
+  #1 - ID Stringify: guild_id/user_id/channel_id luôn str(), filter chỉ dùng {"guild_id": str(id)}
+  #2 - MongoDB timeout + ping + trả None thay vì crash
+  #3 - TiDB cho Feedbacks (id 10 ký tự), Changelogs (INT AUTO_INCREMENT), Bans
+  #4 - Lobby State: query bổ sung sang lobby_states để lấy is_playing + player_count
+  #5 - Cache Invalidation: Dashboard cập nhật last_updated, Bot so sánh để reload
 """
 from __future__ import annotations
 
@@ -10,6 +17,8 @@ import time
 import hmac
 import hashlib
 import secrets
+import string
+import json
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -28,7 +37,6 @@ import uvicorn
 # ══════════════════════════════════════════════════════════════
 # CONFIG — lấy từ biến môi trường Render
 # ══════════════════════════════════════════════════════════════
-# FIX #3: Ép kiểu BOT_OWNER_ID về str để so sánh nhất quán
 BOT_OWNER_ID          = str(os.environ.get("BOT_OWNER_ID", "1306441206296875099"))
 DISCORD_CLIENT_ID     = os.environ.get("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
@@ -36,7 +44,6 @@ DISCORD_REDIRECT_URI  = os.environ.get("DISCORD_REDIRECT_URI", "http://localhost
 SECRET_KEY            = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
 MONGO_URI             = os.environ.get("MONGO_URI", "")
 
-# FIX #2c: Phát hiện môi trường Render để xử lý SSL đúng
 IS_RENDER = bool(os.environ.get("RENDER_EXTERNAL_URL", ""))
 
 DISCORD_API  = "https://discord.com/api/v10"
@@ -44,22 +51,29 @@ OAUTH_SCOPES = "identify guilds"
 
 # ══════════════════════════════════════════════════════════════
 # MONGODB
+# FIX #2: serverSelectionTimeoutMS=5000, connectTimeoutMS=10000,
+#         ping trước khi trả DB, trả None thay vì crash nếu lỗi.
 # ══════════════════════════════════════════════════════════════
 _client: Optional[MongoClient] = None
 
 def get_db():
     global _client
-    # FIX #4: Bọc kết nối MongoDB trong try-except để tránh crash toàn bộ web
     if _client is None and MONGO_URI:
         try:
-            _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000)
+            _client = MongoClient(
+                MONGO_URI,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=10000,
+            )
+            _client.admin.command("ping")
+            print("[mongo] Kết nối MongoDB thành công.")
         except Exception as e:
             print(f"[mongo] Không kết nối được MongoDB: {e}")
+            _client = None
             return None
     return _client["Anomalies_DB"] if _client else None
 
 def col(name: str):
-    # FIX #4: Bảo vệ khỏi db=None do lỗi kết nối
     try:
         db = get_db()
         return db[name] if db is not None else None
@@ -67,21 +81,26 @@ def col(name: str):
         print(f"[mongo] Lỗi lấy collection {name}: {e}")
         return None
 
-# FIX #1: Helper tạo filter $in cho guild_id để chấp nhận cả str lẫn int
-def _guild_filter(guild_id: str) -> dict:
-    """Tạo MongoDB filter chấp nhận guild_id dạng String hoặc Integer.
-    Bot lưu ID là số nguyên, Web truyền ID là chuỗi — $in xử lý cả hai."""
-    try:
-        return {"guild_id": {"$in": [str(guild_id), int(guild_id)]}}
-    except (ValueError, TypeError):
-        return {"guild_id": str(guild_id)}
+# FIX #1: Tất cả filter MongoDB chỉ dùng str(id) — không dùng $in nữa để tránh xung đột index
+def _gf(guild_id) -> dict:
+    """Guild filter — luôn dùng str để nhất quán với index unique."""
+    return {"guild_id": str(guild_id)}
+
+def _uf(user_id) -> dict:
+    """User filter — luôn str."""
+    return {"user_id": str(user_id)}
+
+def _cf(channel_id) -> dict:
+    """Channel filter — luôn str."""
+    return {"channel_id": str(channel_id)}
 
 # ══════════════════════════════════════════════════════════════
-# TIDB — Dùng cho hệ thống BAN
+# TIDB — Dùng cho Feedbacks, Changelogs, Bans
+# FIX #3: Feedbacks + Changelogs chuyển sang TiDB theo yêu cầu
 # ══════════════════════════════════════════════════════════════
 TIDB_URI = os.environ.get(
     "TIDB_URI",
-    "mysql://pmiJpFtdc5E8WwZ.root:r0QZSVZVEINtmH39@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/test"
+    "mysql://pmiJpFtdc5E8WwZ.root:r0QZSVZVEINtmH39@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/sys"
 )
 
 def _parse_tidb_uri(uri: str) -> dict | None:
@@ -89,7 +108,6 @@ def _parse_tidb_uri(uri: str) -> dict | None:
     if not m:
         return None
     db_name = m.group(5)
-    # FIX #2a: Không được dùng database /sys vì không có quyền ghi — fallback về "test"
     if db_name.lower() == "sys":
         db_name = "test"
     return {"user": m.group(1), "password": m.group(2),
@@ -99,12 +117,8 @@ def _get_tidb_conn():
     info = _parse_tidb_uri(TIDB_URI)
     if not info:
         return None
-    # FIX #2c: SSL đúng cho môi trường Render (dùng hệ thống CA của Linux)
     if "tidbcloud" in info["host"]:
-        if IS_RENDER:
-            ssl_config = {"ca": "/etc/ssl/certs/ca-certificates.crt"}
-        else:
-            ssl_config = {"ssl_mode": "VERIFY_IDENTITY"}
+        ssl_config = {"ca": "/etc/ssl/certs/ca-certificates.crt"} if IS_RENDER else {"ssl_mode": "VERIFY_IDENTITY"}
     else:
         ssl_config = {}
     try:
@@ -113,7 +127,6 @@ def _get_tidb_conn():
             database=info["database"], port=info["port"],
             ssl=ssl_config,
             connect_timeout=8,
-            # FIX #2b: autocommit=True để INSERT/DELETE thực thi ngay lập tức
             autocommit=True,
             cursorclass=pymysql.cursors.DictCursor,
             charset="utf8mb4",
@@ -123,12 +136,19 @@ def _get_tidb_conn():
         print(f"[tidb] Không kết nối được TiDB: {e}")
         return None
 
-def _tidb_ensure_table():
+def _rand_id(n=10) -> str:
+    """Tạo chuỗi ngẫu nhiên n ký tự (chữ + số) dùng làm Feedback ID."""
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(n))
+
+def _tidb_ensure_tables():
+    """Tạo tất cả bảng TiDB nếu chưa tồn tại."""
     conn = _get_tidb_conn()
     if not conn:
         return
     try:
         with conn.cursor() as cur:
+            # Bảng Bans — quản lý user bị cấm
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS bans (
                     user_id    VARCHAR(32)  PRIMARY KEY,
@@ -137,20 +157,41 @@ def _tidb_ensure_table():
                     created_at VARCHAR(50)  NOT NULL DEFAULT ''
                 )
             """)
-        # FIX #2b: autocommit=True nên không cần commit() thủ công nhưng giữ lại để an toàn
+            # FIX #3: Bảng Feedbacks — ID 10 ký tự ngẫu nhiên
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS feedbacks (
+                    id         VARCHAR(10)   PRIMARY KEY,
+                    user_id    VARCHAR(32)   NOT NULL DEFAULT '',
+                    username   VARCHAR(100)  NOT NULL DEFAULT '',
+                    avatar     VARCHAR(300)  NOT NULL DEFAULT '',
+                    content    TEXT,
+                    images     TEXT,
+                    reply      TEXT,
+                    created_at VARCHAR(50)   NOT NULL DEFAULT ''
+                )
+            """)
+            # FIX #3: Bảng Changelogs — INT AUTO_INCREMENT PK
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS changelogs (
+                    id         INT AUTO_INCREMENT PRIMARY KEY,
+                    version    VARCHAR(20)   NOT NULL DEFAULT '',
+                    title      VARCHAR(200)  NOT NULL DEFAULT '',
+                    content    TEXT,
+                    created_at VARCHAR(50)   NOT NULL DEFAULT ''
+                )
+            """)
         conn.commit()
     except Exception as e:
-        print(f"[tidb] Lỗi tạo bảng bans: {e}")
+        print(f"[tidb] Lỗi tạo bảng: {e}")
     finally:
         conn.close()
 
 # ══════════════════════════════════════════════════════════════
-# ROLE SCANNER — đọc từ folder roles/ thực tế
+# ROLE SCANNER
 # ══════════════════════════════════════════════════════════════
 _ROLES_CACHE: list = []
 
 def _scan_roles_from_files() -> list:
-    """Đọc description, name, team từ các file .py trong roles/."""
     global _ROLES_CACHE
     if _ROLES_CACHE:
         return _ROLES_CACHE
@@ -178,26 +219,23 @@ def _scan_roles_from_files() -> list:
                 continue
             try:
                 content = open(fpath, encoding="utf-8").read()
-                nm = re.search(r'^\s+name\s*=\s*["\'](.+?)["\']', content, re.MULTILINE)
-                tm = re.search(r'^\s+team\s*=\s*["\'](.+?)["\']', content, re.MULTILINE)
+                nm = re.search(r'^\s+name\s*=\s*["\'](.*?)["\']', content, re.MULTILINE)
+                tm = re.search(r'^\s+team\s*=\s*["\'](.*?)["\']', content, re.MULTILINE)
                 if not nm:
                     continue
-                name   = nm.group(1).strip()
-                team   = tm.group(1).strip() if tm else subfolder.capitalize()
+                name    = nm.group(1).strip()
+                team    = tm.group(1).strip() if tm else subfolder.capitalize()
                 faction = faction_map.get(team, subfolder.capitalize())
                 color   = color_map.get(faction, "#7c6af7")
 
-                # Lấy description (multi-line string trong ngoặc đơn)
                 dm = re.search(r'description\s*=\s*\(\s*(.*?)\s*\)', content, re.DOTALL)
                 if not dm:
-                    dm = re.search(r'description\s*=\s*["\']([^"\']*)["\']', content)
+                    dm = re.search(r'description\s*=\s*["\'](.*?)["\']', content)
                 desc = ""
                 if dm:
                     raw = dm.group(1)
-                    # Xóa quote + concatenation artifacts
-                    raw = re.sub(r'["\'][\s\n]*["\']', ' ', raw)
+                    raw = re.sub(r'["\']\s*["\']+', ' ', raw)
                     raw = re.sub(r'^[\s"\']+|[\s"\']+$', '', raw, flags=re.MULTILINE)
-                    # Xóa f-string placeholders
                     raw = re.sub(r'\{[^}]*\}', '...', raw)
                     raw = raw.replace("\\n", "\n").replace("\\t", " ").replace("\\\\", "\\")
                     raw = re.sub(r' +', ' ', raw)
@@ -216,17 +254,14 @@ def _scan_roles_from_files() -> list:
 # ══════════════════════════════════════════════════════════════
 # SESSION — cookie có chữ ký HMAC
 # ══════════════════════════════════════════════════════════════
-COOKIE_NAME = "session_data"
+COOKIE_NAME    = "session_data"
 COOKIE_MAX_AGE = 86400 * 7  # 7 ngày
 
 def _sign(data: str) -> str:
     return hmac.new(SECRET_KEY.encode(), data.encode(), hashlib.sha256).hexdigest()
 
 def set_session(response: Response, user_id: str, username: str, avatar_url: str, access_token: str = ""):
-    """Gắn cookie session_data có chữ ký HMAC vào response.
-    Tương thích với cả RedirectResponse và Response thông thường.
-    """
-    import json, base64
+    import base64
     payload_dict = {
         "u": str(user_id),
         "t": access_token,
@@ -234,24 +269,19 @@ def set_session(response: Response, user_id: str, username: str, avatar_url: str
         "a": avatar_url,
         "exp": int(time.time()) + COOKIE_MAX_AGE,
     }
-    data = json.dumps(payload_dict, separators=(",", ":"))
+    data    = json.dumps(payload_dict, separators=(",", ":"))
     payload = base64.urlsafe_b64encode(data.encode()).decode()
-    sig = _sign(payload)
-    cookie_val = f"{payload}.{sig}"
-    is_https = os.environ.get("IS_HTTPS", "true").lower() != "false"
+    sig         = _sign(payload)
+    cookie_val  = f"{payload}.{sig}"
+    is_https    = os.environ.get("IS_HTTPS", "true").lower() != "false"
     response.set_cookie(
-        key=COOKIE_NAME,
-        value=cookie_val,
-        httponly=True,
-        secure=is_https,
-        samesite="lax",
-        max_age=COOKIE_MAX_AGE,
-        path="/",
+        key=COOKIE_NAME, value=cookie_val,
+        httponly=True, secure=is_https, samesite="lax",
+        max_age=COOKIE_MAX_AGE, path="/",
     )
 
 def get_session(request: Request) -> Optional[dict]:
-    """Đọc & xác thực cookie session_data. Trả về None nếu không hợp lệ/hết hạn."""
-    import json, base64
+    import base64
     cookie = request.cookies.get(COOKIE_NAME, "")
     if not cookie or "." not in cookie:
         return None
@@ -262,23 +292,17 @@ def get_session(request: Request) -> Optional[dict]:
         data = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
         if int(time.time()) > data.get("exp", 0):
             return None
-        user_id      = data["u"]
-        access_token = data["t"]
-        username     = data["n"]
-        avatar       = data["a"]
+        return {
+            "user_id":      str(data["u"]),
+            "access_token": data["t"],
+            "username":     data["n"],
+            "avatar":       data["a"],
+            "is_owner":     str(data["u"]) == BOT_OWNER_ID,
+        }
     except Exception:
         return None
-    # FIX #3: So sánh bằng str() cả hai vế để tránh lỗi lệch kiểu dữ liệu
-    return {
-        "user_id":      str(user_id),
-        "access_token": access_token,
-        "username":     username,
-        "avatar":       avatar,
-        "is_owner":     str(user_id) == str(BOT_OWNER_ID),
-    }
 
 def _clear_session(response: Response):
-    """Xóa cookie session_data (dùng khi cookie không hợp lệ)."""
     response.delete_cookie(key=COOKIE_NAME, path="/")
 
 def require_auth(request: Request) -> dict:
@@ -289,17 +313,14 @@ def require_auth(request: Request) -> dict:
 
 def require_owner(request: Request) -> dict:
     session = require_auth(request)
-    # FIX #3: Dùng is_owner đã được tính bằng str() so sánh ở get_session
     if not session["is_owner"]:
         raise HTTPException(status_code=403, detail="Chỉ dành cho chủ bot")
     return session
 
 def _has_manage_guild(permissions: int) -> bool:
-    """Kiểm tra permission MANAGE_GUILD (0x20) hoặc ADMINISTRATOR (0x8)."""
     return bool(permissions & 0x20) or bool(permissions & 0x8)
 
 def _assert_guild_access(session: dict, guild_id: str, guilds_list: list = None):
-    """Owner bypass tất cả. User thường cần MANAGE_GUILD."""
     if session["is_owner"]:
         return True
     if guilds_list:
@@ -311,13 +332,10 @@ def _assert_guild_access(session: dict, guild_id: str, guilds_list: list = None)
 # ══════════════════════════════════════════════════════════════
 # APP
 # ══════════════════════════════════════════════════════════════
-app = FastAPI(title="Anomalies Dashboard v3")
+app = FastAPI(title="Anomalies Dashboard v3.1")
 
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "")
-origins = [
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
+origins = ["http://localhost:8000", "http://127.0.0.1:8000"]
 if RENDER_URL:
     origins.append(RENDER_URL)
 
@@ -331,7 +349,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _startup():
-    _tidb_ensure_table()
+    _tidb_ensure_tables()
 
 # ══════════════════════════════════════════════════════════════
 # AUTH
@@ -370,10 +388,7 @@ async def callback(code: str = None, error: str = None, error_description: str =
             )
             if token_resp.status_code != 200:
                 raise HTTPException(400, f"Discord từ chối code: {token_resp.status_code}")
-            try:
-                token_data = token_resp.json()
-            except Exception:
-                raise HTTPException(500, "Discord trả về response không hợp lệ")
+            token_data = token_resp.json()
             if "access_token" not in token_data:
                 err  = token_data.get("error", "unknown")
                 desc = token_data.get("error_description", "")
@@ -429,14 +444,13 @@ async def api_me(request: Request):
 
 @app.get("/api/dash/roles")
 async def api_roles(request: Request):
-    """Danh sách vai trò — đọc từ file Python thực tế."""
     return JSONResponse(_scan_roles_from_files())
 
 @app.get("/api/dash/guilds")
 async def api_guilds(request: Request):
-    """Danh sách server user đang ở mà bot cũng có config.
-    FIX #4: Query trực tiếp MongoDB để lấy dữ liệu mới nhất, không dùng cache session.
-    FIX #1: Dùng $in để chấp nhận guild_id dạng String lẫn Integer.
+    """Danh sách server user đang ở + bot có config.
+    FIX #4: Query bổ sung vào lobby_states để lấy is_playing + player_count thực tế.
+    FIX #1: guild_id luôn str().
     """
     session = require_auth(request)
     try:
@@ -452,47 +466,62 @@ async def api_guilds(request: Request):
         print(f"[guilds] Discord API error: {e}")
         return JSONResponse([])
 
-    db_col = col("guild_configs")
+    db_configs = col("guild_configs")
+    db_lobbies = col("lobby_states")
     result = []
-    if db_col:
+    if db_configs:
         for g in guilds:
             try:
                 gid = str(g["id"])
-                # FIX #1: Dùng $in để match cả str và int guild_id
-                # FIX #4: Query trực tiếp MongoDB để có Status và Players mới nhất
-                doc = db_col.find_one(
-                    _guild_filter(gid),
-                    {
-                        "_id": 0,
-                        "status": 1,
-                        "max_players": 1,
-                        "active_players": 1,
-                        "players": 1,       # FIX #1: lấy cả trường "players" lẫn "active_players"
-                    }
+                # FIX #1: filter chỉ dùng str()
+                cfg_doc = db_configs.find_one(
+                    _gf(gid),
+                    {"_id": 0, "status": 1, "max_players": 1}
                 )
-                if doc is not None:
-                    icon = g.get("icon")
-                    icon_url = (
-                        f"https://cdn.discordapp.com/icons/{gid}/{icon}.png"
-                        if icon else None
-                    )
-                    # FIX #1: Hỗ trợ cả "active_players" lẫn "players"
-                    player_count = doc.get("active_players") or doc.get("players") or 0
-                    result.append({
-                        "id":            gid,
-                        "name":          g.get("name", "Unknown"),
-                        "icon":          icon_url,
-                        "permissions":   str(g.get("permissions", 0)),
-                        # FIX #4: Dữ liệu live từ MongoDB
-                        "status":        doc.get("status"),
-                        "max_players":   doc.get("max_players", 65),
-                        "active_players": player_count,
-                    })
+                if cfg_doc is None:
+                    continue
+
+                icon = g.get("icon")
+                icon_url = (
+                    f"https://cdn.discordapp.com/icons/{gid}/{icon}.png"
+                    if icon else None
+                )
+
+                # FIX #4: Lấy trạng thái phòng chơi thực tế từ lobby_states
+                is_playing   = False
+                player_count = 0
+                if db_lobbies:
+                    try:
+                        lobby_doc = db_lobbies.find_one(
+                            _gf(gid),
+                            {"_id": 0, "is_playing": 1, "player_count": 1, "player_ids": 1}
+                        )
+                        if lobby_doc:
+                            is_playing   = bool(lobby_doc.get("is_playing", False))
+                            # Hỗ trợ cả player_count (số) lẫn player_ids (list)
+                            player_count = (
+                                lobby_doc.get("player_count")
+                                or len(lobby_doc.get("player_ids", []))
+                                or 0
+                            )
+                    except PyMongoError:
+                        pass
+
+                result.append({
+                    "id":            gid,
+                    "name":          g.get("name", "Unknown"),
+                    "icon":          icon_url,
+                    "permissions":   str(g.get("permissions", 0)),
+                    "status":        cfg_doc.get("status"),
+                    "max_players":   cfg_doc.get("max_players", 65),
+                    "is_playing":    is_playing,
+                    "active_players": player_count,
+                })
             except PyMongoError as e:
                 print(f"[guilds] MongoDB error cho guild {g.get('id')}: {e}")
                 continue
             except Exception as e:
-                print(f"[guilds] Lỗi không xác định cho guild {g.get('id')}: {e}")
+                print(f"[guilds] Lỗi cho guild {g.get('id')}: {e}")
                 continue
     return JSONResponse(result)
 
@@ -502,9 +531,9 @@ async def api_guild_config(guild_id: str, request: Request):
     db_col = col("guild_configs")
     if not db_col:
         return JSONResponse({})
-    # FIX #1: Dùng $in để chấp nhận guild_id String hoặc Integer
     try:
-        doc = db_col.find_one(_guild_filter(guild_id))
+        # FIX #1: filter chỉ str()
+        doc = db_col.find_one(_gf(guild_id))
     except PyMongoError as e:
         print(f"[guild_config] MongoDB error: {e}")
         return JSONResponse({})
@@ -537,11 +566,13 @@ async def api_update_config(guild_id: str, request: Request):
         "day_time", "vote_time", "skip_discussion_delay",
     }
     update = {k: v for k, v in data.items() if k in allowed}
+    # FIX #5: Cập nhật last_updated để Bot biết cần reload cache
+    update["last_updated"] = time.time()
     db_col = col("guild_configs")
     if db_col and update:
-        # FIX #1: Dùng $in để cập nhật đúng document dù guild_id là str hay int
         try:
-            db_col.update_one(_guild_filter(guild_id), {"$set": update}, upsert=True)
+            # FIX #1: filter chỉ str()
+            db_col.update_one(_gf(guild_id), {"$set": update}, upsert=True)
         except PyMongoError as e:
             print(f"[update_config] MongoDB error: {e}")
             raise HTTPException(500, "Lỗi lưu cấu hình")
@@ -551,112 +582,152 @@ async def api_update_config(guild_id: str, request: Request):
 async def api_guild_status(guild_id: str, request: Request):
     require_auth(request)
     db_col = col("guild_configs")
+    db_lobbies = col("lobby_states")
     if not db_col:
         return JSONResponse({"status": None})
-    # FIX #1: Dùng $in + lấy thêm active_players và players
     try:
-        doc = db_col.find_one(
-            _guild_filter(guild_id),
-            {"status": 1, "max_players": 1, "active_players": 1, "players": 1, "_id": 0}
-        )
+        cfg = db_col.find_one(_gf(guild_id), {"status": 1, "max_players": 1, "_id": 0})
     except PyMongoError as e:
         print(f"[guild_status] MongoDB error: {e}")
         return JSONResponse({"status": None})
-    # FIX #1: Hỗ trợ cả trường "active_players" lẫn "players"
+
+    # FIX #4: Bổ sung query lobby_states để lấy player_count thực tế
+    is_playing   = False
     player_count = 0
-    if doc:
-        player_count = doc.get("active_players") or doc.get("players") or 0
+    if db_lobbies:
+        try:
+            lobby = db_lobbies.find_one(
+                _gf(guild_id),
+                {"_id": 0, "is_playing": 1, "player_count": 1, "player_ids": 1}
+            )
+            if lobby:
+                is_playing   = bool(lobby.get("is_playing", False))
+                player_count = lobby.get("player_count") or len(lobby.get("player_ids", [])) or 0
+        except PyMongoError:
+            pass
+
     return JSONResponse({
-        "status":          doc.get("status") if doc else None,
-        "max_players":     doc.get("max_players", 65) if doc else 65,
-        "active_players":  player_count,
+        "status":         cfg.get("status") if cfg else None,
+        "max_players":    cfg.get("max_players", 65) if cfg else 65,
+        "is_playing":     is_playing,
+        "active_players": player_count,
     })
 
 @app.get("/api/dash/changelog")
 async def api_changelog(request: Request):
+    """FIX #3: Đọc changelogs từ TiDB (INT AUTO_INCREMENT PK)."""
     require_auth(request)
-    db_col = col("changelogs")
-    if not db_col:
+    conn = _get_tidb_conn()
+    if not conn:
         return JSONResponse([])
-    # FIX #4: Bọc trong try-except phòng DB timeout
     try:
-        logs = list(db_col.find({}, {"_id": 0}).sort("created_at", -1).limit(30))
-    except PyMongoError as e:
-        print(f"[changelog] MongoDB error: {e}")
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, version, title, content, created_at FROM changelogs ORDER BY id DESC LIMIT 30")
+            rows = cur.fetchall()
+        return JSONResponse(list(rows))
+    except Exception as e:
+        print(f"[changelog] TiDB error: {e}")
         return JSONResponse([])
-    return JSONResponse(logs)
+    finally:
+        conn.close()
 
 @app.post("/api/dash/feedback")
 async def api_feedback(request: Request):
+    """FIX #3: Lưu feedback vào TiDB với ID 10 ký tự ngẫu nhiên."""
     session = require_auth(request)
     try:
         data = await request.json()
     except Exception:
         raise HTTPException(400, "Request body không hợp lệ")
-    content = str(data.get("content", "")).strip()[:2000]
+    content    = str(data.get("content", "")).strip()[:2000]
     raw_images = data.get("images", [])
     if not isinstance(raw_images, list):
         raw_images = []
-    MAX_IMG_B64 = 1_400_000  # ~1MB raw
-    images = []
-    for img in raw_images[:5]:
-        if isinstance(img, str) and len(img) <= MAX_IMG_B64:
-            images.append(img)
+    MAX_IMG_B64 = 1_400_000
+    images = [img for img in raw_images[:5] if isinstance(img, str) and len(img) <= MAX_IMG_B64]
     if not content and not images:
         raise HTTPException(400, "Nội dung trống")
-    db_col = col("feedbacks")
-    if db_col is None:
+
+    conn = _get_tidb_conn()
+    if not conn:
         raise HTTPException(503, "Cơ sở dữ liệu chưa sẵn sàng")
-    # FIX #3: Lưu đúng vào collection "feedbacks"
     try:
-        db_col.insert_one({
-            "user_id":    session["user_id"],
-            "username":   session["username"],
-            "avatar":     session["avatar"],
-            "content":    content,
-            "images":     images,
-            "reply":      None,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-    except PyMongoError as e:
-        print(f"[feedback] MongoDB error: {e}")
+        fb_id = _rand_id(10)
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO feedbacks (id, user_id, username, avatar, content, images, reply, created_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, NULL, %s)""",
+                (
+                    fb_id,
+                    str(session["user_id"]),     # FIX #1: luôn str()
+                    session["username"],
+                    session["avatar"],
+                    content,
+                    json.dumps(images, ensure_ascii=False),
+                    datetime.now(timezone.utc).isoformat(),
+                )
+            )
+        return JSONResponse({"ok": True, "id": fb_id})
+    except Exception as e:
+        print(f"[feedback] TiDB error: {e}")
         raise HTTPException(500, "Lỗi lưu dữ liệu")
-    return JSONResponse({"ok": True})
+    finally:
+        conn.close()
 
 # ══════════════════════════════════════════════════════════════
 # API — OWNER ONLY
 # ══════════════════════════════════════════════════════════════
 @app.get("/api/dash/admin/feedbacks")
 async def api_admin_feedbacks(request: Request):
-    # FIX #3: require_owner dùng is_owner đã được fix bằng str() so sánh
+    """FIX #3: Đọc feedbacks từ TiDB."""
     require_owner(request)
-    db_col = col("feedbacks")
-    if not db_col:
+    conn = _get_tidb_conn()
+    if not conn:
         return JSONResponse([])
     try:
-        docs = list(db_col.find({}, {"_id": 0}).sort("created_at", -1).limit(50))
-    except PyMongoError as e:
-        print(f"[admin_feedbacks] MongoDB error: {e}")
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, user_id, username, avatar, content, images, reply, created_at FROM feedbacks ORDER BY created_at DESC LIMIT 50")
+            rows = cur.fetchall()
+        # Parse images JSON string thành list
+        for row in rows:
+            if isinstance(row.get("images"), str):
+                try:
+                    row["images"] = json.loads(row["images"])
+                except Exception:
+                    row["images"] = []
+        return JSONResponse(list(rows))
+    except Exception as e:
+        print(f"[admin_feedbacks] TiDB error: {e}")
         return JSONResponse([])
-    return JSONResponse(docs)
+    finally:
+        conn.close()
 
 @app.post("/api/dash/admin/feedback/{fb_id}/reply_by_index")
 async def api_reply_feedback_by_index(fb_id: str, request: Request):
+    """FIX #3: Cập nhật reply trên TiDB — dùng id (PK) hoặc created_at fallback."""
     require_owner(request)
     data       = await request.json()
     reply      = str(data.get("reply", "")).strip()[:1000]
     created_at = data.get("created_at", "")
-    db_col = col("feedbacks")
-    if db_col and created_at:
-        try:
-            db_col.update_one({"created_at": created_at}, {"$set": {"reply": reply}})
-        except PyMongoError as e:
-            print(f"[reply_feedback] MongoDB error: {e}")
-            raise HTTPException(500, "Lỗi lưu reply")
-    return JSONResponse({"ok": True})
+    conn = _get_tidb_conn()
+    if not conn:
+        raise HTTPException(503, "Không kết nối được TiDB")
+    try:
+        with conn.cursor() as cur:
+            if fb_id and fb_id != "by_index":
+                cur.execute("UPDATE feedbacks SET reply=%s WHERE id=%s", (reply, fb_id))
+            elif created_at:
+                cur.execute("UPDATE feedbacks SET reply=%s WHERE created_at=%s", (reply, created_at))
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        print(f"[reply_feedback] TiDB error: {e}")
+        raise HTTPException(500, "Lỗi lưu reply")
+    finally:
+        conn.close()
 
 @app.post("/api/dash/admin/changelog")
 async def api_post_changelog(request: Request):
+    """FIX #3: Lưu changelog vào TiDB với INT AUTO_INCREMENT PK."""
     require_owner(request)
     try:
         data = await request.json()
@@ -667,21 +738,21 @@ async def api_post_changelog(request: Request):
     version = str(data.get("version", "")).strip()[:20]
     if not title or not content:
         raise HTTPException(400, "Thiếu tiêu đề hoặc nội dung")
-    db_col = col("changelogs")
-    if db_col is None:
+    conn = _get_tidb_conn()
+    if not conn:
         raise HTTPException(503, "Cơ sở dữ liệu chưa sẵn sàng")
-    # FIX #3: Ghi đúng vào collection "changelogs"
     try:
-        db_col.insert_one({
-            "title":      title,
-            "content":    content,
-            "version":    version,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-    except PyMongoError as e:
-        print(f"[changelog] MongoDB error: {e}")
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO changelogs (version, title, content, created_at) VALUES (%s, %s, %s, %s)",
+                (version, title, content, datetime.now(timezone.utc).isoformat())
+            )
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        print(f"[changelog] TiDB error: {e}")
         raise HTTPException(500, "Lỗi lưu dữ liệu")
-    return JSONResponse({"ok": True})
+    finally:
+        conn.close()
 
 @app.get("/api/dash/admin/bans")
 async def api_admin_bans(request: Request):
@@ -704,7 +775,7 @@ async def api_admin_bans(request: Request):
 async def api_ban_player(request: Request):
     require_owner(request)
     data    = await request.json()
-    user_id = str(data.get("user_id", "")).strip()
+    user_id = str(data.get("user_id", "")).strip()   # FIX #1: str()
     reason  = str(data.get("reason", "Không có lý do")).strip()[:500]
     mode    = data.get("mode", "ban")
     if not user_id:
@@ -721,7 +792,6 @@ async def api_ban_player(request: Request):
                 (user_id, reason, mode, datetime.now(timezone.utc).isoformat(),
                  reason, mode, datetime.now(timezone.utc).isoformat())
             )
-        # FIX #2b: autocommit=True nên commit này là dự phòng, vẫn an toàn để giữ
         conn.commit()
     except Exception as e:
         print(f"[tidb] Lỗi ban: {e}")
@@ -738,8 +808,7 @@ async def api_unban_player(user_id: str, request: Request):
         raise HTTPException(503, "Không kết nối được TiDB")
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM bans WHERE user_id = %s", (user_id,))
-        # FIX #2b: autocommit=True — commit này là dự phòng
+            cur.execute("DELETE FROM bans WHERE user_id = %s", (str(user_id),))  # FIX #1: str()
         conn.commit()
     except Exception as e:
         print(f"[tidb] Lỗi unban: {e}")
@@ -750,51 +819,41 @@ async def api_unban_player(user_id: str, request: Request):
 
 @app.get("/api/dash/player/lookup")
 async def api_player_lookup(user_id: str, request: Request):
-    """Tra cứu trạng thái ban của một user."""
     require_auth(request)
     conn = _get_tidb_conn()
     ban_info = None
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM bans WHERE user_id = %s", (user_id,))
+                cur.execute("SELECT * FROM bans WHERE user_id = %s", (str(user_id),))  # FIX #1: str()
                 ban_info = cur.fetchone()
         except Exception as e:
             print(f"[player_lookup] Lỗi TiDB: {e}")
         finally:
             conn.close()
     return JSONResponse({
-        "user_id": user_id,
+        "user_id": str(user_id),
         "is_banned": ban_info is not None,
         "ban": ban_info,
     })
 
 @app.get("/api/dash/stats")
 async def api_stats(request: Request):
-    """Thống kê tổng quát."""
     require_auth(request)
     db = get_db()
     stats = {"total_guilds": 0, "active_games": 0, "total_bans": 0,
              "total_feedbacks": 0, "total_changelogs": 0, "db_ok": False}
     if db:
         stats["db_ok"] = True
-        # FIX #4: Bọc từng query trong try-except riêng để tránh crash cả hàm
         try:
             stats["total_guilds"] = db["guild_configs"].count_documents({})
         except Exception as e:
             print(f"[stats] Lỗi đếm total_guilds: {e}")
         try:
-            stats["active_games"] = db["guild_configs"].count_documents({"status": {"$ne": None}})
+            stats["active_games"] = db["lobby_states"].count_documents({"is_playing": True})
         except Exception as e:
             print(f"[stats] Lỗi đếm active_games: {e}")
-        try:
-            stats["total_feedbacks"] = db["feedbacks"].count_documents({})
-        except Exception as e:
-            print(f"[stats] Lỗi đếm total_feedbacks: {e}")
-        try:
-            stats["total_changelogs"] = db["changelogs"].count_documents({})
-        except Exception as e:
-            print(f"[stats] Lỗi đếm total_changelogs: {e}")
+    # FIX #3: Đếm từ TiDB
     conn = _get_tidb_conn()
     if conn:
         try:
@@ -802,46 +861,68 @@ async def api_stats(request: Request):
                 cur.execute("SELECT COUNT(*) as cnt FROM bans")
                 row = cur.fetchone()
                 stats["total_bans"] = row["cnt"] if row else 0
+                cur.execute("SELECT COUNT(*) as cnt FROM feedbacks")
+                row = cur.fetchone()
+                stats["total_feedbacks"] = row["cnt"] if row else 0
+                cur.execute("SELECT COUNT(*) as cnt FROM changelogs")
+                row = cur.fetchone()
+                stats["total_changelogs"] = row["cnt"] if row else 0
         except Exception as e:
-            print(f"[stats] Lỗi đếm total_bans: {e}")
+            print(f"[stats] Lỗi TiDB: {e}")
         finally:
             conn.close()
     return JSONResponse(stats)
 
 @app.get("/api/dash/admin/rooms")
 async def api_admin_rooms(request: Request):
+    """FIX #4: Bổ sung lookup lobby_states để lấy is_playing + player_count thực tế."""
     require_owner(request)
     db_col = col("guild_configs")
+    db_lobbies = col("lobby_states")
     if not db_col:
         return JSONResponse([])
-    # FIX #1: Lấy thêm trường active_players và players
     try:
         docs = list(db_col.find({}, {
             "_id": 0, "guild_id": 1, "guild_name": 1,
             "status": 1, "max_players": 1, "min_players": 1,
-            "active_players": 1, "players": 1,
         }))
     except PyMongoError as e:
         print(f"[admin_rooms] MongoDB error: {e}")
         return JSONResponse([])
-    # FIX #1: Chuẩn hóa trường players về active_players cho frontend
-    for doc in docs:
-        if "active_players" not in doc or doc["active_players"] is None:
-            doc["active_players"] = doc.pop("players", 0) or 0
-        else:
-            doc.pop("players", None)
+
+    # FIX #4: Gắn thêm thông tin phòng từ lobby_states
+    if db_lobbies:
+        for doc in docs:
+            gid = str(doc.get("guild_id", ""))
+            doc["guild_id"] = gid
+            try:
+                lobby = db_lobbies.find_one(
+                    _gf(gid),
+                    {"_id": 0, "is_playing": 1, "player_count": 1, "player_ids": 1}
+                )
+                if lobby:
+                    doc["is_playing"]    = bool(lobby.get("is_playing", False))
+                    doc["active_players"] = (
+                        lobby.get("player_count")
+                        or len(lobby.get("player_ids", []))
+                        or 0
+                    )
+                else:
+                    doc["is_playing"]    = False
+                    doc["active_players"] = 0
+            except PyMongoError:
+                doc["is_playing"]    = False
+                doc["active_players"] = 0
     return JSONResponse(docs)
 
-# Admin: xem/edit config bất kỳ guild
 @app.get("/api/dash/admin/guild/{guild_id}/config")
 async def api_admin_guild_config(guild_id: str, request: Request):
     require_owner(request)
     db_col = col("guild_configs")
     if not db_col:
         return JSONResponse({})
-    # FIX #1: Dùng $in để chấp nhận guild_id String hoặc Integer
     try:
-        doc = db_col.find_one(_guild_filter(guild_id))
+        doc = db_col.find_one(_gf(guild_id))  # FIX #1: str()
     except PyMongoError as e:
         print(f"[admin_guild_config] MongoDB error: {e}")
         return JSONResponse({})
@@ -860,18 +941,19 @@ async def api_admin_update_config(guild_id: str, request: Request):
         "text_channel_id", "voice_channel_id", "dead_role_id", "alive_role_id",
     }
     update = {k: v for k, v in data.items() if k in allowed}
+    # FIX #5: Đặt last_updated để Bot reload cache
+    update["last_updated"] = time.time()
     db_col = col("guild_configs")
     if db_col and update:
-        # FIX #1: Dùng $in để cập nhật đúng document dù guild_id là str hay int
         try:
-            db_col.update_one(_guild_filter(guild_id), {"$set": update}, upsert=True)
+            db_col.update_one(_gf(guild_id), {"$set": update}, upsert=True)  # FIX #1: str()
         except PyMongoError as e:
             print(f"[admin_update_config] MongoDB error: {e}")
             raise HTTPException(500, "Lỗi lưu cấu hình")
     return JSONResponse({"ok": True})
 
 # ══════════════════════════════════════════════════════════════
-# SPA — serve index.html cho tất cả route
+# SPA
 # ══════════════════════════════════════════════════════════════
 @app.get("/{full_path:path}", response_class=HTMLResponse)
 async def serve_spa(full_path: str):
