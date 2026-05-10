@@ -2,14 +2,14 @@
 disnake>=2.9.2
 
 # ── Web Framework ─────────────────────────────────────────────────
-fastapi==0.115.5
-uvicorn[standard]==0.32.1
-websockets==13.1
+fastapi>=0.115.5
+uvicorn[standard]>=0.32.1
+websockets>=13.1
 python-multipart>=0.0.9
 httpx>=0.27.0
 
 # ── MongoDB (config_manager — dùng chung Bot + Web) ───────────────
-pymongo[srv]==4.6.3
+pymongo[srv]>=4.6.3
 dnspython>=2.4.2
 motor>=3.3.0
 
@@ -17,10 +17,12 @@ motor>=3.3.0
 mysql-connector-python>=8.3.0
 
 # ── Validation & Serialization ────────────────────────────────────
-pydantic==2.10.4
+# KHÔNG pin cứng pydantic==2.10.4 vì pydantic-core 2.27.2 chưa có
+# wheel pre-built cho Python 3.14 → pip sẽ tự chọn bản mới có wheel
+pydantic>=2.10
 
 # ── Utilities ─────────────────────────────────────────────────────
-python-dotenv==1.0.1
+python-dotenv>=1.0.1
 certifi
 aiohttp>=3.9.0
 ujson>=5.9.0
