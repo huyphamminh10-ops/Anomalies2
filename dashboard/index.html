@@ -869,19 +869,79 @@ select.form-input { appearance: none; cursor: pointer; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.guide-section { margin-bottom: 28px; }
-.guide-section h3 { font-size: 16px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-.guide-section p { font-size: 14px; color: var(--text2); line-height: 1.7; }
-.guide-section ul { padding-left: 20px; color: var(--text2); font-size: 14px; line-height: 1.8; }
+/* ── Guide multi-page ── */
+.guide-nav {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.guide-tab {
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border2);
+  color: var(--text2); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: var(--trans); white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+}
+.guide-tab:hover { background: var(--surface2); color: var(--text); }
+.guide-tab.active {
+  background: rgba(var(--accent-rgb),0.15);
+  border-color: var(--accent); color: var(--accent);
+}
+.guide-page { display: none; animation: fadeIn 0.22s ease; }
+.guide-page.active { display: block; }
+
+.guide-section { margin-bottom: 26px; }
+.guide-section h3 { font-size: 15.5px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.guide-section p { font-size: 14px; color: var(--text2); line-height: 1.75; }
+.guide-section ul { padding-left: 20px; color: var(--text2); font-size: 14px; line-height: 1.9; }
+.guide-section ul li { margin-bottom: 4px; }
 .guide-tip {
   background: rgba(var(--accent-rgb),0.07);
   border-left: 3px solid var(--accent);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  padding: 12px 16px;
-  font-size: 13.5px;
-  color: var(--text2);
-  margin-top: 10px;
+  padding: 12px 16px; font-size: 13.5px; color: var(--text2); margin-top: 10px;
 }
+.guide-tip strong { color: var(--accent); }
+
+/* role cards */
+.role-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap: 12px; margin-top: 12px; }
+.role-card {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--radius-sm); padding: 14px 16px;
+  transition: var(--trans);
+}
+.role-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--glow); }
+.role-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.role-card-name { font-weight: 700; font-size: 13.5px; }
+.role-card-desc { font-size: 12.5px; color: var(--text2); line-height: 1.65; }
+.badge {
+  font-size: 10.5px; font-weight: 700; padding: 2px 7px;
+  border-radius: 20px; text-transform: uppercase; letter-spacing: .4px;
+}
+.badge-s { background: rgba(61,214,140,0.15); color: var(--survivors); }
+.badge-a { background: rgba(240,80,80,0.15); color: var(--anomalies); }
+.badge-u { background: rgba(245,194,49,0.15); color: var(--unknown); }
+
+/* phase timeline */
+.phase-list { display: flex; flex-direction: column; gap: 0; margin-top: 14px; }
+.phase-item {
+  display: flex; gap: 14px; position: relative;
+  padding-bottom: 22px;
+}
+.phase-item:last-child { padding-bottom: 0; }
+.phase-dot {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 17px;
+  position: relative; z-index: 1;
+}
+.phase-line::before {
+  content: '';
+  position: absolute; left: 17px; top: 36px;
+  width: 2px; height: calc(100% - 14px);
+  background: var(--border2);
+}
+.phase-item:last-child .phase-line::before { display: none; }
+.phase-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.phase-desc { font-size: 13px; color: var(--text2); line-height: 1.65; }
 
 .img-viewer-overlay {
   display: none;
@@ -1090,44 +1150,416 @@ select.form-input { appearance: none; cursor: pointer; }
       <!-- PAGE: GUIDE -->
       <div class="page" id="page-guide">
         <div class="section-title">Hướng Dẫn Chơi</div>
-        <div class="section-sub">Tổng hợp luật chơi và cách thức hoạt động trong Anomalies.</div>
+        <div class="section-sub">Chọn một chủ đề bên dưới để xem hướng dẫn chi tiết.</div>
 
-        <div class="card" style="max-width:720px">
-          <div class="guide-section">
-            <h3>🎮 Cách bắt đầu</h3>
-            <p>Bot Anomalies là game nhập vai nhiều người chơi trên Discord. Người chơi sẽ được phân vai ngẫu nhiên và phải hoàn thành mục tiêu theo phe của mình.</p>
-            <div class="guide-tip">Dùng lệnh <code style="font-family:monospace;background:var(--bg3);padding:1px 6px;border-radius:4px">/join</code> trong kênh text để tham gia phòng chờ.</div>
+        <!-- TAB NAV -->
+        <div class="guide-nav">
+          <div class="guide-tab active" onclick="showGuideTab('intro')">🎮 Bắt Đầu</div>
+          <div class="guide-tab" onclick="showGuideTab('phases')">🌙 Chu Kỳ Game</div>
+          <div class="guide-tab" onclick="showGuideTab('factions')">⚔️ Các Phe</div>
+          <div class="guide-tab" onclick="showGuideTab('survivors')">🟢 Survivors</div>
+          <div class="guide-tab" onclick="showGuideTab('anomalies')">🔴 Anomalies</div>
+          <div class="guide-tab" onclick="showGuideTab('unknown')">⚫ Unknown</div>
+          <div class="guide-tab" onclick="showGuideTab('voting')">🗳️ Bỏ Phiếu</div>
+          <div class="guide-tab" onclick="showGuideTab('tips')">💡 Mẹo Chơi</div>
+        </div>
+
+        <!-- ═══ PAGE 1: BẮT ĐẦU ═══ -->
+        <div class="guide-page active" id="gtab-intro" style="max-width:760px">
+          <div class="card">
+            <div class="guide-section">
+              <h3>🎮 Anomalies là gì?</h3>
+              <p>Anomalies là game nhập vai nhiều người chơi trên Discord, lấy cảm hứng từ thể loại Ma Sói / Town of Salem. Mỗi người được phân một <strong>vai trò bí mật</strong> và phải hoàn thành mục tiêu riêng của phe mình mà không để lộ danh tính.</p>
+            </div>
+
+            <div class="guide-section">
+              <h3>🚪 Cách tham gia phòng</h3>
+              <ul>
+                <li>Vào <strong>kênh thoại (Voice Channel)</strong> được chỉ định — bot sẽ tự động thêm bạn vào danh sách chờ.</li>
+                <li>Hoặc nhấn nút <strong>✋ Tham Gia</strong> trên bảng lobby trong kênh text nếu server không dùng voice.</li>
+                <li>Game bắt đầu tự động khi đủ người (tối thiểu do Admin cài đặt, mặc định <strong>5 người</strong>) và hết đồng hồ đếm ngược.</li>
+                <li>Nếu lobby đầy, đồng hồ tăng tốc còn <strong>10 giây</strong> — game sẽ khởi động ngay.</li>
+              </ul>
+              <div class="guide-tip">⚠️ Nếu bạn vào xem trong khi game đang chạy, bạn sẽ trở thành <strong>👻 Spectator</strong> — không tham gia được trận đó.</div>
+            </div>
+
+            <div class="guide-section">
+              <h3>📬 Nhận vai trò qua DM</h3>
+              <p>Ngay khi game bắt đầu, bot sẽ gửi DM cho bạn thông báo vai trò của mình. Mọi hành động ban đêm đều thực hiện qua DM này. Hãy <strong>bật DM từ bot</strong> trước khi vào phòng.</p>
+              <div class="guide-tip">💡 Nếu không nhận được DM, hãy kiểm tra cài đặt quyền riêng tư Discord — cho phép tin nhắn từ thành viên cùng server.</div>
+            </div>
+
+            <div class="guide-section">
+              <h3>🏁 Điều kiện kết thúc</h3>
+              <ul>
+                <li><strong style="color:var(--survivors)">Survivors thắng</strong> — khi toàn bộ Anomalies và Unknown thù địch bị loại.</li>
+                <li><strong style="color:var(--anomalies)">Anomalies thắng</strong> — khi số Anomalies ≥ số Survivors còn lại.</li>
+                <li><strong style="color:var(--unknown)">Unknown thắng</strong> — mỗi vai trò có điều kiện thắng riêng biệt.</li>
+              </ul>
+            </div>
           </div>
+        </div>
 
-          <div class="guide-section">
-            <h3>⚙️ Các phe trong game</h3>
-            <ul>
-              <li><strong style="color:var(--survivors)">Survivors</strong> — Sống sót đến cuối hoặc loại bỏ tất cả Anomalies.</li>
-              <li><strong style="color:var(--anomalies)">Anomalies</strong> — Loại bỏ Survivors đến khi chiếm đa số.</li>
-              <li><strong style="color:var(--unknown)">Unknown</strong> — Vai trò trung lập với điều kiện chiến thắng riêng.</li>
-              <li><strong style="color:var(--event)">Event</strong> — Vai trò sự kiện đặc biệt, chỉ xuất hiện theo mùa.</li>
-            </ul>
+        <!-- ═══ PAGE 2: CHU KỲ GAME ═══ -->
+        <div class="guide-page" id="gtab-phases" style="max-width:760px">
+          <div class="card">
+            <div class="guide-section">
+              <h3>🔄 Vòng lặp một ngày/đêm</h3>
+              <p>Mỗi vòng game diễn ra theo trình tự cố định sau:</p>
+              <div class="phase-list">
+                <div class="phase-item phase-line">
+                  <div class="phase-dot" style="background:rgba(124,106,247,0.2)">🌅</div>
+                  <div>
+                    <div class="phase-title">Phân Vai — Giao Đêm 0</div>
+                    <div class="phase-desc">Bot gửi DM vai trò cho tất cả người chơi. Bạn có vài giây để đọc và chuẩn bị chiến lược.</div>
+                  </div>
+                </div>
+                <div class="phase-item phase-line">
+                  <div class="phase-dot" style="background:rgba(61,214,140,0.2)">☀️</div>
+                  <div>
+                    <div class="phase-title">Ban Ngày — Thảo Luận</div>
+                    <div class="phase-desc">Toàn bộ người chơi thảo luận trong kênh text. Ai đó có thể tiết lộ thông tin, tố cáo, hoặc bluff. Mặc định <strong>90 giây</strong>. Có thể bỏ phiếu skip sớm.</div>
+                  </div>
+                </div>
+                <div class="phase-item phase-line">
+                  <div class="phase-dot" style="background:rgba(245,194,49,0.2)">🗳️</div>
+                  <div>
+                    <div class="phase-title">Bỏ Phiếu — Cách Ly</div>
+                    <div class="phase-desc">Mọi người bỏ phiếu loại 1 người. Người nhiều phiếu nhất bị trục xuất và lộ vai trò. Nếu hòa → revote. Mặc định <strong>30 giây</strong>.</div>
+                  </div>
+                </div>
+                <div class="phase-item phase-line">
+                  <div class="phase-dot" style="background:rgba(56,217,245,0.2)">🌙</div>
+                  <div>
+                    <div class="phase-title">Ban Đêm — Hành Động</div>
+                    <div class="phase-desc">Bot gửi UI hành động qua DM cho từng vai trò. Mỗi người chọn mục tiêu hoặc kỹ năng. Mặc định <strong>45 giây</strong>. Người chết bị mute (tùy cài đặt).</div>
+                  </div>
+                </div>
+                <div class="phase-item">
+                  <div class="phase-dot" style="background:rgba(240,80,80,0.2)">🔍</div>
+                  <div>
+                    <div class="phase-title">Buổi Sáng — Kết Quả</div>
+                    <div class="phase-desc">Bot công bố ai đã bị giết trong đêm qua cùng một câu tường thuật từ AI Narrator. Người chết lộ vai trò và vào kênh ma. Vòng mới bắt đầu.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="guide-section" style="margin-top:28px">
+              <h3>💬 Kênh Chat Riêng</h3>
+              <ul>
+                <li><strong>Kênh Dị Thể (Anomaly Chat)</strong> — Phe Anomalies có kênh chat bí mật để bàn chiến thuật suốt cả trận.</li>
+                <li><strong>Kênh Người Chết (Dead Chat)</strong> — Người đã chết vào đây để theo dõi trận. Không được tiết lộ thông tin ra ngoài.</li>
+                <li><strong>Di Chúc (Will)</strong> — Nhắn tin riêng cho bot để để lại ghi chú. Khi bạn chết, di chúc sẽ được công bố.</li>
+              </ul>
+              <div class="guide-tip">💡 Viết di chúc bằng cách nhắn tin riêng cho bot trong DM. Dùng <code style="font-family:monospace;background:var(--bg3);padding:1px 5px;border-radius:4px">!will [nội dung]</code> hoặc theo hướng dẫn trong DM vai trò.</div>
+            </div>
           </div>
+        </div>
 
-          <div class="guide-section">
-            <h3>🌙 Chu kỳ ngày/đêm</h3>
-            <p>Game diễn ra theo chu kỳ Ngày → Thảo luận → Bỏ phiếu → Đêm. Ban đêm, mỗi vai trò sẽ thực hiện hành động của mình thông qua DM với bot.</p>
-            <div class="guide-tip">Thời gian mỗi giai đoạn có thể được chủ phòng tùy chỉnh trong phần Cài Đặt Phòng.</div>
+        <!-- ═══ PAGE 3: CÁC PHE ═══ -->
+        <div class="guide-page" id="gtab-factions" style="max-width:760px">
+          <div class="card">
+            <div class="guide-section">
+              <h3 style="color:var(--survivors)">🟢 Phe Survivors — Người Sống Sót</h3>
+              <p>Phe đa số trong thị trấn. Họ không biết nhau (trừ một số vai trò đặc biệt) và phải dùng suy luận, thông tin thu thập ban đêm để tìm và loại bỏ Anomalies.</p>
+              <ul>
+                <li>Gồm nhiều vai trò chuyên biệt: điều tra, bảo vệ, tiêu diệt trực tiếp, hỗ trợ.</li>
+                <li>Hành động ban đêm qua DM — kết quả chỉ gửi riêng cho bạn.</li>
+                <li>Thắng khi toàn bộ Anomalies và Unknown thù địch bị loại.</li>
+              </ul>
+            </div>
+            <div class="guide-section">
+              <h3 style="color:var(--anomalies)">🔴 Phe Anomalies — Dị Thể</h3>
+              <p>Phe phản diện ẩn danh. Họ biết nhau qua kênh chat bí mật và cùng vote chọn 1 người để giết mỗi đêm.</p>
+              <ul>
+                <li><strong>Lãnh Chúa (Overlord)</strong> là người quyết định mục tiêu giết cuối cùng. Khi Lãnh Chúa chết, cả phe vote bình đẳng.</li>
+                <li>Mỗi Anomaly có thể mang kỹ năng riêng để hỗ trợ phe (gây mù, block, theo dõi, điều khiển…).</li>
+                <li>Thắng khi số Anomalies ≥ số Survivors còn sống.</li>
+              </ul>
+            </div>
+            <div class="guide-section">
+              <h3 style="color:var(--unknown)">⚫ Unknown Entities — Thực Thể Ẩn</h3>
+              <p>Các thực thể trung lập với mục tiêu hoàn toàn độc lập — không cần thắng cùng ai, thậm chí có thể phá cả hai phe.</p>
+              <ul>
+                <li>Điều kiện thắng khác nhau tùy vai trò: sống sót một mình, bị trục xuất đúng cách, kéo dài trận đủ lâu, v.v.</li>
+                <li>Không có kênh phe riêng (trừ Kẻ Tâm Thần — thấy được kênh Anomaly).</li>
+                <li>Thường là mối đe dọa với cả hai phe nếu không bị chú ý sớm.</li>
+              </ul>
+            </div>
+            <div class="guide-tip">⚠️ <strong>Lưu ý:</strong> Một số Unknown có thể xuất hiện trong danh sách đồng đội của Anomalies (như Kẻ Tâm Thần) hoặc bị điều tra ra phe sai (như Tín Hiệu Giả). Đừng tin 100% vào thông tin điều tra!</div>
           </div>
+        </div>
 
-          <div class="guide-section">
-            <h3>📜 Luật cơ bản</h3>
-            <ul>
-              <li>Không chia sẻ thông tin từ DM bot ra kênh công khai trực tiếp.</li>
-              <li>Không spam hoặc cố tình làm gián đoạn game.</li>
-              <li>Tôn trọng quyết định của ban quản trị phòng.</li>
-              <li>Người chơi bị ban sẽ không thể tham gia bất kỳ phòng nào có bot.</li>
-            </ul>
+        <!-- ═══ PAGE 4: SURVIVORS ═══ -->
+        <div class="guide-page" id="gtab-survivors" style="max-width:900px">
+          <div class="card" style="margin-bottom:16px">
+            <div style="font-size:13.5px;color:var(--text2);line-height:1.7">Tất cả vai trò Survivors đều thuộc phe <strong style="color:var(--survivors)">Người Sống Sót</strong>. Mỗi đêm họ nhận UI hành động riêng qua DM.</div>
           </div>
+          <div class="role-grid">
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🏘️ Dân Thường</span></div>
+              <div class="role-card-desc">Không có kỹ năng đặc biệt. Vũ khí duy nhất là lá phiếu ban ngày. Hãy quan sát và suy luận để loại Dị Thể.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🔎 Thám Tử</span></div>
+              <div class="role-card-desc">Mỗi đêm điều tra 1 người — kết quả trả về phe (🔴 Dị Thể / 🟢 Sống Sót). Không tiết lộ tên vai trò cụ thể.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">👮 Thám Trưởng</span></div>
+              <div class="role-card-desc">Kiểm tra và biết <em>chính xác tên vai trò</em> của mục tiêu mỗi đêm. Nguồn thông tin mạnh nhất nhưng cũng là mục tiêu ưu tiên của Dị Thể.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🔒 Cai Ngục</span></div>
+              <div class="role-card-desc">Giam giữ 1 người mỗi đêm — họ không thể dùng kỹ năng và không bị giết. Có 1 viên đạn để xử tử tù nhân.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🏛️ Thị Trưởng</span></div>
+              <div class="role-card-desc">Có thể lộ diện để phiếu bầu trở thành x3. Có 3 viên đạn phản đòn nếu bị Dị Thể tấn công ban đêm.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🤝 Phụ Tá Thị Trưởng</span></div>
+              <div class="role-card-desc">Biết ai là Thị Trưởng ngay từ đầu. Phối hợp bảo vệ Thị Trưởng và dẫn dắt thị trấn cùng nhau.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">👁️ Nhà Ngoại Cảm</span></div>
+              <div class="role-card-desc">Mỗi đêm trò chuyện với người đã chết qua kênh bí mật. Nguồn thông tin từ người chết — không thể bỏ phiếu.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">📡 Điệp Viên</span></div>
+              <div class="role-card-desc">Mỗi đêm biết Dị Thể đang nhắm vào ai (không biết kẻ giết là ai). Thông tin gián tiếp nhưng rất có giá trị.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">📷 Người Giám Sát</span></div>
+              <div class="role-card-desc">3 lượt dùng camera — nhận danh sách ngẫu nhiên 3 người đang hoạt động. Nếu có Anomaly trong danh sách, kênh Dị Thể nhận cảnh báo.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🔮 Người Tiên Tri</span></div>
+              <div class="role-card-desc">3 kỹ năng: Tiên Đoán (AI Gemini phán xét), Kiểm Tra Ba người (trả về nhóm phe), Trực Giác Tập Thể (ảnh hưởng suy luận cộng đồng). Mỗi kỹ năng dùng hữu hạn.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🧱 Kiến Trúc Sư</span></div>
+              <div class="role-card-desc">2 lượt gia cố — mỗi lần bảo vệ tối đa 5 Survivor khỏi đòn tấn công không xuyên giáp trong đêm đó.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">💊 Nhà Dược Học Điên</span></div>
+              <div class="role-card-desc">4 loại thuốc: Hồi Phục (×2, bảo vệ), Ngừng Tim (×1, giết ngay), Phát Sáng (×1, lộ kẻ giết), Trường Sinh/Virus (×1). Có thể tự dùng.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🪤 Thợ Đặt Bẫy</span></div>
+              <div class="role-card-desc">Bẫy kích hoạt khi Dị Thể tấn công bạn: 25% lộ tên, 25% giết kẻ tấn công, 25% bạn chết, 25% Stun kẻ tấn công. Một lần duy nhất.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🔫 Kẻ Trừng Phạt</span></div>
+              <div class="role-card-desc">3 viên đạn để bắn nghi phạm vào ban đêm. Bắn ban ngày bị lộ danh tính. Không tham gia bỏ phiếu cách ly.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">💀 Kẻ Báo Oán</span></div>
+              <div class="role-card-desc">Một lần hồi sinh 1 Survivor đã chết. Hồi sinh ban ngày sẽ bị lộ danh tính. Hồi sinh bí mật an toàn hơn.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">⚡ Kẻ Báo Thù</span></div>
+              <div class="role-card-desc">Khi chết, kéo kẻ thù xuống mồ theo: bị trục xuất → giết Mayor + 1 Survivor; bị Dị Thể giết → giết Lãnh Chúa + 1 Anomaly. Rất nguy hiểm nếu bị giết sai.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">📖 Nhà Lưu Trữ</span></div>
+              <div class="role-card-desc">Bí mật đọc di chúc của người đã chết mỗi đêm. Thông tin chỉ gửi riêng cho bạn. Rất hữu ích khi Máy Hủy Tài Liệu chưa can thiệp.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">😴 Kẻ Ngủ Mê</span></div>
+              <div class="role-card-desc">Bị cách ly khỏi kênh thị trấn. Mỗi sáng nhận log chi tiết đêm qua. Khi chết, toàn bộ ghi chú được công bố ra kênh chung.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-s">Survivor</span><span class="role-card-name">🧪 Người Thử Nghiệm</span></div>
+              <div class="role-card-desc">Biết ai là Lãnh Chúa ngay từ đầu. Một lần duy nhất: ép Lãnh Chúa giết 1 Anomaly đồng đội. Sau đó bạn chết ngay lập tức.</div>
+            </div>
+          </div>
+        </div>
 
-          <div class="guide-section">
-            <h3>💬 Hệ thống chat</h3>
-            <p>Nếu chủ phòng bật tính năng chat, người chơi có thể nhắn tin ẩn danh trong kênh game. Người chết có thể bị mute tùy cài đặt.</p>
+        <!-- ═══ PAGE 5: ANOMALIES ═══ -->
+        <div class="guide-page" id="gtab-anomalies" style="max-width:900px">
+          <div class="card" style="margin-bottom:16px">
+            <div style="font-size:13.5px;color:var(--text2);line-height:1.7">Tất cả Anomalies biết nhau qua kênh bí mật. Mỗi đêm phe bỏ phiếu chọn 1 mục tiêu giết — <strong style="color:var(--anomalies)">Lãnh Chúa</strong> quyết định lựa chọn cuối cùng khi còn sống.</div>
+          </div>
+          <div class="role-grid">
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">💀 Dị Thể</span></div>
+              <div class="role-card-desc">Anomaly cơ bản. Bỏ phiếu cùng phe chọn mục tiêu giết mỗi đêm. Khi Lãnh Chúa còn sống, Lãnh Chúa quyết định. Khi Lãnh Chúa chết, vote đa số.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">👑 Lãnh Chúa</span></div>
+              <div class="role-card-desc">Thủ lĩnh Dị Thể. Quyết định mục tiêu giết cuối cùng mỗi đêm. Khi Lãnh Chúa chết, phe mất đi người chỉ huy — phải vote bình đẳng.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">⚔️ Dị Thể Hành Quyết</span></div>
+              <div class="role-card-desc">2 lượt hành quyết xuyên bảo vệ. Đòn đánh bypass shield — người bảo vệ mục tiêu cũng bị tiêu diệt (phản thương). Hồi chiêu 1 đêm.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">📡 Tín Hiệu Giả</span></div>
+              <div class="role-card-desc">3 lượt giả mạo — mục tiêu bị đánh dấu sẽ hiện kết quả "Survivor - Power Role" khi ai đó điều tra đêm đó. Không thể đánh cùng người 2 đêm liên tiếp.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🧹 Lao Công</span></div>
+              <div class="role-card-desc">Đánh dấu 1 người mỗi đêm. Nếu họ chết đêm đó, vai trò bị xóa sạch — không ai biết họ là gì. Ngăn thông tin quan trọng bị lộ.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🗂️ Máy Hủy Tài Liệu</span></div>
+              <div class="role-card-desc">Đánh dấu 1 người mỗi đêm. Nếu họ chết, toàn bộ di chúc bị hủy trước khi được công bố. Triệt tiêu thông tin để lại của người chết.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🕶️ Mù Quáng</span></div>
+              <div class="role-card-desc">3 lượt gây mù — toàn bộ Survivor và Unknown mất khả năng nhận diện mục tiêu đêm đó (danh sách hiện "👁 ĐÃ BỊ MÙ"). Hữu hiệu nhất khi nhiều vai trò điều tra cùng lúc.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">📻 Nguồn Tĩnh Điện</span></div>
+              <div class="role-card-desc">Mỗi đêm chọn 1 người — mọi tin nhắn hệ thống gửi đến họ bị mã hóa nhiễu (a→@, e→#…). Gây nhầm lẫn, khó đọc thông tin điều tra.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🏗️ Kiến Trúc Sư Bóng Tối</span></div>
+              <div class="role-card-desc">Mỗi đêm phong tỏa đúng 3 người — họ mất toàn bộ hành động đêm đó. Mỗi người chỉ bị phong tỏa 1 lần. Rất mạnh để vô hiệu hóa vai trò then chốt.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🕵️ Kẻ Rình Rập</span></div>
+              <div class="role-card-desc">Mỗi đêm theo dõi 1 Survivor — phát hiện vai trò thực của họ qua DM. Không thể rình cùng người 2 đêm liên tiếp. Thông tin chỉ gửi riêng.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🎭 Kẻ Điều Khiển</span></div>
+              <div class="role-card-desc">3 lượt điều khiển — mỗi lần chọn 1 Survivor và 1 mục tiêu vote, sáng hôm sau họ bị ép bỏ phiếu đó. Có thể khiến Survivor tự loại đồng đội.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">👂 Kẻ Đánh Cắp Lời Thì Thầm</span></div>
+              <div class="role-card-desc">Mỗi đêm chọn 2 người — nếu cặp đó có tương tác bí mật với nhau đêm đó, bạn đọc được di chúc của cả hai. Không thể chọn lại cùng cặp 2 đêm liên tiếp.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🧬 Kẻ Mô Phỏng Sinh Học</span></div>
+              <div class="role-card-desc">Chọn 1 Survivor để cộng sinh — nếu bạn bị cách ly, họ bị loại theo. Nếu họ chết trước, bạn nhận 1 lần miễn nhiễm đòn tấn công đêm.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🧠 Ký Sinh Thần Kinh</span></div>
+              <div class="role-card-desc">Chọn 1 người để ký sinh — sau 3 ngày liên tục, nạn nhân chuyển thành Anomaly. Nếu họ chết giữa chừng, thất bại — chọn mục tiêu mới đêm sau.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">☠️ Sứ Giả Tận Thế</span></div>
+              <div class="role-card-desc">Đánh dấu người mỗi đêm. Khi 3 người được đánh dấu còn sống, kích hoạt để giết cả 3 cùng lúc đêm sau. Đêm kích hoạt, phe không giết người khác.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-a">Anomaly</span><span class="role-card-name">🐛 Sâu Lỗi</span></div>
+              <div class="role-card-desc">3 lượt — mỗi đêm chọn 1 người: nếu họ chết đêm đó, di chúc bị thay bằng thông báo lỗi. Không dùng 2 đêm liên tiếp. Không tác dụng nếu Lao Công đã dọn.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ PAGE 6: UNKNOWN ═══ -->
+        <div class="guide-page" id="gtab-unknown" style="max-width:900px">
+          <div class="card" style="margin-bottom:16px">
+            <div style="font-size:13.5px;color:var(--text2);line-height:1.7">Unknown Entities là các thực thể trung lập — mỗi người có điều kiện thắng <strong style="color:var(--unknown)">hoàn toàn độc lập</strong>. Họ có thể vô tình giúp hoặc phá hoại cả hai phe.</div>
+          </div>
+          <div class="role-grid">
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-u">Unknown</span><span class="role-card-name">🔪 Kẻ Giết Người Hàng Loạt</span></div>
+              <div class="role-card-desc">Mỗi đêm giết 1 người. <strong>Thắng khi là người duy nhất còn sống.</strong> Không phe phái, tiêu diệt tất cả. Không thể giết cùng người 2 đêm liên tiếp.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-u">Unknown</span><span class="role-card-name">🤖 A.I Tha Hóa</span></div>
+              <div class="role-card-desc">Quét Anomaly → +1 Điểm Khiên (3 điểm = chặn 1 đòn). Quét Survivor → +1 Điểm Giết (2 điểm = giết 1 người). Thu thập tài nguyên từ cả 2 phe để tiêu diệt.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-u">Unknown</span><span class="role-card-name">💣 Kẻ Giải Mã</span></div>
+              <div class="role-card-desc"><strong>Passive:</strong> Khi còn sống, mọi thông báo bot bị nhiễu ký tự. Chat của người chơi nhiễu ~50%. <strong>Active (5 lần):</strong> Phá hủy hoàn toàn thông báo bot thành chuỗi lỗi.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-u">Unknown</span><span class="role-card-name">⏰ Đồng Hồ Tận Thế</span></div>
+              <div class="role-card-desc">2 lượt Tua Nhanh (rút ngắn thảo luận xuống 20 giây). <strong>Thắng khi trận kéo dài đến Đêm 18.</strong> Chiến lược: kéo dài thời gian, không bị phát hiện.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-u">Unknown</span><span class="role-card-name">😈 Kẻ Tâm Thần</span></div>
+              <div class="role-card-desc">Xuất hiện trong danh sách đồng đội của Dị Thể — thấy kênh chat bí mật. <strong>Thắng khi bị trục xuất mà không có phiếu nào từ phe Dị Thể.</strong> Phải thuyết phục Dị Thể tin tưởng.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-u">Unknown</span><span class="role-card-name">🌀 Kẻ Dệt Mộng</span></div>
+              <div class="role-card-desc">Mỗi đêm ghép 2 người — cả hai biết vai trò của nhau. Tối đa 3 cặp. <strong>Thắng khi cả 6 người (3 cặp) đều còn sống khi game kết thúc.</strong></div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-u">Unknown</span><span class="role-card-name">⏳ Kẻ Dệt Thời Gian</span></div>
+              <div class="role-card-desc"><strong>Passive:</strong> Mỗi sáng biết danh tính 1 kẻ giết đêm qua. <strong>Active (1 lần, từ Đêm 5):</strong> Rewind về 2 ngày trước — hồi sinh người chết, xóa kết quả điều tra.</div>
+            </div>
+            <div class="role-card">
+              <div class="role-card-header"><span class="badge badge-u">Unknown</span><span class="role-card-name">🚢 Con Tàu Ma</span></div>
+              <div class="role-card-desc">Từ Đêm 3, bắt cóc 1 người mỗi đêm — họ bị loại tạm thời. <strong>Thắng khi bắt đủ số lượng người</strong> theo công thức dựa vào số người chơi ban đầu.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ PAGE 7: BỎ PHIẾU ═══ -->
+        <div class="guide-page" id="gtab-voting" style="max-width:760px">
+          <div class="card">
+            <div class="guide-section">
+              <h3>🗳️ Hệ thống bỏ phiếu</h3>
+              <p>Mỗi ngày sau thảo luận, toàn bộ người còn sống bỏ phiếu để cách ly 1 người. Bot gửi UI bỏ phiếu vào kênh — mỗi người chọn 1 mục tiêu từ dropdown.</p>
+            </div>
+
+            <div class="guide-section">
+              <h3>⚖️ Cơ chế tính phiếu</h3>
+              <ul>
+                <li><strong>Phiếu có trọng số</strong> — Thị Trưởng đã lộ diện có phiếu x3. Kẻ Điều Khiển có thể ép phiếu của người khác.</li>
+                <li><strong>Hòa → Revote</strong> — Nếu 2 người cùng dẫn đầu số phiếu, một vòng bỏ phiếu lại diễn ra ngay. Chỉ 1 lần revote.</li>
+                <li><strong>Skip</strong> — Có thể bỏ phiếu Skip nếu không muốn loại ai. Nếu đa số Skip (60%), không ai bị trục xuất ngày đó.</li>
+                <li><strong>Phiếu ẩn danh</strong> — Tùy cài đặt server, phiếu có thể hiển thị công khai hoặc ẩn tên người bỏ phiếu.</li>
+              </ul>
+            </div>
+
+            <div class="guide-section">
+              <h3>📋 Kết quả sau trục xuất</h3>
+              <ul>
+                <li>Người bị cách ly sẽ bị lộ <strong>đầy đủ vai trò</strong> ngay lập tức.</li>
+                <li>Vai trò "hậu tử" (Kẻ Báo Thù, Kẻ Tâm Thần…) kích hoạt hiệu ứng đặc biệt ngay khi trục xuất.</li>
+                <li>Người bị cách ly vào kênh ma và không thể ảnh hưởng game nữa.</li>
+              </ul>
+              <div class="guide-tip">⚠️ <strong>Cẩn thận trục xuất sai!</strong> Kẻ Báo Thù kéo theo Mayor + 1 Survivor khi bị trục xuất. Kẻ Tâm Thần thắng nếu bị trục xuất mà không có phiếu Dị Thể.</div>
+            </div>
+
+            <div class="guide-section">
+              <h3>⏭️ Skip thảo luận sớm</h3>
+              <p>Trong pha thảo luận ban ngày, có nút <strong>⏭️ Skip</strong> để bỏ phiếu rút ngắn thảo luận. Nếu đủ 60% người bỏ phiếu skip → chuyển thẳng sang bỏ phiếu cách ly. Mặc định chờ 30 giây trước khi nút skip xuất hiện.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ PAGE 8: MẸO CHƠI ═══ -->
+        <div class="guide-page" id="gtab-tips" style="max-width:760px">
+          <div class="card">
+            <div class="guide-section">
+              <h3>🟢 Mẹo cho Survivors</h3>
+              <ul>
+                <li>Chia sẻ thông tin điều tra một cách <strong>khéo léo</strong> — tiết lộ quá sớm khiến bạn trở thành mục tiêu Dị Thể ưu tiên.</li>
+                <li>Nếu bạn là Thám Trưởng, hãy dùng tên giả (claim vai trò Thám Tử) để bảo vệ bản thân.</li>
+                <li>Chú ý hành vi bất thường: người không bao giờ bị điều tra, người luôn bảo vệ kẻ khác theo lý do vô lý.</li>
+                <li>Đọc di chúc người chết kỹ — họ thường để lại manh mối quan trọng.</li>
+                <li>Kẻ Điều Khiển có thể ép bạn bỏ phiếu sai — hãy tự hỏi tại sao mình muốn vote người này.</li>
+              </ul>
+            </div>
+
+            <div class="guide-section">
+              <h3>🔴 Mẹo cho Anomalies</h3>
+              <ul>
+                <li><strong>Nhắm vai trò điều tra trước</strong> — Thám Trưởng, Thám Tử là ưu tiên hàng đầu cần loại bỏ.</li>
+                <li>Giả mạo vai trò Survivor vô hại (Dân Thường, Phụ Tá…) khi bị hỏi về thân phận.</li>
+                <li>Dùng Tín Hiệu Giả để bảo vệ Lãnh Chúa khỏi bị điều tra ra.</li>
+                <li>Kiến Trúc Sư Bóng Tối nên ưu tiên khóa Cai Ngục và Nhà Dược Học vào đêm then chốt.</li>
+                <li>Đừng để Lãnh Chúa bị lộ — khi Lãnh Chúa chết, phối hợp phe giảm đáng kể.</li>
+              </ul>
+            </div>
+
+            <div class="guide-section">
+              <h3>⚫ Mẹo cho Unknown</h3>
+              <ul>
+                <li><strong>Đừng lộ diện quá sớm</strong> — cả hai phe đều muốn loại bạn khi biết bạn là Unknown.</li>
+                <li>Kẻ Giết Người Hàng Loạt nên tự claim là Cai Ngục hoặc Thám Tử để tránh bị nghi.</li>
+                <li>Đồng Hồ Tận Thế cần ẩn mình hoàn toàn — mục tiêu là tồn tại đến Đêm 18, không phải chiến đấu.</li>
+                <li>Kẻ Tâm Thần phải cư xử như Dị Thể thật để Dị Thể tin tưởng và không vote bạn khi bỏ phiếu.</li>
+              </ul>
+              <div class="guide-tip">💡 <strong>Quan trọng nhất:</strong> Luật chơi có thể thay đổi theo từng server. Admin có thể bật/tắt vai trò, chỉnh thời gian và quy tắc trong mục <strong>Cài Đặt</strong>.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1514,6 +1946,18 @@ function navigate(page) {
   if (page === 'rooms') loadRooms();
   if (page === 'stats') loadStats();
   if (page === 'player-lookup') document.getElementById('lookupResult').innerHTML = '';
+}
+
+// ══════════════════════════════════════════
+// GUIDE TAB SWITCHER
+// ══════════════════════════════════════════
+function showGuideTab(tabId) {
+  document.querySelectorAll('.guide-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.guide-page').forEach(p => p.classList.remove('active'));
+  const tab = document.querySelector(`.guide-tab[onclick="showGuideTab('${tabId}')"]`);
+  const page = document.getElementById('gtab-' + tabId);
+  if (tab) tab.classList.add('active');
+  if (page) page.classList.add('active');
 }
 
 // ══════════════════════════════════════════
