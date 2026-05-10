@@ -3,8 +3,12 @@ services:
     name: anomalies-dashboard
     env: python
     buildCommand: pip install -r dashboard/requirements.txt
-    startCommand: uvicorn dashboard.server:app --host 0.0.0.0 --port $PORT
+    # Sửa: dùng python -m uvicorn thay vì uvicorn trực tiếp
+    # Đảm bảo module path đúng: dashboard.server:app
+    startCommand: python -m uvicorn dashboard.server:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: DISCORD_TOKEN
+        sync: false
       - key: DISCORD_CLIENT_ID
         sync: false
       - key: DISCORD_CLIENT_SECRET
@@ -20,8 +24,6 @@ services:
       - key: RENDER
         value: "true"
       - key: RENDER_EXTERNAL_URL
-        sync: false
-      - key: TIDB_URI
         sync: false
       - key: IS_HTTPS
         value: "true"

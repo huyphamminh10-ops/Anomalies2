@@ -1,8 +1,29 @@
+"""
+dashboard/server.py — Anomalies Dashboard v2.4
+Single-Process Architecture: FastAPI + Disnake bot chạy chung một event loop.
+
+Kiến trúc:
+  - lifespan() khởi động bot.start(TOKEN) bằng asyncio.create_task()
+  - Web + Bot dùng chung event loop → bot.guilds luôn sẵn sàng cho Web
+  - dashboard_routes.py được mount vào đây với shared state đầy đủ
+  - config_manager._get_db() dùng PyMongo đồng bộ trong thread pool
+    (gọi qua run_in_executor để không block event loop)
+
+Sửa lỗi:
+  1. Bot + Web một tiến trình → /api/dash/guilds lấy từ bot.guilds thật
+  2. /api/dash/stats trả đúng field: total_guilds, active_games,
+     total_bans, total_feedbacks, total_changelogs, db_ok
+  3. POST /api/dash/feedback và /api/dash/admin/changelog bọc try-except
+     chi tiết, trả 500 có message thay vì im lặng
+  4. render.yaml startCommand dùng python -m uvicorn
+"""
+
 from __future__ import annotations
 
 import asyncio
 import collections
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -13,32 +34,56 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+# ── Thêm thư mục gốc vào sys.path để import dashboard_routes, config_manager
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+import config_manager  # noqa: E402  (sync PyMongo)
+
+# dashboard_routes nằm trong thư mục gốc (cạnh app.py)
+try:
+    from dashboard_routes import router as _dash_router, init_shared  # type: ignore
+    _HAS_ROUTES = True
+except ImportError:
+    _HAS_ROUTES = False
+    print("[server] CẢNH BÁO: Không tìm thấy dashboard_routes.py — các route /api/dash/* sẽ bị thiếu.")
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-TOKEN: str = os.environ["DISCORD_TOKEN"]
+TOKEN: str = os.environ.get("DISCORD_TOKEN", "")
+if not TOKEN:
+    print("[server] CẢNH BÁO: Biến môi trường DISCORD_TOKEN chưa được đặt!")
+
 MAX_LOG_ENTRIES: int = 200
-MAX_METRIC_POINTS: int = 120  # ~2 hours at 1 sample/min
+MAX_METRIC_POINTS: int = 120  # ~2 giờ với 1 mẫu/phút
 
 # ---------------------------------------------------------------------------
-# In-memory stores (shared across all endpoints via the same event loop)
+# In-memory stores (dùng chung trong cùng process)
 # ---------------------------------------------------------------------------
 
-# Rolling event log — populated by bot events
 event_log: Deque[dict] = collections.deque(maxlen=MAX_LOG_ENTRIES)
-
-# Latency history — populated by the metrics background task
 latency_history: Deque[dict] = collections.deque(maxlen=MAX_METRIC_POINTS)
-
-# Connected WebSocket clients for live-push
 _ws_clients: set[WebSocket] = set()
+
+# Shared state được truyền vào dashboard_routes
+# active_games và guilds_state được bot events cập nhật
+_active_games: dict = {}   # guild_id -> GameEngine (nếu có)
+_guilds_state: dict = {}   # guild_id -> {"state": ..., "players_join_order": [...], ...}
 
 
 def _log(kind: str, **payload) -> None:
     event_log.appendleft(
         {"ts": datetime.now(timezone.utc).isoformat(), "kind": kind, **payload}
     )
+
+
+def _col(name: str):
+    """Trả về MongoDB collection theo tên. Thread-safe (PyMongo tự quản lý pool)."""
+    db = config_manager._get_db()
+    return db[name] if db is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +101,22 @@ bot = disnake.AutoShardedInteractionBot(intents=intents)
 async def on_ready() -> None:
     _log("ready", bot_id=str(bot.user.id), bot_name=str(bot.user))
     print(f"[bot] Logged in as {bot.user} (id={bot.user.id})")
+    print(f"[bot] Đang quản lý {len(bot.guilds)} server(s).")
+
+    # Khởi tạo MongoDB indexes (chạy trong thread để không block loop)
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, config_manager.ensure_indexes)
+
+    # Truyền shared state sang dashboard_routes sau khi bot sẵn sàng
+    if _HAS_ROUTES:
+        init_shared(
+            bot=bot,
+            guilds=_guilds_state,
+            active_games=_active_games,
+            game_stats={},
+            col_fn=_col,
+        )
+        print("[server] dashboard_routes đã nhận shared state từ bot.")
 
 
 @bot.event
@@ -66,6 +127,7 @@ async def on_guild_join(guild: disnake.Guild) -> None:
 @bot.event
 async def on_guild_remove(guild: disnake.Guild) -> None:
     _log("guild_leave", guild_id=str(guild.id), guild_name=guild.name)
+    _guilds_state.pop(str(guild.id), None)
 
 
 @bot.event
@@ -102,7 +164,7 @@ async def on_message(message: disnake.Message) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Background task — collect latency metrics every 60 s
+# Background task — thu thập metrics mỗi 60 giây
 # ---------------------------------------------------------------------------
 
 async def _metrics_collector() -> None:
@@ -116,7 +178,6 @@ async def _metrics_collector() -> None:
                 "shard_count": bot.shard_count or 1,
             }
         )
-        # Push live update to all connected WS clients
         if _ws_clients:
             snapshot = latency_history[0]
             dead: set[WebSocket] = set()
@@ -130,33 +191,51 @@ async def _metrics_collector() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Lifespan — single event loop shared by bot + FastAPI
+# Lifespan — Single event loop: bot + web cùng chạy
 # ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    bot_task = asyncio.create_task(bot.start(TOKEN), name="discord-bot")
+    """
+    Khởi động bot.start() bằng create_task để bot và web dùng chung
+    event loop. Web có thể truy cập bot.guilds trực tiếp mà không cần IPC.
+    """
+    if not TOKEN:
+        print("[server] DISCORD_TOKEN trống — bot sẽ không kết nối Discord.")
+        bot_task = None
+    else:
+        bot_task = asyncio.create_task(bot.start(TOKEN), name="discord-bot")
+
     metrics_task = asyncio.create_task(_metrics_collector(), name="metrics-collector")
 
     try:
         yield
     finally:
-        for task in (metrics_task, bot_task):
-            task.cancel()
+        metrics_task.cancel()
+        try:
+            await metrics_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+        if bot_task is not None:
+            bot_task.cancel()
             try:
-                await task
+                await bot_task
             except (asyncio.CancelledError, Exception):
                 pass
-        if not bot.is_closed():
-            await bot.close()
+            if not bot.is_closed():
+                await bot.close()
 
 
 # ---------------------------------------------------------------------------
-# FastAPI application
+# FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Anomalies Dashboard", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Anomalies Dashboard", version="2.4.0", lifespan=lifespan)
 
+# Mount dashboard_routes (OAuth2, /api/dash/*, /dashboard SPA)
+if _HAS_ROUTES:
+    app.include_router(_dash_router)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -166,7 +245,7 @@ def _require_bot_ready() -> None:
     if bot.user is None:
         raise HTTPException(
             status_code=503,
-            detail="Bot is still starting up — please retry in a moment.",
+            detail="Bot đang khởi động — vui lòng thử lại sau vài giây.",
         )
 
 
@@ -174,12 +253,15 @@ def _get_guild(guild_id: int) -> disnake.Guild:
     _require_bot_ready()
     guild = bot.get_guild(guild_id)
     if guild is None:
-        raise HTTPException(status_code=404, detail="Guild not found or bot is not a member.")
+        raise HTTPException(
+            status_code=404,
+            detail="Không tìm thấy server hoặc bot chưa tham gia server này.",
+        )
     return guild
 
 
 # ---------------------------------------------------------------------------
-# Pydantic request bodies
+# Pydantic models
 # ---------------------------------------------------------------------------
 
 class SendMessageBody(BaseModel):
@@ -190,15 +272,13 @@ class SendMessageBody(BaseModel):
 
 
 class UpdateStatusBody(BaseModel):
-    # "online" | "idle" | "dnd" | "invisible"
-    status: str = "online"
-    # "playing" | "listening" | "watching" | "streaming" | "competing"
-    activity_type: str = "playing"
+    status: str = "online"        # online | idle | dnd | invisible
+    activity_type: str = "playing"  # playing | listening | watching | competing
     activity_name: str = ""
 
 
 # ---------------------------------------------------------------------------
-# ① /api/dash/info — overview (original, preserved)
+# /api/dash/info — tổng quan bot (giữ nguyên cho tương thích)
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dash/info")
@@ -233,7 +313,209 @@ async def dash_info() -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# ② /api/dash/guild/{guild_id} — guild detail (original, preserved)
+# OVERRIDE /api/dash/stats — fix field names cho index.html
+#
+# index.html đọc:
+#   stats.total_guilds, stats.active_games, stats.total_bans,
+#   stats.total_feedbacks, stats.total_changelogs, stats.db_ok
+#
+# dashboard_routes.py (cũ) trả: serverCount, playerCount, banCount, feedbackCount
+# → File này override lại để map đúng.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dash/stats")
+async def dash_stats_override() -> JSONResponse:
+    """
+    Thống kê tổng quan — trả đúng field mà index.html mong đợi.
+    Đây là override của route trong dashboard_routes.py (FastAPI ưu tiên route
+    đăng ký trước, nhưng include_router thêm sau app.get nên route này thắng).
+
+    Nếu dashboard_routes chưa được mount, route này vẫn hoạt động.
+    """
+    db_ok = config_manager._get_db() is not None
+    total_guilds = total_bans = total_feedbacks = total_changelogs = active_games_count = 0
+
+    if db_ok:
+        loop = asyncio.get_event_loop()
+        try:
+            def _fetch_counts():
+                db = config_manager._get_db()
+                if db is None:
+                    return (0, 0, 0, 0)
+                return (
+                    db["guild_configs"].count_documents({}),
+                    db["bans"].count_documents({}),
+                    db["feedbacks"].count_documents({}),
+                    db["changelogs"].count_documents({}),
+                )
+            total_guilds, total_bans, total_feedbacks, total_changelogs = \
+                await loop.run_in_executor(None, _fetch_counts)
+        except Exception as e:
+            print(f"[stats] Lỗi đếm documents: {e}")
+            db_ok = False
+
+    # active_games lấy từ bot.guilds thật (real-time)
+    active_games_count = len(_active_games)
+
+    return JSONResponse({
+        "total_guilds":     total_guilds,
+        "active_games":     active_games_count,
+        "total_bans":       total_bans,
+        "total_feedbacks":  total_feedbacks,
+        "total_changelogs": total_changelogs,
+        "db_ok":            db_ok,
+        # Giữ cả tên cũ để tương thích nếu có code khác dùng
+        "serverCount":      total_guilds,
+        "banCount":         total_bans,
+        "feedbackCount":    total_feedbacks,
+    })
+
+
+# ---------------------------------------------------------------------------
+# OVERRIDE /api/dash/feedback — POST với try-except chi tiết
+# ---------------------------------------------------------------------------
+
+@app.post("/api/dash/feedback")
+async def post_feedback(request) -> JSONResponse:
+    """
+    Nhận feedback từ người dùng đã đăng nhập.
+    Bọc try-except đầy đủ, trả lỗi chi tiết thay vì 500 im lặng.
+    """
+    # Đọc session từ cookie (tái sử dụng logic từ dashboard_routes)
+    from fastapi import Request as FRequest
+    req: FRequest = request
+
+    cookie = req.cookies.get("dash_session", "")
+    if "||" not in cookie:
+        raise HTTPException(401, "Chưa đăng nhập")
+
+    import hashlib
+    import hmac as _hmac
+    _SECRET_KEY = os.environ.get("SESSION_SECRET", "")
+    payload, sig = cookie.rsplit("||", 1)
+
+    def _sign(data: str) -> str:
+        return _hmac.new(_SECRET_KEY.encode(), data.encode(), hashlib.sha256).hexdigest()
+
+    if not _hmac.compare_digest(_sign(payload), sig):
+        raise HTTPException(401, "Session không hợp lệ")
+
+    parts = payload.split("|", 3)
+    if len(parts) != 4:
+        raise HTTPException(401, "Session bị hỏng")
+    user_id, _token, username, avatar = parts
+
+    try:
+        data = await req.json()
+    except Exception:
+        raise HTTPException(400, "Request body không phải JSON hợp lệ")
+
+    content = str(data.get("content", "")).strip()[:2000]
+    images  = [str(u) for u in data.get("images", [])[:5] if u]
+
+    if not content and not images:
+        raise HTTPException(400, "Nội dung trống — cần có text hoặc ảnh")
+
+    loop = asyncio.get_event_loop()
+    try:
+        def _insert():
+            fb_col = _col("feedbacks")
+            if fb_col is None:
+                raise RuntimeError("Không kết nối được MongoDB — kiểm tra MONGO_URI")
+            fb_col.insert_one({
+                "user_id":    user_id,
+                "username":   username,
+                "avatar":     avatar,
+                "content":    content,
+                "images":     images,
+                "reply":      None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        await loop.run_in_executor(None, _insert)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        print(f"[feedback] Lỗi insert MongoDB: {e}")
+        raise HTTPException(500, f"Lỗi lưu feedback vào database: {type(e).__name__}: {e}")
+
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# OVERRIDE /api/dash/admin/changelog — POST với try-except chi tiết
+# ---------------------------------------------------------------------------
+
+@app.post("/api/dash/admin/changelog")
+async def post_changelog(request) -> JSONResponse:
+    """
+    Đăng update/changelog — owner only, try-except chi tiết.
+    """
+    from fastapi import Request as FRequest
+    req: FRequest = request
+
+    # Kiểm tra owner (tái sử dụng logic session)
+    cookie = req.cookies.get("dash_session", "")
+    if "||" not in cookie:
+        raise HTTPException(401, "Chưa đăng nhập")
+
+    import hashlib
+    import hmac as _hmac
+    _SECRET_KEY = os.environ.get("SESSION_SECRET", "")
+    payload, sig = cookie.rsplit("||", 1)
+
+    def _sign(data: str) -> str:
+        return _hmac.new(_SECRET_KEY.encode(), data.encode(), hashlib.sha256).hexdigest()
+
+    if not _hmac.compare_digest(_sign(payload), sig):
+        raise HTTPException(401, "Session không hợp lệ")
+
+    parts = payload.split("|", 3)
+    if len(parts) != 4:
+        raise HTTPException(401, "Session bị hỏng")
+    user_id = parts[0]
+
+    BOT_OWNER_ID = 1306441206296875099
+    if int(user_id) != BOT_OWNER_ID:
+        raise HTTPException(403, "Chỉ dành cho chủ bot")
+
+    try:
+        data = await req.json()
+    except Exception:
+        raise HTTPException(400, "Request body không phải JSON hợp lệ")
+
+    title   = str(data.get("title",   "")).strip()[:200]
+    content = str(data.get("content", "")).strip()[:5000]
+    version = str(data.get("version", "")).strip()[:20]
+
+    if not title or not content:
+        raise HTTPException(400, "Thiếu tiêu đề hoặc nội dung")
+
+    loop = asyncio.get_event_loop()
+    try:
+        def _insert():
+            cl_col = _col("changelogs")
+            if cl_col is None:
+                raise RuntimeError("Không kết nối được MongoDB — kiểm tra MONGO_URI")
+            cl_col.insert_one({
+                "title":      title,
+                "content":    content,
+                "version":    version,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        await loop.run_in_executor(None, _insert)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        print(f"[changelog] Lỗi insert MongoDB: {e}")
+        raise HTTPException(500, f"Lỗi lưu changelog vào database: {type(e).__name__}: {e}")
+
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# /api/dash/guild/{guild_id} — chi tiết guild từ bot.guilds thật
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dash/guild/{guild_id}")
@@ -259,14 +541,11 @@ async def guild_info(guild_id: int) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# ③ NEW — /api/dash/members/{guild_id}?q=name&limit=50
-#    Search / list members of a guild
+# /api/dash/members/{guild_id} — tìm kiếm thành viên
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dash/members/{guild_id}")
-async def guild_members(
-    guild_id: int, q: str = "", limit: int = 50
-) -> JSONResponse:
+async def guild_members(guild_id: int, q: str = "", limit: int = 50) -> JSONResponse:
     guild = _get_guild(guild_id)
     limit = min(max(1, limit), 500)
 
@@ -297,8 +576,7 @@ async def guild_members(
 
 
 # ---------------------------------------------------------------------------
-# ④ NEW — /api/dash/channels/{guild_id}
-#    Detailed channel list with topic, slowmode, NSFW, permissions
+# /api/dash/channels/{guild_id} — danh sách kênh chi tiết
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dash/channels/{guild_id}")
@@ -332,8 +610,7 @@ async def guild_channels(guild_id: int) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# ⑤ NEW — /api/dash/roles/{guild_id}
-#    Full role list with permission value breakdown
+# /api/dash/roles/{guild_id} — danh sách role đầy đủ
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dash/roles/{guild_id}")
@@ -361,8 +638,7 @@ async def guild_roles(guild_id: int) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# ⑥ NEW — POST /api/dash/message
-#    Send a message to any channel the bot can see
+# POST /api/dash/message — gửi tin nhắn qua bot
 # ---------------------------------------------------------------------------
 
 @app.post("/api/dash/message")
@@ -371,13 +647,13 @@ async def send_message(body: SendMessageBody) -> JSONResponse:
 
     channel = bot.get_channel(body.channel_id)
     if channel is None:
-        raise HTTPException(status_code=404, detail="Channel not found.")
+        raise HTTPException(status_code=404, detail="Không tìm thấy kênh.")
     if not isinstance(channel, (disnake.TextChannel, disnake.Thread)):
-        raise HTTPException(status_code=400, detail="Target channel is not a text channel.")
+        raise HTTPException(status_code=400, detail="Kênh đích không phải text channel.")
     if not channel.permissions_for(channel.guild.me).send_messages:
-        raise HTTPException(status_code=403, detail="Bot lacks Send Messages permission.")
+        raise HTTPException(status_code=403, detail="Bot không có quyền gửi tin nhắn vào kênh này.")
     if len(body.content) > 2000:
-        raise HTTPException(status_code=400, detail="Content exceeds 2000 characters.")
+        raise HTTPException(status_code=400, detail="Nội dung vượt quá 2000 ký tự.")
 
     msg = await channel.send(body.content, tts=body.tts)
     _log(
@@ -392,21 +668,20 @@ async def send_message(body: SendMessageBody) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# ⑦ NEW — PUT /api/dash/status
-#    Change bot presence / activity at runtime without restarting
+# PUT /api/dash/status — đổi presence bot
 # ---------------------------------------------------------------------------
 
 _ACTIVITY_MAP = {
-    "playing": disnake.ActivityType.playing,
+    "playing":   disnake.ActivityType.playing,
     "listening": disnake.ActivityType.listening,
-    "watching": disnake.ActivityType.watching,
+    "watching":  disnake.ActivityType.watching,
     "competing": disnake.ActivityType.competing,
 }
 
 _STATUS_MAP = {
-    "online": disnake.Status.online,
-    "idle": disnake.Status.idle,
-    "dnd": disnake.Status.dnd,
+    "online":    disnake.Status.online,
+    "idle":      disnake.Status.idle,
+    "dnd":       disnake.Status.dnd,
     "invisible": disnake.Status.invisible,
 }
 
@@ -417,22 +692,36 @@ async def update_status(body: UpdateStatusBody) -> JSONResponse:
 
     status = _STATUS_MAP.get(body.status)
     if status is None:
-        raise HTTPException(status_code=400, detail=f"Invalid status '{body.status}'. Use: online, idle, dnd, invisible.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Status '{body.status}' không hợp lệ. Dùng: online, idle, dnd, invisible.",
+        )
 
     activity_type = _ACTIVITY_MAP.get(body.activity_type)
     if activity_type is None:
-        raise HTTPException(status_code=400, detail=f"Invalid activity_type '{body.activity_type}'.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"activity_type '{body.activity_type}' không hợp lệ.",
+        )
 
-    activity = disnake.Activity(type=activity_type, name=body.activity_name) if body.activity_name else None
+    activity = (
+        disnake.Activity(type=activity_type, name=body.activity_name)
+        if body.activity_name
+        else None
+    )
     await bot.change_presence(status=status, activity=activity)
 
-    _log("status_changed", status=body.status, activity_type=body.activity_type, activity_name=body.activity_name)
+    _log(
+        "status_changed",
+        status=body.status,
+        activity_type=body.activity_type,
+        activity_name=body.activity_name,
+    )
     return JSONResponse({"ok": True, "status": body.status, "activity": body.activity_name})
 
 
 # ---------------------------------------------------------------------------
-# ⑧ NEW — GET /api/dash/logs?kind=&limit=50
-#    In-memory rolling event log (bot events + API actions)
+# GET /api/dash/logs — rolling event log
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dash/logs")
@@ -443,8 +732,7 @@ async def get_logs(kind: str = "", limit: int = 50) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# ⑨ NEW — GET /api/dash/metrics
-#    Historical latency + guild count snapshots (sampled every 60 s)
+# GET /api/dash/metrics — lịch sử latency
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dash/metrics")
@@ -463,8 +751,7 @@ async def get_metrics() -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# ⑩ NEW — WebSocket /ws/stats
-#    Persistent connection receives a live metrics push every 60 s
+# WebSocket /ws/stats — push live metrics
 # ---------------------------------------------------------------------------
 
 @app.websocket("/ws/stats")
@@ -472,7 +759,6 @@ async def ws_stats(websocket: WebSocket) -> None:
     await websocket.accept()
     _ws_clients.add(websocket)
 
-    # Send current snapshot immediately on connect
     if bot.user is not None:
         await websocket.send_json(
             {
@@ -487,7 +773,6 @@ async def ws_stats(websocket: WebSocket) -> None:
 
     try:
         while True:
-            # Keep connection alive; wait for client ping or disconnect
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
@@ -496,9 +781,7 @@ async def ws_stats(websocket: WebSocket) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ⑪ NEW — GET /api/dash/audit/{guild_id}
-#    Kéo audit log Discord: ai kick, đổi role, xóa tin nhắn...
-#    Params: limit (1-100), action (tên hành động, ví dụ "member_kick")
+# GET /api/dash/audit/{guild_id} — audit log Discord
 # ---------------------------------------------------------------------------
 
 _AUDIT_ACTION_MAP: dict[str, disnake.AuditLogAction] = {
@@ -538,9 +821,8 @@ async def guild_audit(
 ) -> JSONResponse:
     guild = _get_guild(guild_id)
 
-    # Check bot has permission to view audit log
     if not guild.me.guild_permissions.view_audit_log:
-        raise HTTPException(status_code=403, detail="Bot lacks View Audit Log permission.")
+        raise HTTPException(status_code=403, detail="Bot thiếu quyền View Audit Log.")
 
     limit = min(max(1, limit), 100)
     action_filter: disnake.AuditLogAction | None = None
@@ -550,7 +832,7 @@ async def guild_audit(
         if action_filter is None:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unknown action '{action}'. Valid values: {', '.join(_AUDIT_ACTION_MAP)}",
+                detail=f"Action '{action}' không hợp lệ. Dùng: {', '.join(_AUDIT_ACTION_MAP)}",
             )
 
     entries = []
@@ -600,17 +882,19 @@ async def guild_audit(
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# GET /health — health check
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
 async def health() -> JSONResponse:
+    db_ok = config_manager._get_db() is not None
     return JSONResponse(
         {
             "status": "ok",
             "bot_ready": bot.user is not None,
             "latency_ms": round(bot.latency * 1000, 2) if bot.user else None,
             "guild_count": len(bot.guilds) if bot.user else 0,
+            "db_connected": db_ok,
             "ws_clients": len(_ws_clients),
             "log_entries": len(event_log),
         }
