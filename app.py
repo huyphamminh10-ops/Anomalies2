@@ -1482,11 +1482,13 @@ async def on_voice_state_update(member, before, after):
                 engine._check_win()
             engine.spectators.discard(pid)
 
-            # ── TÍNH NĂNG MỚI: Khi rời voice → trả lại nick + bỏ mute ──────────
-            # 1. Unmute nếu đang bị mute (chết ban đêm / force_muted / spectator muted)
+            # ── Khi rời voice → gỡ mute + trả lại nick ──────────────────────────
+            # 1. Unmute — KHÔNG check member.voice vì sau khi thoát voice,
+            #    member.voice = None và điều kiện sẽ luôn False (không unmute được).
+            #    Cứ gọi edit(mute=False) trực tiếp; nếu họ không bị mute Discord
+            #    cũng không báo lỗi.
             try:
-                if member.voice and member.voice.mute:
-                    await member.edit(mute=False)
+                await member.edit(mute=False)
             except Exception:
                 pass
 
