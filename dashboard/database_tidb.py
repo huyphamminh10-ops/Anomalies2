@@ -111,7 +111,11 @@ def _parse_tidb_url(url: str) -> dict:
             # Bỏ query string nếu có (VD: ?ssl_mode=REQUIRED)
             database = database.split("?")[0]
         else:
-            hostport, database = hostpart, "sys"
+            # Nếu URL không có database name, cảnh báo ngay — namespace "sys" là system schema của TiDB
+            # và không chứa bảng user. Luôn chỉ định DB trong TIDB_URL.
+            print("[database_tidb] CẢNH BÁO: TIDB_URL thiếu tên database. "
+                  "Thêm /dbname vào cuối URL: mysql://user:pass@host:4000/your_db")
+            hostport, database = hostpart, ""
 
         # Tách host:port
         if ":" in hostport:
@@ -185,6 +189,15 @@ def _get_connection():
     ssl_args = {}
     if _SSL_CA:
         ssl_args["ssl_ca"] = _SSL_CA
+
+    # Kiểm tra database name không trống — tránh query vào namespace sys
+    db_name = _TIDB_PARAMS.get("database", "")
+    if not db_name:
+        raise RuntimeError(
+            "TIDB_URL thiếu tên database. "
+            "Format đúng: mysql://user:pass@host:4000/your_database_name "
+            "(không dùng 'sys' — đó là system schema của TiDB)"
+        )
 
     connect_kw = {
         **_TIDB_PARAMS,
@@ -649,8 +662,13 @@ def delete_update_log(log_id: str) -> dict:
 # ══════════════════════════════════════════════════════════════════
 
 def count_feedbacks() -> int:
-    """Đếm tổng số feedback. Trả 0 nếu lỗi."""
+    """
+    Đếm tổng số feedback. Trả 0 nếu lỗi.
+    Xử lý riêng lỗi 'Table doesn't exist' để tránh crash khi bảng chưa được tạo.
+    """
     if not _HAS_CONNECTOR:
+        return 0
+    if not _TIDB_PARAMS or not _TIDB_PARAMS.get("database"):
         return 0
     try:
         conn = _get_connection()
@@ -661,13 +679,23 @@ def count_feedbacks() -> int:
         conn.close()
         return int(n)
     except Exception as e:
-        print(f"[database_tidb] Lỗi count_feedbacks: {e}")
+        msg = str(e).lower()
+        if "doesn't exist" in msg or "not found" in msg or "1146" in msg:
+            # Bảng chưa tồn tại — gọi ensure_tables() khi startup
+            print("[database_tidb] Bảng 'feedbacks' chưa tồn tại. Gọi ensure_tables() khi khởi động.")
+        else:
+            print(f"[database_tidb] Lỗi count_feedbacks: {e}")
         return 0
 
 
 def count_update_logs() -> int:
-    """Đếm tổng số update log. Trả 0 nếu lỗi."""
+    """
+    Đếm tổng số update log. Trả 0 nếu lỗi.
+    Xử lý riêng lỗi 'Table doesn't exist' để tránh crash khi bảng chưa được tạo.
+    """
     if not _HAS_CONNECTOR:
+        return 0
+    if not _TIDB_PARAMS or not _TIDB_PARAMS.get("database"):
         return 0
     try:
         conn = _get_connection()
@@ -678,7 +706,11 @@ def count_update_logs() -> int:
         conn.close()
         return int(n)
     except Exception as e:
-        print(f"[database_tidb] Lỗi count_update_logs: {e}")
+        msg = str(e).lower()
+        if "doesn't exist" in msg or "not found" in msg or "1146" in msg:
+            print("[database_tidb] Bảng 'update_logs' chưa tồn tại. Gọi ensure_tables() khi khởi động.")
+        else:
+            print(f"[database_tidb] Lỗi count_update_logs: {e}")
         return 0
 
 
@@ -715,8 +747,14 @@ def _connection_hint(error_msg: str) -> str:
         return ("Lỗi SSL/TLS. TiDB Cloud bắt buộc SSL. "
                 "Đảm bảo ssl_disabled=False và certifi đã được cài.")
 
-    if "table" in msg and ("doesn't exist" in msg or "not found" in msg):
-        return "Bảng chưa được tạo. Gọi ensure_tables() khi bot khởi động."
+    if "table" in msg and ("doesn't exist" in msg or "not found" in msg or "1146" in msg):
+        db = _TIDB_PARAMS.get("database", "?") if _TIDB_PARAMS else "?"
+        return (
+            f"Bảng chưa tồn tại trong DB '{db}'. "
+            "Gọi ensure_tables() khi bot khởi động. "
+            "Nếu DB là 'sys', đó là system schema — "
+            "chỉ định đúng database trong TIDB_URL: mysql://user:pass@host:4000/your_db"
+        )
 
     if "max_connections" in msg or "too many connections" in msg:
         return ("TiDB đã đạt giới hạn kết nối. "

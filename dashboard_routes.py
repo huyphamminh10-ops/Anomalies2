@@ -258,7 +258,7 @@ def _get_guild_full_status(guild_id: str) -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────
-# ROLE CATALOG (38 vai trò)
+# ROLE CATALOG (43 vai trò)
 # ──────────────────────────────────────────────────────────────────
 
 _ROLES_CATALOG = [
@@ -498,6 +498,33 @@ _ROLES_CATALOG = [
         "description": "Thao túng dòng thời gian và có thể đảo ngược một số sự kiện trong trận đấu.",
         "tips": "Dùng khả năng vào thời điểm then chốt để lật ngược tình thế.",
         "dm_message": "⌛ **KẺ DỆT THỜI GIAN**\n\nThao túng dòng thời gian và có thể đảo ngược một số sự kiện.",
+    },
+    # ── Survivors (bổ sung) ────────────────────────────────────────
+    {
+        "name": "Kẻ Giải Mã", "faction": "Survivors", "color": "#22d3ee",
+        "description": "Phá giải ám mã của Dị Thể, tiết lộ danh sách mục tiêu tấn công đêm qua.",
+        "tips": "Chia sẻ thông tin đúng lúc — quá sớm có thể khiến bạn thành mục tiêu.",
+        "dm_message": "🔓 **KẺ GIẢI MÃ**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Mỗi đêm giải mã thông tin phe Dị Thể — biết ai bị nhắm mục tiêu.",
+    },
+    {
+        "name": "Vệ Binh", "faction": "Survivors", "color": "#4ade80",
+        "description": "Canh gác một người mỗi đêm. Nếu mục tiêu bị tấn công, Vệ Binh lộ diện và ngăn chặn.",
+        "tips": "Canh gác Thám Trưởng vào những đêm quan trọng.",
+        "dm_message": "🛡️ **VỆ BINH**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Canh gác 1 người mỗi đêm — tự lộ diện nếu mục tiêu bị tấn công.",
+    },
+    # ── Anomalies (bổ sung) ────────────────────────────────────────
+    {
+        "name": "Kẻ Điều Khiển", "faction": "Anomalies", "color": "#fb7185",
+        "description": "Ép 1 Survivor bỏ phiếu theo ý mình ban ngày. Có 2 lượt.",
+        "tips": "Dùng vào ngày có phiếu sát nút để kiểm soát kết quả trục xuất.",
+        "dm_message": "🎮 **KẺ ĐIỀU KHIỂN**\n\nBạn thuộc phe **Dị Thể**.\n\nÉp 1 Survivor bỏ phiếu theo ý mình. Bạn có **2 lượt**.",
+    },
+    # ── Unknown (bổ sung) ──────────────────────────────────────────
+    {
+        "name": "Kẻ Săn Mồi", "faction": "Unknown", "color": "#f97316",
+        "description": "Chọn 1 người làm con mồi đầu trận. Chiến thắng khi con mồi chết — bằng bất kỳ cách nào.",
+        "tips": "Hãy bảo vệ con mồi của bạn khỏi phe Dị Thể để kiểm soát thời điểm.",
+        "dm_message": "🏹 **KẺ SĂN MỒI**\n\nChọn 1 người làm con mồi. Thắng khi con mồi chết.",
     },
 ]
 
@@ -758,7 +785,11 @@ async def api_guild_status(guild_id: str, request: Request):
         "status":         status,
         "player_count":   len(players),
         "state":          state,
+        # countdown_seconds = giây còn lại trong RAM (real-time)
+        # countdown_time    = cấu hình gốc (DB)
         "countdown_time": gs.get("countdown_seconds", gs.get("countdown_time", 200)),
+        "max_players":    gs.get("max_players", 65),
+        "min_players":    gs.get("min_players", 5),
     })
 
 
@@ -834,16 +865,16 @@ async def api_stats(request: Request):
         loop = asyncio.get_event_loop()
 
         def _tidb_counts():
-            # Wrap each count individually so one table failure does not crash the other
+            # Bọc từng hàm riêng — tránh lỗi bảng chưa tồn tại làm crash cả hai
             try:
                 fb = database_tidb.count_feedbacks()
             except Exception as e_fb:
-                print(f"[api_stats] TiDB count_feedbacks lỗi: {e_fb}")
+                print(f"[api_stats] count_feedbacks lỗi: {e_fb}")
                 fb = 0
             try:
                 cl = database_tidb.count_update_logs()
             except Exception as e_cl:
-                print(f"[api_stats] TiDB count_update_logs lỗi: {e_cl}")
+                print(f"[api_stats] count_update_logs lỗi: {e_cl}")
                 cl = 0
             return (fb, cl)
 
@@ -868,16 +899,30 @@ async def api_stats(request: Request):
 
 @router.get("/api/dash/player/{user_id}")
 async def api_player_lookup(user_id: str, request: Request):
-    """Tra cứu thông tin người chơi theo Discord user_id."""
+    """
+    Tra cứu thông tin người chơi theo Discord user_id.
+    - Ép user_id về str để tránh lỗi BigInt JS (số Discord ID > 2^53).
+    - try/except đầy đủ: 400 nếu ID sai format, 503 nếu DB lỗi, 404 nếu không có.
+    """
     _require_auth(request)
-    players_col = _col("players")
-    if players_col is None:
-        raise HTTPException(404, "404 ×[")
-    doc = players_col.find_one({"user_id": user_id})
-    if not doc:
-        raise HTTPException(404, "404 ×[")
-    doc.pop("_id", None)
-    return JSONResponse(doc)
+    # Luôn ép về string — JS có thể gửi BigInt gây sai số
+    uid_str = str(user_id).strip()
+    if not uid_str or not uid_str.isdigit():
+        raise HTTPException(400, "user_id không hợp lệ — phải là chuỗi số Discord ID")
+    try:
+        players_col = _col("players")
+        if players_col is None:
+            raise HTTPException(503, "Database chưa kết nối — thử lại sau")
+        doc = players_col.find_one({"user_id": uid_str})
+        if not doc:
+            raise HTTPException(404, f"Không tìm thấy người chơi ID={uid_str}")
+        doc.pop("_id", None)
+        return JSONResponse(doc)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"[api_player_lookup] Lỗi DB uid={uid_str}: {exc}")
+        raise HTTPException(500, f"Lỗi kết nối database: {type(exc).__name__}")
 
 
 # ── API — OWNER ONLY ───────────────────────────────────────────────
@@ -892,19 +937,109 @@ async def api_admin_feedbacks(request: Request):
     return JSONResponse(docs)
 
 
+@router.delete("/api/dash/admin/feedback/{fb_id}")
+async def api_delete_feedback(fb_id: str, request: Request):
+    """
+    Xóa feedback khỏi MongoDB theo ObjectId hoặc TiDB theo ID 15 ký tự.
+    Chỉ BOT_OWNER mới có quyền.
+    """
+    _require_owner(request)
+    fb_id = str(fb_id).strip()
+    if not fb_id:
+        raise HTTPException(400, "Thiếu fb_id")
+
+    # Thử xóa trong MongoDB (nếu có collection feedbacks)
+    fb_col = _col("feedbacks")
+    deleted_mongo = False
+    if fb_col is not None:
+        try:
+            from bson import ObjectId
+            result = fb_col.delete_one({"_id": ObjectId(fb_id)})
+            deleted_mongo = result.deleted_count > 0
+        except Exception:
+            # Nếu fb_id không phải ObjectId, thử tìm theo created_at
+            try:
+                result = fb_col.delete_one({"created_at": fb_id})
+                deleted_mongo = result.deleted_count > 0
+            except Exception as exc:
+                print(f"[api_delete_feedback] Lỗi MongoDB: {exc}")
+
+    # Thử xóa trong TiDB (ID 15 ký tự)
+    deleted_tidb = False
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, database_tidb.delete_feedback, fb_id)
+        deleted_tidb = res.get("ok", False)
+    except Exception as exc:
+        print(f"[api_delete_feedback] Lỗi TiDB: {exc}")
+
+    if not deleted_mongo and not deleted_tidb:
+        raise HTTPException(404, f"Không tìm thấy feedback id={fb_id}")
+
+    return JSONResponse({"ok": True, "deleted_mongo": deleted_mongo, "deleted_tidb": deleted_tidb})
+
+
 @router.post("/api/dash/admin/feedback/reply")
 async def api_reply_feedback(request: Request):
+    """
+    Ghi phản hồi feedback vào DB và (tuỳ chọn) gửi qua Discord Webhook.
+    Body JSON:
+      created_at  — định danh feedback trong MongoDB
+      fb_id       — ID 15 ký tự TiDB (nếu có)
+      reply       — nội dung phản hồi (tối đa 1000 ký tự)
+      webhook_url — (tuỳ chọn) Discord Webhook URL để thông báo user
+    """
     _require_owner(request)
-    data       = await request.json()
-    created_at = data.get("created_at", "")
-    reply      = str(data.get("reply", "")).strip()[:1000]
-    fb_col     = _col("feedbacks")
+    data        = await request.json()
+    created_at  = data.get("created_at", "")
+    fb_id       = str(data.get("fb_id", "")).strip()
+    reply       = str(data.get("reply", "")).strip()[:1000]
+    webhook_url = str(data.get("webhook_url", "")).strip()
+
+    if not reply:
+        raise HTTPException(400, "Nội dung phản hồi không được trống")
+
+    # Lưu vào MongoDB
+    fb_col = _col("feedbacks")
     if fb_col is not None and created_at:
-        fb_col.update_one(
-            {"created_at": created_at},
-            {"$set": {"reply": reply}},
-        )
-    return JSONResponse({"ok": True})
+        try:
+            fb_col.update_one(
+                {"created_at": created_at},
+                {"$set": {"reply": reply}},
+            )
+        except Exception as exc:
+            print(f"[api_reply_feedback] Lỗi MongoDB: {exc}")
+
+    # Lưu vào TiDB (nếu có fb_id 15 ký tự)
+    if fb_id:
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, database_tidb.reply_feedback, fb_id, reply)
+        except Exception as exc:
+            print(f"[api_reply_feedback] Lỗi TiDB: {exc}")
+
+    # Gửi Webhook Discord (tuỳ chọn)
+    webhook_sent = False
+    if webhook_url.startswith("https://discord.com/api/webhooks/"):
+        try:
+            payload = {
+                "embeds": [{
+                    "title": "💬 Phản hồi từ Bot Owner",
+                    "description": reply,
+                    "color": 0x7c6af7,
+                    "footer": {
+                        "text": f"Anomalies Bot • {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+                    },
+                }]
+            }
+            async with httpx.AsyncClient() as http:
+                wh_resp = await http.post(webhook_url, json=payload, timeout=10)
+                webhook_sent = wh_resp.status_code in (200, 204)
+        except Exception as exc:
+            print(f"[api_reply_feedback] Lỗi gửi Webhook: {exc}")
+
+    return JSONResponse({"ok": True, "webhook_sent": webhook_sent})
 
 
 @router.post("/api/dash/admin/changelog")
@@ -1008,214 +1143,6 @@ async def api_admin_room_config(guild_id: str, request: Request):
         except Exception:
             pass
     return JSONResponse({"ok": True})
-
-
-# ── GAMEPLAY GUIDES ────────────────────────────────────────────────
-
-# Dữ liệu hướng dẫn chơi — lấy cảm hứng từ cogs/help.py
-_COMMANDS_DATA = [
-    {
-        "emoji": "⚙️",
-        "name": "/setup",
-        "desc": (
-            "Cài đặt bot lần đầu cho server — chọn kênh chat chữ, kênh thoại "
-            "và danh mục (Category) thông qua menu tương tác. Bot sẽ tự tạo kênh "
-            "nếu bạn chọn *Tạo cho tôi*."
-        ),
-        "perm": "Chủ server / Admin",
-        "image_url": "",
-    },
-    {
-        "emoji": "🔧",
-        "name": "/setting",
-        "desc": (
-            "Điều chỉnh các thông số trận đấu: số người, thời gian thảo luận, "
-            "thời gian bỏ phiếu, đếm ngược, bật/tắt mute, phân quyền lệnh..."
-        ),
-        "perm": "Theo cấu hình /setting → Quyền sử dụng lệnh",
-        "image_url": "",
-    },
-    {
-        "emoji": "🗑️",
-        "name": "/clear",
-        "desc": (
-            "Xóa toàn bộ tin nhắn trong kênh game (dọn sạch sau trận). "
-            "Thường dùng sau khi trận kết thúc để chuẩn bị cho trận tiếp theo."
-        ),
-        "perm": "Theo cấu hình /setting → Quyền sử dụng lệnh",
-        "image_url": "",
-    },
-    {
-        "emoji": "👁️",
-        "name": "/role",
-        "desc": (
-            "Xem danh sách tất cả các vai trò trong game, đọc mô tả chi tiết, "
-            "mẹo chơi, và chỉnh sửa tỉ lệ xuất hiện của từng role trong trận tiếp theo."
-        ),
-        "perm": "Tất cả mọi người",
-        "image_url": "",
-    },
-    {
-        "emoji": "❓",
-        "name": "/help",
-        "desc": "Hiển thị trang trợ giúp này.",
-        "perm": "Tất cả mọi người",
-        "image_url": "",
-    },
-]
-
-_FAQ_DATA = [
-    {
-        "emoji": "🎮",
-        "title": "Cách tham gia & bắt đầu trận",
-        "content": (
-            "1. Vào kênh thoại của bot (kênh được chọn lúc /setup).\n"
-            "2. Bot sẽ nhận diện bạn và thêm vào phòng chờ.\n"
-            "3. Khi đủ số người tối thiểu, bot bắt đầu đếm ngược rồi tự động khởi động trận.\n"
-            "4. Vai trò sẽ được gửi qua DM — hãy đảm bảo bật nhận tin nhắn từ server."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "🌙",
-        "title": "Cách thực hiện hành động ban đêm",
-        "content": (
-            "Khi màn đêm bắt đầu, bot gửi DM cho bạn kèm giao diện nút bấm hoặc menu chọn.\n\n"
-            "• Chọn mục tiêu → bấm nút hoặc chọn từ menu Select.\n"
-            "• Xác nhận → bấm nút xác nhận (nếu có).\n"
-            "• Hành động sẽ được thực thi vào cuối đêm (trừ một số role đặc biệt).\n"
-            "• Nếu không thực hiện gì, lượt đó coi như bỏ qua.\n\n"
-            "Một số role có thể bị chặn hành động (bởi Kiến Trúc Sư Bóng Tối, Cai Ngục...) "
-            "— bạn sẽ nhận thông báo trong DM."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "☀️",
-        "title": "Cách thảo luận & bỏ phiếu ban ngày",
-        "content": (
-            "Ban ngày, tất cả người sống được unmute và nói chuyện tự do.\n\n"
-            "• Thảo luận trong kênh chat chữ và kênh thoại.\n"
-            "• Khi hết giờ thảo luận, giai đoạn bỏ phiếu bắt đầu — bot gửi giao diện bỏ phiếu.\n"
-            "• Mỗi người chỉ được 1 phiếu — bỏ phiếu cho người bạn nghi ngờ là Dị Thể.\n"
-            "• Người nhận nhiều phiếu nhất sẽ bị trục xuất khỏi thị trấn.\n"
-            "• Nếu hòa phiếu → không ai bị trục xuất trong ngày đó.\n\n"
-            "Skip thảo luận: Nếu được bật, người chơi có thể vote rút ngắn thời gian thảo luận."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "📜",
-        "title": "Cách nhập & xem di chúc",
-        "content": (
-            "Ghi di chúc — hoàn toàn qua DM của bot:\n"
-            "Nhắn tin trực tiếp cho bot (DM): 'Nhập di chúc'\n"
-            "Bot sẽ phản hồi hướng dẫn — sau đó mỗi tin nhắn bạn gửi trong DM = 1 dòng di chúc.\n\n"
-            "• Tối đa 45 dòng, mỗi dòng tối đa 60 ký tự (không tính dấu cách).\n"
-            "• Di chúc lưu tự động sau mỗi dòng — không cần lệnh kết thúc.\n"
-            "• Khi bạn chết, di chúc tự động khóa.\n\n"
-            "Xem di chúc: Mỗi sáng, bot gửi bảng LÁ THƯ NGƯỜI CHẾT kèm menu chọn tại kênh game."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "💬",
-        "title": "Các kênh chat riêng tư có gì?",
-        "content": (
-            "Kênh Dị Thể (Anomaly Chat):\n"
-            "Kênh riêng tư chỉ dành cho phe Dị Thể. Các thành viên Dị Thể có thể "
-            "thảo luận chiến thuật mà không bị phe Survivor biết.\n\n"
-            "Kênh Người Chết (Dead Chat):\n"
-            "Kênh dành riêng cho người đã chết. Người chết có thể nói chuyện với nhau "
-            "nhưng không thể can thiệp vào trận đấu.\n\n"
-            "DM (Tin nhắn riêng):\n"
-            "Bot gửi DM khi: nhận vai trò, thực hiện hành động đêm, nhận kết quả điều tra, "
-            "nhận thông báo bị tấn công, và xem di chúc."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "🏆",
-        "title": "Điều kiện thắng của mỗi phe",
-        "content": (
-            "Survivors (Người Sống Sót):\n"
-            "Loại bỏ tất cả Dị Thể và các thực thể đe dọa còn lại.\n\n"
-            "Anomalies (Dị Thể):\n"
-            "Chiếm đa số — số Dị Thể sống bằng hoặc hơn số Survivor còn lại.\n\n"
-            "Unknown Entities (Thực Thể Ẩn):\n"
-            "Mỗi role có điều kiện riêng — đọc mô tả vai trò trong DM để biết chi tiết."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "🔍",
-        "title": "Vai trò điều tra hoạt động thế nào?",
-        "content": (
-            "Thám Tử: Điều tra 1 người/đêm — nhận kết quả là danh sách vai trò gợi ý.\n\n"
-            "Thám Trưởng: Điều tra 1 người/đêm — biết chính xác vai trò của họ.\n\n"
-            "Điệp Viên: Mỗi đêm nhận thông tin Dị Thể nhắm vào ai.\n\n"
-            "Người Tiên Tri: Cảm nhận linh hồn 1 người — biết họ thuộc phe thiện hay ác.\n\n"
-            "Tín Hiệu Giả (Dị Thể): Giả mạo kết quả điều tra gửi cho Thám Tử/Thám Trưởng."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "⚰️",
-        "title": "Điều gì xảy ra khi bạn chết?",
-        "content": (
-            "• Bạn nhận role Dead và bị mute trong kênh thoại.\n"
-            "• Bạn được thêm vào Dead Chat — có thể nói chuyện với người chết khác.\n"
-            "• Di chúc của bạn (nếu có) tự động khóa lại.\n"
-            "• Bạn vẫn có thể theo dõi diễn biến qua kênh chat chính (chỉ xem).\n"
-            "• Kẻ Báo Oán có thể hồi sinh bạn — bạn sẽ nhận DM thông báo.\n\n"
-            "Người chết không được tiết lộ thông tin cho người sống qua kênh công khai."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "🎭",
-        "title": "Spectator — theo dõi trận không tham gia",
-        "content": (
-            "Nếu bạn vào kênh thoại sau khi trận đã bắt đầu, "
-            "bot sẽ tự động cho bạn vào chế độ Spectator (khán giả).\n\n"
-            "• Nickname được đổi thành 'Spectator' trong trận.\n"
-            "• Có thể xem kênh chat nhưng không thể gửi tin nhắn vào chat game.\n"
-            "• Không thể tham gia bỏ phiếu hay thực hiện hành động.\n"
-            "• Sau khi trận kết thúc, nickname được tự động trả lại tên gốc."
-        ),
-        "image_url": "",
-    },
-    {
-        "emoji": "🌀",
-        "title": "Unknown Entities — các thực thể bí ẩn là gì?",
-        "content": (
-            "Các Unknown Entities không thuộc phe Survivors hay Anomalies — "
-            "họ có mục tiêu và điều kiện thắng riêng.\n\n"
-            "Kẻ Giết Người Hàng Loạt — tấn công mỗi đêm, muốn là người sống duy nhất.\n"
-            "A.I Tha Hóa — thu thập dữ liệu từ cả hai phe.\n"
-            "Đồng Hồ Tận Thế — kéo dài trận đủ số ngày.\n"
-            "Kẻ Dệt Mộng — liên kết 2 người, họ biết vai trò của nhau.\n"
-            "Con Tàu Ma — bắt cóc người chơi đưa vào vùng trung gian.\n"
-            "Kẻ Dệt Thời Gian — quan sát và thao túng dòng thời gian."
-        ),
-        "image_url": "",
-    },
-]
-
-
-@router.get("/api/dash/gameplay-guides")
-async def api_gameplay_guides(request: Request):
-    """
-    Trả về dữ liệu Hướng dẫn chơi cho Dashboard:
-      - commands: danh sách lệnh slash (từ COMMANDS_DATA của help.py)
-      - faq: câu hỏi thường gặp về gameplay (từ GAMEPLAY_FAQ của help.py)
-    Trường image_url để trống — thêm URL ảnh sau này khi cần.
-    """
-    _require_auth(request)
-    return JSONResponse({
-        "commands": _COMMANDS_DATA,
-        "faq":      _FAQ_DATA,
-    })
 
 
 # ── SPA SERVE ──────────────────────────────────────────────────────
