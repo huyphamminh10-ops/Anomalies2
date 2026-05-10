@@ -1,0 +1,2260 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Anomalies — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+/* ══════════════════════════════════════════
+   DESIGN TOKENS
+══════════════════════════════════════════ */
+:root {
+  --bg:        #08090d;
+  --bg2:       #0e1018;
+  --bg3:       #141720;
+  --surface:   #191d28;
+  --surface2:  #1f2435;
+  --border:    rgba(255,255,255,0.07);
+  --border2:   rgba(255,255,255,0.12);
+  --text:      #eef0f6;
+  --text2:     #8892a8;
+  --text3:     #535c72;
+  --accent:    #7c6af7;
+  --accent2:   #5e4fe0;
+  --accent-rgb:124,106,247;
+  --red:       #f05050;
+  --green:     #3dd68c;
+  --yellow:    #f5c231;
+  --cyan:      #38d9f5;
+  --orange:    #f58a30;
+  --survivors: #3dd68c;
+  --anomalies: #f05050;
+  --unknown:   #f5c231;
+  --event:     #a78bfa;
+  --radius:    14px;
+  --radius-sm: 9px;
+  --shadow:    0 8px 32px rgba(0,0,0,0.5);
+  --glow:      0 0 24px rgba(124,106,247,0.2);
+  --trans:     0.18s ease;
+}
+[data-theme="light"] {
+  --bg:        #f2f4f8;
+  --bg2:       #e8ecf3;
+  --bg3:       #dde2ec;
+  --surface:   #ffffff;
+  --surface2:  #f7f9fc;
+  --border:    rgba(0,0,0,0.08);
+  --border2:   rgba(0,0,0,0.14);
+  --text:      #111827;
+  --text2:     #4b5563;
+  --text3:     #9ca3af;
+  --shadow:    0 4px 20px rgba(0,0,0,0.1);
+  --glow:      0 0 24px rgba(124,106,247,0.15);
+}
+
+/* ══════════════════════════════════════════
+   RESET + BASE
+══════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Outfit', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.6;
+  transition: background var(--trans), color var(--trans);
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, textarea, select { font-family: inherit; }
+img { display: block; max-width: 100%; }
+
+/* ══════════════════════════════════════════
+   SCROLLBAR
+══════════════════════════════════════════ */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+
+/* ══════════════════════════════════════════
+   LAYOUT
+══════════════════════════════════════════ */
+.app-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+}
+@media (max-width: 900px) {
+  .app-shell { grid-template-columns: 1fr; }
+}
+
+/* ══════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════ */
+.sidebar {
+  grid-row: 1 / 3;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  transition: transform var(--trans);
+  z-index: 100;
+}
+@media (max-width: 900px) {
+  .sidebar {
+    grid-row: unset;
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 260px;
+    transform: translateX(-100%);
+  }
+  .sidebar.open { transform: translateX(0); box-shadow: 4px 0 32px rgba(0,0,0,0.5); }
+}
+
+.sidebar-logo {
+  padding: 24px 20px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.logo-icon {
+  width: 38px; height: 38px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 10px;
+  display: grid; place-items: center;
+  font-size: 18px; flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb),0.3);
+}
+.logo-text { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+.logo-text span { color: var(--accent); }
+
+.sidebar-user {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.sidebar-user img {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.sidebar-user .user-info { flex: 1; overflow: hidden; }
+.sidebar-user .user-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user .user-badge {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.badge-owner { background: rgba(var(--accent-rgb),0.15); color: var(--accent); }
+.badge-user   { background: rgba(61,214,140,0.12); color: var(--green); }
+
+.nav-section { padding: 8px 12px 4px; }
+.nav-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text3); padding: 4px 8px; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 14px;
+  font-weight: 500;
+  transition: all var(--trans);
+  margin-bottom: 2px;
+}
+.nav-item:hover { background: var(--surface); color: var(--text); }
+.nav-item.active { background: linear-gradient(135deg, rgba(var(--accent-rgb),0.15), rgba(var(--accent-rgb),0.08)); color: var(--accent); border: 1px solid rgba(var(--accent-rgb),0.2); }
+.nav-item .nav-icon { width: 20px; height: 20px; flex-shrink: 0; display: grid; place-items: center; }
+.nav-item .nav-badge {
+  margin-left: auto;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 99px;
+  padding: 1px 6px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+.btn-icon {
+  flex: 1;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all var(--trans);
+  font-weight: 500;
+}
+.btn-icon:hover { border-color: var(--border2); color: var(--text); }
+.btn-icon.danger:hover { border-color: var(--red); color: var(--red); background: rgba(240,80,80,0.05); }
+
+/* ══════════════════════════════════════════
+   TOPBAR
+══════════════════════════════════════════ */
+.topbar {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.topbar-burger {
+  display: none;
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  align-items: center;
+  justify-content: center;
+  color: var(--text2);
+  flex-shrink: 0;
+}
+@media (max-width: 900px) { .topbar-burger { display: flex; } }
+.topbar-title { font-size: 16px; font-weight: 700; flex: 1; }
+.topbar-title span { color: var(--text3); font-weight: 400; font-size: 14px; }
+
+.guild-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  transition: all var(--trans);
+  position: relative;
+}
+.guild-selector:hover { border-color: var(--border2); }
+.guild-selector img { width: 20px; height: 20px; border-radius: 50%; }
+.guild-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  min-width: 220px;
+  padding: 8px;
+  display: none;
+  box-shadow: var(--shadow);
+  z-index: 200;
+}
+.guild-dropdown.open { display: block; }
+.guild-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  transition: background var(--trans);
+}
+.guild-option:hover { background: var(--surface); }
+.guild-option img { width: 28px; height: 28px; border-radius: 50%; }
+.guild-option .guild-initial {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent);
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 12px; color: #fff;
+}
+
+/* ══════════════════════════════════════════
+   MAIN CONTENT
+══════════════════════════════════════════ */
+.main-content {
+  overflow-y: auto;
+  min-height: calc(100vh - 60px);
+}
+.page {
+  display: none;
+  padding: 28px 28px;
+  max-width: 1100px;
+  animation: fadeUp 0.25s ease;
+}
+.page.active { display: block; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+  .page { padding: 16px; }
+  .topbar { padding: 0 16px; }
+}
+
+/* ══════════════════════════════════════════
+   COMPONENTS
+══════════════════════════════════════════ */
+.section-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 4px;
+  letter-spacing: -0.3px;
+}
+.section-sub { color: var(--text2); font-size: 13.5px; margin-bottom: 24px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  transition: border-color var(--trans);
+}
+.card:hover { border-color: var(--border2); }
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.card-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all var(--trans);
+  font-family: inherit;
+  white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent2); box-shadow: 0 4px 16px rgba(var(--accent-rgb),0.35); }
+.btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--border2); }
+.btn-danger { background: rgba(240,80,80,0.12); color: var(--red); border: 1px solid rgba(240,80,80,0.2); }
+.btn-danger:hover { background: rgba(240,80,80,0.2); }
+.btn-success { background: rgba(61,214,140,0.12); color: var(--green); border: 1px solid rgba(61,214,140,0.2); }
+.btn-success:hover { background: rgba(61,214,140,0.2); }
+.btn-sm { padding: 5px 11px; font-size: 12.5px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.form-group { margin-bottom: 16px; }
+.form-label { font-size: 12.5px; font-weight: 600; color: var(--text2); margin-bottom: 6px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color var(--trans);
+  outline: none;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-input::placeholder { color: var(--text3); }
+textarea.form-input { resize: vertical; min-height: 90px; }
+select.form-input { appearance: none; cursor: pointer; }
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.toggle:last-child { border-bottom: none; }
+.toggle-info .toggle-name { font-size: 14px; font-weight: 600; }
+.toggle-info .toggle-desc { font-size: 12.5px; color: var(--text2); margin-top: 2px; }
+.switch {
+  position: relative;
+  width: 42px; height: 24px; flex-shrink: 0;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.switch-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  left: 3px; top: 3px;
+  background: var(--text3);
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+.switch input:checked + .switch-slider { background: rgba(var(--accent-rgb),0.2); border-color: var(--accent); }
+.switch input:checked + .switch-slider::before { background: var(--accent); transform: translateX(18px); }
+
+.number-input { display: flex; align-items: center; gap: 8px; }
+.number-input input {
+  width: 90px;
+  padding: 7px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13.5px;
+  font-family: 'JetBrains Mono', monospace;
+  text-align: center;
+  outline: none;
+  transition: border-color var(--trans);
+}
+.number-input input:focus { border-color: var(--accent); }
+.number-input .num-label { font-size: 12px; color: var(--text3); }
+
+/* ══════════════════════════════════════════
+   STATUS PILL
+══════════════════════════════════════════ */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.status-idle   { background: rgba(83,92,114,0.2); color: var(--text3); }
+.status-idle .status-dot { background: var(--text3); }
+.status-lobby  { background: rgba(245,194,49,0.12); color: var(--yellow); }
+.status-lobby .status-dot { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); animation: pulse 1.5s infinite; }
+.status-game   { background: rgba(61,214,140,0.12); color: var(--green); }
+.status-game .status-dot { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+/* ══════════════════════════════════════════
+   ROLE CARDS
+══════════════════════════════════════════ */
+.roles-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.filter-btn {
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text2);
+  transition: all var(--trans);
+}
+.filter-btn:hover { border-color: var(--border2); color: var(--text); }
+.filter-btn.active { border-color: transparent; color: #fff; }
+.filter-btn.all.active { background: var(--accent); }
+.filter-btn.survivors.active { background: var(--survivors); }
+.filter-btn.anomalies.active { background: var(--anomalies); }
+.filter-btn.unknown.active { background: var(--unknown); color: #000; }
+.filter-btn.event.active { background: var(--event); }
+
+.roles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.role-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: all var(--trans);
+  cursor: default;
+  position: relative;
+  overflow: hidden;
+}
+.role-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--role-color, var(--accent));
+}
+.role-card:hover { border-color: var(--border2); transform: translateY(-2px); box-shadow: var(--shadow); }
+.role-card { cursor: pointer; }
+.role-card-name { font-size: 14.5px; font-weight: 700; margin-bottom: 4px; }
+.role-card-faction {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 6px;
+  color: var(--role-color, var(--accent));
+}
+.role-card-hint { font-size: 11.5px; color: var(--text3); }
+.role-card-desc { display:none; }
+
+/* Role Detail Modal */
+.role-detail-modal { max-width: 520px; }
+.role-detail-header {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.role-detail-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+}
+.role-detail-name { font-size: 20px; font-weight: 800; }
+.role-detail-faction {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 1px; margin-top: 2px; color: var(--role-color, var(--accent));
+}
+.role-detail-desc {
+  font-size: 13.5px; color: var(--text2); line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 16px; text-align: center;
+}
+.stat-card-value { font-size: 32px; font-weight: 800; color: var(--accent); }
+.stat-card-label { font-size: 12px; color: var(--text3); margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; }
+
+/* Player lookup */
+.lookup-result {
+  margin-top: 16px; padding: 16px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.lookup-banned { border-color: var(--red); background: rgba(240,80,80,0.06); }
+.lookup-clean  { border-color: var(--green); background: rgba(61,214,140,0.06); }
+
+/* ══════════════════════════════════════════
+   FEEDBACK
+══════════════════════════════════════════ */
+.feedback-upload-area {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--trans);
+  color: var(--text3);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.feedback-upload-area:hover { border-color: var(--accent); color: var(--text2); }
+.img-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.img-preview-item {
+  position: relative;
+  width: 80px; height: 80px;
+}
+.img-preview-item img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.img-preview-item .remove-img {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px;
+  background: var(--red); color: #fff;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 11px; cursor: pointer;
+  border: 2px solid var(--bg);
+}
+
+.feedback-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.feedback-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.feedback-header img { width: 32px; height: 32px; border-radius: 50%; }
+.feedback-username { font-weight: 600; font-size: 13.5px; }
+.feedback-time { font-size: 11.5px; color: var(--text3); }
+.feedback-content { font-size: 13.5px; color: var(--text2); margin-bottom: 10px; line-height: 1.6; }
+.feedback-images { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.feedback-images img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; }
+.feedback-reply-box {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-top: 10px;
+}
+.feedback-reply-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent); margin-bottom: 4px; }
+.feedback-reply-text { font-size: 13px; color: var(--text2); }
+.feedback-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ══════════════════════════════════════════
+   CHANGELOG
+══════════════════════════════════════════ */
+.changelog-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 16px;
+  margin-bottom: 24px;
+  position: relative;
+}
+.changelog-timeline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.changelog-dot {
+  width: 12px; height: 12px;
+  background: var(--accent);
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.2);
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.changelog-line {
+  width: 2px;
+  background: var(--border);
+  flex: 1;
+  min-height: 20px;
+}
+.changelog-body { padding-bottom: 16px; }
+.changelog-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.changelog-version {
+  background: rgba(var(--accent-rgb),0.12);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.changelog-title { font-size: 15px; font-weight: 700; }
+.changelog-date { font-size: 12px; color: var(--text3); }
+.changelog-content { font-size: 13.5px; color: var(--text2); line-height: 1.7; white-space: pre-wrap; }
+
+/* ══════════════════════════════════════════
+   ROOMS (OWNER)
+══════════════════════════════════════════ */
+.rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.room-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  transition: all var(--trans);
+}
+.room-card:hover { border-color: var(--border2); }
+.room-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.room-name { font-weight: 700; font-size: 14.5px; }
+.room-id { font-size: 11px; color: var(--text3); font-family: 'JetBrains Mono', monospace; }
+.room-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.room-stat { background: var(--bg3); border-radius: 8px; padding: 8px 10px; }
+.room-stat-value { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.room-stat-label { font-size: 11px; color: var(--text3); }
+
+/* ══════════════════════════════════════════
+   BAN LIST
+══════════════════════════════════════════ */
+.ban-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ban-table th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text3); border-bottom: 1px solid var(--border); }
+.ban-table td { padding: 12px; border-bottom: 1px solid var(--border); }
+.ban-table tr:last-child td { border-bottom: none; }
+.ban-table tr:hover td { background: var(--surface2); }
+.ban-mode { padding: 3px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+.ban-mode-ban  { background: rgba(240,80,80,0.12); color: var(--red); }
+.ban-mode-lobby { background: rgba(245,194,49,0.12); color: var(--yellow); }
+.uid-mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text3); }
+
+/* ══════════════════════════════════════════
+   SETTINGS PAGE
+══════════════════════════════════════════ */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.settings-noselect { 
+  filter: grayscale(1);
+  pointer-events: none;
+  opacity: 0.5;
+}
+.save-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.save-hint { font-size: 12.5px; color: var(--text3); }
+
+/* ══════════════════════════════════════════
+   LOGIN SCREEN
+══════════════════════════════════════════ */
+.login-screen {
+  display: none;
+  min-height: 100vh;
+  background: var(--bg);
+  place-items: center;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  padding: 20px;
+}
+.login-screen.visible { display: grid; }
+.login-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 40px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.login-logo {
+  width: 72px; height: 72px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 20px;
+  display: grid; place-items: center;
+  font-size: 32px;
+  margin: 0 auto 20px;
+  box-shadow: 0 8px 32px rgba(var(--accent-rgb),0.3);
+}
+.login-title { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+.login-sub { color: var(--text2); font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
+.btn-discord {
+  width: 100%;
+  padding: 13px;
+  background: #5865F2;
+  color: #fff;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  cursor: pointer; border: none;
+  transition: all var(--trans);
+  font-family: inherit;
+}
+.btn-discord:hover { background: #4752c4; box-shadow: 0 8px 24px rgba(88,101,242,0.4); }
+.discord-icon { width: 22px; height: 22px; }
+
+/* ══════════════════════════════════════════
+   TOASTS
+══════════════════════════════════════════ */
+.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9998; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.toast {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 13.5px;
+  font-weight: 500;
+  min-width: 220px;
+  max-width: 340px;
+  pointer-events: auto;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: toastIn 0.25s ease;
+}
+.toast.success { border-color: rgba(61,214,140,0.3); }
+.toast.error   { border-color: rgba(240,80,80,0.3); }
+.toast-icon { font-size: 16px; flex-shrink: 0; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+/* ══════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════ */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 5000;
+  place-items: center;
+  backdrop-filter: blur(4px);
+  padding: 20px;
+}
+.modal-overlay.open { display: grid; }
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 24px;
+  max-width: 500px;
+  width: 100%;
+  box-shadow: var(--shadow);
+  animation: modalIn 0.2s ease;
+}
+@keyframes modalIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+.modal-title { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+.modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+/* ══════════════════════════════════════════
+   MISC UTILS
+══════════════════════════════════════════ */
+.flex { display: flex; }
+.flex-center { display: flex; align-items: center; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.hidden { display: none !important; }
+.overlay-bg { position: fixed; inset: 0; z-index: 90; display: none; }
+.overlay-bg.open { display: block; }
+
+.empty-state { text-align: center; padding: 48px 20px; color: var(--text3); }
+.empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+
+.loading-spin {
+  display: inline-block;
+  width: 20px; height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.guide-section { margin-bottom: 28px; }
+.guide-section h3 { font-size: 16px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.guide-section p { font-size: 14px; color: var(--text2); line-height: 1.7; }
+.guide-section ul { padding-left: 20px; color: var(--text2); font-size: 14px; line-height: 1.8; }
+.guide-tip {
+  background: rgba(var(--accent-rgb),0.07);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 12px 16px;
+  font-size: 13.5px;
+  color: var(--text2);
+  margin-top: 10px;
+}
+
+.img-viewer-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 9999;
+  place-items: center;
+  cursor: pointer;
+}
+.img-viewer-overlay.open { display: grid; }
+.img-viewer-overlay img { max-width: 90vw; max-height: 90vh; border-radius: var(--radius); }
+
+/* Sidebar mobile overlay */
+#sidebar-overlay { background: rgba(0,0,0,0.5); }
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo">🌙</div>
+    <div class="login-title">Anomalies</div>
+    <div class="login-sub">Đăng nhập bằng Discord để truy cập Dashboard quản lí trò chơi.</div>
+    <button class="btn-discord" onclick="location.href='/auth/login'">
+      <svg class="discord-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057.1 18.079.11 18.1.13 18.113a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+      </svg>
+      Đăng nhập với Discord
+    </button>
+  </div>
+</div>
+
+<!-- SIDEBAR OVERLAY (mobile) -->
+<div class="overlay-bg" id="sidebar-overlay" onclick="toggleSidebar(false)"></div>
+
+<!-- APP -->
+<div class="app-shell" id="appShell" style="display:none">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🌙</div>
+      <div class="logo-text"><span>Anomalies</span></div>
+    </div>
+
+    <div class="sidebar-user" id="sidebarUser">
+      <img src="" id="sidebarAvatar" alt=""/>
+      <div class="user-info">
+        <div class="user-name" id="sidebarUsername">—</div>
+        <span class="user-badge badge-user" id="sidebarBadge">Người chơi</span>
+      </div>
+    </div>
+
+    <!-- NAV PLAYER -->
+    <div class="nav-section">
+      <div class="nav-label">Người chơi</div>
+      <div class="nav-item active" data-page="roles" onclick="navigate('roles')">
+        <span class="nav-icon">🎭</span> Tra Cứu Vai Trò
+      </div>
+      <div class="nav-item" data-page="stats" onclick="navigate('stats')">
+        <span class="nav-icon">📊</span> Thống Kê
+      </div>
+      <div class="nav-item" data-page="player-lookup" onclick="navigate('player-lookup')">
+        <span class="nav-icon">🔍</span> Tra Cứu Người Chơi
+      </div>
+      <div class="nav-item" data-page="feedback-send" onclick="navigate('feedback-send')">
+        <span class="nav-icon">📝</span> Báo Lỗi / Feedback
+      </div>
+      <div class="nav-item" data-page="guide" onclick="navigate('guide')">
+        <span class="nav-icon">📖</span> Hướng Dẫn Chơi
+      </div>
+      <div class="nav-item" data-page="settings" onclick="navigate('settings')">
+        <span class="nav-icon">⚙️</span> Cài Đặt Phòng
+      </div>
+      <div class="nav-item" data-page="changelog" onclick="navigate('changelog')">
+        <span class="nav-icon">📋</span> Update Log
+      </div>
+    </div>
+
+    <!-- NAV OWNER -->
+    <div class="nav-section" id="ownerNav" style="display:none">
+      <div class="nav-label">Chủ Bot</div>
+      <div class="nav-item" data-page="feedbacks" onclick="navigate('feedbacks')">
+        <span class="nav-icon">💬</span> Xem Feedback
+        <span class="nav-badge hidden" id="feedbackBadge">0</span>
+      </div>
+      <div class="nav-item" data-page="post-update" onclick="navigate('post-update')">
+        <span class="nav-icon">📢</span> Đăng Update
+      </div>
+      <div class="nav-item" data-page="bans" onclick="navigate('bans')">
+        <span class="nav-icon">🚫</span> Quản Lí Ban
+      </div>
+      <div class="nav-item" data-page="rooms" onclick="navigate('rooms')">
+        <span class="nav-icon">🏠</span> Quản Lí Phòng
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="btn-icon" onclick="toggleTheme()" title="Đổi theme">
+        <span id="themeIcon">☀️</span>
+      </button>
+      <button class="btn-icon danger" onclick="location.href='/auth/logout'">
+        <span>↩</span> Đăng xuất
+      </button>
+    </div>
+  </aside>
+
+  <!-- RIGHT SIDE -->
+  <div style="display:flex;flex-direction:column;overflow:hidden">
+
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <button class="topbar-burger" onclick="toggleSidebar(true)">☰</button>
+      <div class="topbar-title" id="topbarTitle">Tra Cứu Vai Trò</div>
+      <!-- Guild selector -->
+      <div class="guild-selector" id="guildSelector" style="display:none" onclick="toggleGuildDropdown()">
+        <img id="guildIcon" src="" alt="" style="display:none"/>
+        <span id="guildIconInitial" style="display:none;width:20px;height:20px;border-radius:50%;background:var(--accent);display:grid;place-items:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0"></span>
+        <span id="guildName">Chọn Server</span>
+        <span style="color:var(--text3);font-size:12px">▾</span>
+        <div class="guild-dropdown" id="guildDropdown"></div>
+      </div>
+    </header>
+
+    <!-- MAIN -->
+    <main class="main-content" id="mainContent">
+
+      <!-- PAGE: ROLES -->
+      <div class="page active" id="page-roles">
+        <div class="section-title">Tra Cứu Vai Trò</div>
+        <div class="section-sub">Tìm hiểu về tất cả vai trò trong game Anomalies.</div>
+
+        <div style="margin-bottom:16px">
+          <input class="form-input" type="text" placeholder="🔍  Tìm kiếm vai trò..." id="roleSearch" oninput="filterRoles()" style="max-width:360px"/>
+        </div>
+
+        <div class="roles-filter">
+          <button class="filter-btn all active" onclick="setFilter('all',this)">Tất cả</button>
+          <button class="filter-btn survivors" onclick="setFilter('Survivors',this)" style="color:var(--survivors)">⚙ Survivors</button>
+          <button class="filter-btn anomalies" onclick="setFilter('Anomalies',this)" style="color:var(--anomalies)">☠ Anomalies</button>
+          <button class="filter-btn unknown" onclick="setFilter('Unknown',this)" style="color:var(--unknown)">❓ Unknown</button>
+          <button class="filter-btn event" onclick="setFilter('Event',this)" style="color:var(--event)">⭐ Event</button>
+        </div>
+
+        <div class="roles-grid" id="rolesGrid">
+          <div class="empty-state"><div class="loading-spin"></div></div>
+        </div>
+      </div>
+
+      <!-- PAGE: STATS -->
+      <div class="page" id="page-stats">
+        <div class="section-title">Thống Kê</div>
+        <div class="section-sub">Tổng quan số liệu hệ thống Anomalies.</div>
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card"><div class="loading-spin"></div></div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px;font-size:15px">🏠 Danh Sách Phòng Đang Hoạt Động</div>
+          <div id="statsRoomsList"><div class="empty-state"><div class="loading-spin"></div></div></div>
+        </div>
+      </div>
+
+      <!-- PAGE: PLAYER LOOKUP -->
+      <div class="page" id="page-player-lookup">
+        <div class="section-title">Tra Cứu Người Chơi</div>
+        <div class="section-sub">Kiểm tra trạng thái ban của người chơi theo Discord User ID.</div>
+        <div class="card" style="max-width:480px">
+          <div class="form-group">
+            <label class="form-label">Discord User ID</label>
+            <input class="form-input" id="lookupId" placeholder="Nhập User ID (vd: 123456789012345678)" style="max-width:100%"/>
+          </div>
+          <button class="btn btn-primary" onclick="doPlayerLookup()">🔍 Tra Cứu</button>
+          <div id="lookupResult"></div>
+        </div>
+      </div>
+
+            <!-- PAGE: FEEDBACK SEND -->
+      <div class="page" id="page-feedback-send">
+        <div class="section-title">Báo Lỗi / Feedback</div>
+        <div class="section-sub">Gửi phản hồi, báo lỗi hoặc đề xuất tính năng cho chủ bot.</div>
+
+        <div class="card" style="max-width:640px">
+          <div class="form-group">
+            <label class="form-label">Nội dung</label>
+            <textarea class="form-input" id="fbContent" placeholder="Mô tả lỗi gặp phải hoặc ý kiến của bạn..." rows="5"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Ảnh đính kèm (tối đa 5)</label>
+            <div class="img-previews" id="fbImgPreviews"></div>
+            <div class="feedback-upload-area" id="fbUploadArea" onclick="document.getElementById('fbFileInput').click()">
+              📁 Nhấn để chọn ảnh hoặc kéo thả vào đây
+            </div>
+            <input type="file" id="fbFileInput" accept="image/*" multiple style="display:none" onchange="handleFbImages(event)"/>
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn btn-ghost" onclick="clearFeedback()">Xóa</button>
+            <button class="btn btn-primary" onclick="submitFeedback()">📤 Gửi Feedback</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: GUIDE -->
+      <div class="page" id="page-guide">
+        <div class="section-title">Hướng Dẫn Chơi</div>
+        <div class="section-sub">Tổng hợp luật chơi và cách thức hoạt động trong Anomalies.</div>
+
+        <div class="card" style="max-width:720px">
+          <div class="guide-section">
+            <h3>🎮 Cách bắt đầu</h3>
+            <p>Bot Anomalies là game nhập vai nhiều người chơi trên Discord. Người chơi sẽ được phân vai ngẫu nhiên và phải hoàn thành mục tiêu theo phe của mình.</p>
+            <div class="guide-tip">Dùng lệnh <code style="font-family:monospace;background:var(--bg3);padding:1px 6px;border-radius:4px">/join</code> trong kênh text để tham gia phòng chờ.</div>
+          </div>
+
+          <div class="guide-section">
+            <h3>⚙️ Các phe trong game</h3>
+            <ul>
+              <li><strong style="color:var(--survivors)">Survivors</strong> — Sống sót đến cuối hoặc loại bỏ tất cả Anomalies.</li>
+              <li><strong style="color:var(--anomalies)">Anomalies</strong> — Loại bỏ Survivors đến khi chiếm đa số.</li>
+              <li><strong style="color:var(--unknown)">Unknown</strong> — Vai trò trung lập với điều kiện chiến thắng riêng.</li>
+              <li><strong style="color:var(--event)">Event</strong> — Vai trò sự kiện đặc biệt, chỉ xuất hiện theo mùa.</li>
+            </ul>
+          </div>
+
+          <div class="guide-section">
+            <h3>🌙 Chu kỳ ngày/đêm</h3>
+            <p>Game diễn ra theo chu kỳ Ngày → Thảo luận → Bỏ phiếu → Đêm. Ban đêm, mỗi vai trò sẽ thực hiện hành động của mình thông qua DM với bot.</p>
+            <div class="guide-tip">Thời gian mỗi giai đoạn có thể được chủ phòng tùy chỉnh trong phần Cài Đặt Phòng.</div>
+          </div>
+
+          <div class="guide-section">
+            <h3>📜 Luật cơ bản</h3>
+            <ul>
+              <li>Không chia sẻ thông tin từ DM bot ra kênh công khai trực tiếp.</li>
+              <li>Không spam hoặc cố tình làm gián đoạn game.</li>
+              <li>Tôn trọng quyết định của ban quản trị phòng.</li>
+              <li>Người chơi bị ban sẽ không thể tham gia bất kỳ phòng nào có bot.</li>
+            </ul>
+          </div>
+
+          <div class="guide-section">
+            <h3>💬 Hệ thống chat</h3>
+            <p>Nếu chủ phòng bật tính năng chat, người chơi có thể nhắn tin ẩn danh trong kênh game. Người chết có thể bị mute tùy cài đặt.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: SETTINGS -->
+      <div class="page" id="page-settings">
+        <!-- Server header with avatar + name -->
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px" id="settingsHeader">
+          <div id="settingsServerIcon" style="display:none;width:44px;height:44px;border-radius:12px;overflow:hidden;flex-shrink:0;border:1px solid var(--border)">
+            <img id="settingsServerIconImg" src="" alt="" style="width:100%;height:100%;object-fit:cover"/>
+          </div>
+          <div id="settingsServerInitial" style="display:none;width:44px;height:44px;border-radius:12px;background:var(--accent);place-items:center;font-weight:800;font-size:18px;color:#fff;flex-shrink:0"></div>
+          <div>
+            <div class="section-title" id="settingsServerName">Cài Đặt Phòng</div>
+            <div class="section-sub" style="margin-bottom:0">Chỉnh sửa cấu hình server. Cần quyền Quản Lí Server hoặc là Chủ Bot.</div>
+          </div>
+        </div>
+        <div style="margin-bottom:20px"></div>
+
+        <div id="settingsNoGuild" class="empty-state">
+          <div class="empty-icon">🏠</div>
+          <p>Chọn một server ở góc trên phải để xem cài đặt.</p>
+        </div>
+
+        <div id="settingsContent" style="display:none">
+          <!-- No permission error with server name -->
+          <div id="settingsNoAccess" style="display:none">
+            <div class="card" style="border-color:rgba(240,80,80,0.3);background:rgba(240,80,80,0.05);max-width:520px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:28px">🔒</span>
+                <div>
+                  <div style="font-weight:700;font-size:15px;color:var(--red);margin-bottom:4px">Không có quyền truy cập</div>
+                  <div style="font-size:13.5px;color:var(--text2)" id="settingsNoAccessMsg">Bạn không có quyền chỉnh sửa phòng của server này.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="settingsForm">
+            <!-- Readonly display (no perm) -->
+            <div id="settingsReadonly" style="display:none">
+              <div class="card" style="border-color:var(--border2);margin-bottom:16px">
+                <div style="display:flex;align-items:center;gap:8px;color:var(--text3);font-size:13.5px">
+                  <span>👁</span> Chế độ xem — Bạn không có quyền chỉnh sửa. Giao diện hiển thị trắng đen.
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">⏱ Thời gian</div>
+              </div>
+              <div class="settings-grid" id="settingsNums">
+                <div>
+                  <label class="form-label">Thời gian lobby (giây)</label>
+                  <div class="number-input"><input type="number" id="cfgCountdown" min="30" max="600"/> <span class="num-label">giây</span></div>
+                </div>
+                <div>
+                  <label class="form-label">Thời gian ngày (giây)</label>
+                  <div class="number-input"><input type="number" id="cfgDayTime" min="30" max="300"/> <span class="num-label">giây</span></div>
+                </div>
+                <div>
+                  <label class="form-label">Thời gian bỏ phiếu (giây)</label>
+                  <div class="number-input"><input type="number" id="cfgVoteTime" min="15" max="120"/> <span class="num-label">giây</span></div>
+                </div>
+                <div>
+                  <label class="form-label">Skip discussion delay (giây)</label>
+                  <div class="number-input"><input type="number" id="cfgSkipDelay" min="5" max="120"/> <span class="num-label">giây</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">👥 Người chơi</div>
+              </div>
+              <div class="settings-grid">
+                <div>
+                  <label class="form-label">Số người tối đa</label>
+                  <div class="number-input"><input type="number" id="cfgMaxPlayers" min="5" max="100"/> <span class="num-label">người</span></div>
+                </div>
+                <div>
+                  <label class="form-label">Số người tối thiểu</label>
+                  <div class="number-input"><input type="number" id="cfgMinPlayers" min="3" max="20"/> <span class="num-label">người</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">🔧 Tùy chọn game</div>
+              </div>
+              <div class="toggle">
+                <div class="toggle-info">
+                  <div class="toggle-name">Cho phép chat</div>
+                  <div class="toggle-desc">Người chơi có thể nhắn tin trong kênh game</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="cfgAllowChat"/><span class="switch-slider"></span></label>
+              </div>
+              <div class="toggle">
+                <div class="toggle-info">
+                  <div class="toggle-name">Mute người chết</div>
+                  <div class="toggle-desc">Người đã chết bị mute trong voice channel</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="cfgMuteDead"/><span class="switch-slider"></span></label>
+              </div>
+              <div class="toggle">
+                <div class="toggle-info">
+                  <div class="toggle-name">Không xóa role</div>
+                  <div class="toggle-desc">Giữ nguyên role Discord sau khi game kết thúc</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="cfgNoRemoveRoles"/><span class="switch-slider"></span></label>
+              </div>
+              <div class="toggle">
+                <div class="toggle-info">
+                  <div class="toggle-name">Nhạc nền</div>
+                  <div class="toggle-desc">Phát nhạc trong voice channel khi game đang chạy</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="cfgMusic"/><span class="switch-slider"></span></label>
+              </div>
+              <div class="toggle">
+                <div class="toggle-info">
+                  <div class="toggle-name">Bỏ qua thảo luận</div>
+                  <div class="toggle-desc">Skip giai đoạn thảo luận ban ngày</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="cfgSkipDiscussion"/><span class="switch-slider"></span></label>
+              </div>
+            </div>
+
+            <div class="save-row" id="settingsSaveRow" style="display:none">
+              <span class="save-hint" id="saveHint"></span>
+              <button class="btn btn-ghost" onclick="loadSettings()">↺ Hoàn tác</button>
+              <button class="btn btn-primary" onclick="saveSettings()">💾 Lưu thay đổi</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: CHANGELOG -->
+      <div class="page" id="page-changelog">
+        <div class="section-title">Update Log</div>
+        <div class="section-sub">Lịch sử cập nhật của Anomalies Bot.</div>
+        <div id="changelogList"><div class="empty-state"><div class="loading-spin"></div></div></div>
+      </div>
+
+      <!-- PAGE: FEEDBACKS (OWNER) -->
+      <div class="page" id="page-feedbacks">
+        <div class="section-title">Feedback Người Chơi</div>
+        <div class="section-sub">Xem và phản hồi các báo cáo từ người chơi.</div>
+        <div id="feedbacksList"><div class="empty-state"><div class="loading-spin"></div></div></div>
+      </div>
+
+      <!-- PAGE: POST UPDATE (OWNER) -->
+      <div class="page" id="page-post-update">
+        <div class="section-title">Đăng Thông Báo Update</div>
+        <div class="section-sub">Ghi thông tin phiên bản mới vào Update Log.</div>
+        <div class="card" style="max-width:640px">
+          <div class="form-group">
+            <label class="form-label">Phiên bản</label>
+            <input class="form-input" type="text" id="updateVersion" placeholder="v2.4.0" style="max-width:180px"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tiêu đề</label>
+            <input class="form-input" type="text" id="updateTitle" placeholder="Cập nhật tính năng mới..."/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nội dung</label>
+            <textarea class="form-input" id="updateContent" placeholder="Mô tả chi tiết các thay đổi..." rows="8"></textarea>
+          </div>
+          <div style="display:flex;justify-content:flex-end">
+            <button class="btn btn-primary" onclick="postUpdate()">📢 Đăng Update</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: BANS (OWNER) -->
+      <div class="page" id="page-bans">
+        <div class="section-title">Quản Lí Ban</div>
+        <div class="section-sub">Xóa, khóa lobby hoặc ban hoàn toàn người chơi.</div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header">
+            <div class="card-title">➕ Thêm lệnh hạn chế</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;flex-wrap:wrap" class="ban-form-grid">
+            <div>
+              <label class="form-label">Discord User ID</label>
+              <input class="form-input" type="text" id="banUserId" placeholder="123456789012345678"/>
+            </div>
+            <div>
+              <label class="form-label">Lý do</label>
+              <input class="form-input" type="text" id="banReason" placeholder="Vi phạm luật chơi..."/>
+            </div>
+            <div>
+              <label class="form-label">Loại</label>
+              <select class="form-input" id="banMode">
+                <option value="ban">🚫 Ban hoàn toàn</option>
+                <option value="lobby">🏠 Khóa Lobby</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px">
+            <button class="btn btn-danger" onclick="applyBan()">🚫 Áp dụng</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">📋 Danh sách hạn chế</div>
+            <button class="btn btn-ghost btn-sm" onclick="loadBans()">↺ Làm mới</button>
+          </div>
+          <div id="banTableWrap">
+            <div class="empty-state"><div class="loading-spin"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: ROOMS (OWNER) -->
+      <div class="page" id="page-rooms">
+        <div class="section-title">Quản Lí Phòng Chơi</div>
+        <div class="section-sub">Trạng thái phòng — tự động cập nhật mỗi 20 giây.</div>
+        <div class="rooms-grid" id="roomsGrid">
+          <div class="empty-state"><div class="loading-spin"></div></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- MODAL: ROLE DETAIL -->
+<div class="modal-overlay" id="modalRoleDetail">
+  <div class="modal role-detail-modal">
+    <div class="role-detail-header">
+      <div class="role-detail-dot" id="roleDetailDot"></div>
+      <div>
+        <div class="role-detail-name" id="roleDetailName"></div>
+        <div class="role-detail-faction" id="roleDetailFaction" style="color:var(--role-detail-color)"></div>
+      </div>
+    </div>
+    <div class="role-detail-desc" id="roleDetailDesc"></div>
+    <div class="modal-footer" style="margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeModal('modalRoleDetail')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: REPLY FEEDBACK -->
+<div class="modal-overlay" id="modalReply">
+  <div class="modal">
+    <div class="modal-title">💬 Phản Hồi Feedback</div>
+    <div class="form-group">
+      <textarea class="form-input" id="replyText" placeholder="Nhập nội dung phản hồi..." rows="4"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalReply')">Hủy</button>
+      <button class="btn btn-primary" onclick="submitReply()">Gửi Phản Hồi</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: BAN CONFIRM -->
+<div class="modal-overlay" id="modalBanConfirm">
+  <div class="modal">
+    <div class="modal-title">⚠️ Xác nhận</div>
+    <p style="color:var(--text2);font-size:14px;margin-bottom:8px" id="banConfirmText"></p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalBanConfirm')">Hủy</button>
+      <button class="btn btn-danger" id="banConfirmBtn">Xác nhận</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- IMAGE VIEWER -->
+<div class="img-viewer-overlay" id="imgViewer" onclick="closeImgViewer()">
+  <img id="imgViewerImg" src="" alt=""/>
+</div>
+
+<style>
+@media (max-width:600px) {
+  .ban-form-grid { grid-template-columns: 1fr !important; }
+}
+</style>
+
+<script>
+// ══════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════
+let ME = null;
+let ALL_ROLES = [];
+let CURRENT_FILTER = 'all';
+let GUILDS = [];
+let SELECTED_GUILD = null;
+let CAN_EDIT_GUILD = false;
+let CURRENT_CONFIG = {};
+let REPLY_TARGET = null;
+let ROOMS_INTERVAL = null;
+
+// ══════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════
+async function init() {
+  try {
+    const res = await fetch('/api/me');
+    const data = await res.json();
+    if (!data.logged_in) {
+      document.getElementById('loginScreen').classList.add('visible');
+      return;
+    }
+    ME = data;
+    setupUser();
+    document.getElementById('appShell').style.display = '';
+    loadRoles();
+    loadGuilds();
+    loadChangelog();
+    if (ME.is_owner) {
+      document.getElementById('ownerNav').style.display = '';
+      loadFeedbacks();
+      loadBans();
+      loadRooms();
+      startRoomsPolling();
+    }
+    // Kiểm tra auth error trong URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('auth_error')) {
+      toast('Lỗi đăng nhập Discord: ' + urlParams.get('auth_error'), 'error');
+      history.replaceState({}, '', '/');
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('anomalies_theme');
+    if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+  } catch(e) {
+    document.getElementById('loginScreen').classList.add('visible');
+  }
+}
+
+function setupUser() {
+  document.getElementById('sidebarAvatar').src = ME.avatar;
+  document.getElementById('sidebarUsername').textContent = ME.username;
+  if (ME.is_owner) {
+    const badge = document.getElementById('sidebarBadge');
+    badge.textContent = '👑 Chủ Bot';
+    badge.className = 'user-badge badge-owner';
+  }
+}
+
+// ══════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════
+const PAGE_TITLES = {
+  'roles':         'Tra Cứu Vai Trò',
+  'stats':         'Thống Kê',
+  'player-lookup': 'Tra Cứu Người Chơi',
+  'feedback-send': 'Báo Lỗi / Feedback',
+  'guide':         'Hướng Dẫn Chơi',
+  'settings':      'Cài Đặt Phòng',
+  'changelog':     'Update Log',
+  'feedbacks':     'Feedback Người Chơi',
+  'post-update':   'Đăng Update',
+  'bans':          'Quản Lí Ban',
+  'rooms':         'Quản Lí Phòng',
+};
+
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const el = document.getElementById('page-'+page);
+  if (el) el.classList.add('active');
+  const nav = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (nav) nav.classList.add('active');
+  document.getElementById('topbarTitle').textContent = PAGE_TITLES[page] || page;
+  toggleSidebar(false);
+
+  // Show guild selector on settings
+  document.getElementById('guildSelector').style.display = (page === 'settings') ? 'flex' : 'none';
+  if (page === 'settings') renderSettingsGuild();
+  if (page === 'rooms') loadRooms();
+  if (page === 'stats') loadStats();
+  if (page === 'player-lookup') document.getElementById('lookupResult').innerHTML = '';
+}
+
+// ══════════════════════════════════════════
+// THEME
+// ══════════════════════════════════════════
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  const newTheme = isDark ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('anomalies_theme', newTheme);
+  document.getElementById('themeIcon').textContent = isDark ? '🌙' : '☀️';
+  localStorage.setItem('theme', isDark ? 'light' : 'dark');
+}
+(function() {
+  const t = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  if (t === 'light') { document.getElementById('themeIcon') && (document.getElementById('themeIcon').textContent = '🌙'); }
+})();
+
+// ══════════════════════════════════════════
+// SIDEBAR (MOBILE)
+// ══════════════════════════════════════════
+function toggleSidebar(open) {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  if (open === undefined) open = !sb.classList.contains('open');
+  sb.classList.toggle('open', open);
+  ov.classList.toggle('open', open);
+}
+
+// ══════════════════════════════════════════
+// GUILDS
+// ══════════════════════════════════════════
+async function loadGuilds() {
+  try {
+    const res = await fetch('/api/dash/guilds');
+    GUILDS = await res.json();
+    renderGuildDropdown();
+  } catch(e) {}
+}
+
+function renderGuildDropdown() {
+  const drop = document.getElementById('guildDropdown');
+  if (!GUILDS.length) {
+    drop.innerHTML = '<div class="guild-option" style="color:var(--text3)">Không tìm thấy server nào</div>';
+    return;
+  }
+  drop.innerHTML = GUILDS.map(g => `
+    <div class="guild-option" onclick="selectGuild('${g.id}')">
+      ${g.icon ? `<img src="${g.icon}" alt=""/>` : `<div class="guild-initial">${g.name[0]}</div>`}
+      <span style="font-size:13.5px">${g.name}</span>
+    </div>
+  `).join('');
+}
+
+function selectGuild(gid) {
+  SELECTED_GUILD = GUILDS.find(g => g.id === gid);
+  document.getElementById('guildDropdown').classList.remove('open');
+  if (SELECTED_GUILD) {
+    document.getElementById('guildName').textContent = SELECTED_GUILD.name;
+    const iconEl = document.getElementById('guildIcon');
+    const initEl = document.getElementById('guildIconInitial');
+    if (SELECTED_GUILD.icon) {
+      iconEl.src = SELECTED_GUILD.icon;
+      iconEl.style.display = '';
+      initEl.style.display = 'none';
+    } else {
+      iconEl.style.display = 'none';
+      initEl.textContent = SELECTED_GUILD.name[0];
+      initEl.style.display = '';
+    }
+  }
+  renderSettingsGuild();
+  loadSettings();
+}
+
+function toggleGuildDropdown() {
+  document.getElementById('guildDropdown').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#guildSelector')) {
+    document.getElementById('guildDropdown').classList.remove('open');
+  }
+});
+
+// ══════════════════════════════════════════
+// ROLES
+// ══════════════════════════════════════════
+async function loadRoles() {
+  try {
+    const res = await fetch('/api/dash/roles');
+    ALL_ROLES = await res.json();
+    renderRoles();
+  } catch(e) {
+    document.getElementById('rolesGrid').innerHTML = '<div class="empty-state"><p>Không thể tải dữ liệu vai trò.</p></div>';
+  }
+}
+
+function renderRoles() {
+  const query = document.getElementById('roleSearch').value.toLowerCase();
+  let roles = ALL_ROLES;
+  if (CURRENT_FILTER !== 'all') roles = roles.filter(r => r.faction === CURRENT_FILTER);
+  if (query) roles = roles.filter(r => r.name.toLowerCase().includes(query) || r.description.toLowerCase().includes(query));
+
+  if (!roles.length) {
+    document.getElementById('rolesGrid').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Không tìm thấy vai trò nào.</p></div>';
+    return;
+  }
+  document.getElementById('rolesGrid').innerHTML = roles.map((r) => {
+    // First non-empty line of description as preview
+    const preview = (r.description || '').split('\n').find(l => l.trim()) || 'Nhấn để xem chi tiết';
+    const short = preview.length > 72 ? preview.slice(0, 70) + '…' : preview;
+    return `
+    <div class="role-card" style="--role-color:${r.color}" onclick="showRoleDetail(${ALL_ROLES.indexOf(r)})">
+      <div class="role-card-name">${escHtml(r.name)}</div>
+      <div class="role-card-faction">${r.faction}</div>
+      <div class="role-card-hint">${escHtml(short)}</div>
+    </div>`;
+  }).join('');
+}
+
+function showRoleDetail(idx) {
+  const r = ALL_ROLES[idx];
+  if (!r) return;
+  document.getElementById('roleDetailName').textContent    = r.name;
+  document.getElementById('roleDetailFaction').textContent = r.faction + ' · ' + (r.team || r.faction);
+  document.getElementById('roleDetailFaction').style.color = r.color;
+  document.getElementById('roleDetailDot').style.background = r.color;
+  document.getElementById('roleDetailDesc').textContent    = r.description || '(Chưa có mô tả)';
+  openModal('modalRoleDetail');
+}
+
+function setFilter(f, btn) {
+  CURRENT_FILTER = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderRoles();
+}
+function filterRoles() { renderRoles(); }
+
+// ══════════════════════════════════════════
+// ══════════════════════════════════════════
+// STATS
+// ══════════════════════════════════════════
+async function loadStats() {
+  try {
+    const [sRes, rRes] = await Promise.all([
+      fetch('/api/dash/stats'),
+      fetch('/api/dash/admin/rooms'),
+    ]);
+    const stats = await sRes.json();
+    const rooms = rRes.ok ? await rRes.json() : [];
+    const na = v => stats.db_ok ? (v ?? '—') : '<span style="color:var(--text3);font-size:18px">—</span>';
+    const naBan = v => v > 0 ? v : '<span style="color:var(--text3);font-size:18px">—</span>';
+
+    document.getElementById('statsGrid').innerHTML = `
+      <div class="stat-card"><div class="stat-card-value">${na(stats.total_guilds)}</div><div class="stat-card-label">Máy Chủ</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--green)">${na(stats.active_games)}</div><div class="stat-card-label">Đang Chơi</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--red)">${naBan(stats.total_bans)}</div><div class="stat-card-label">Người Bị Ban</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--yellow)">${na(stats.total_feedbacks)}</div><div class="stat-card-label">Feedback</div></div>
+      <div class="stat-card"><div class="stat-card-value" style="color:var(--cyan)">${na(stats.total_changelogs)}</div><div class="stat-card-label">Cập Nhật</div></div>
+    `;
+    if (!stats.db_ok) {
+      document.getElementById('statsGrid').insertAdjacentHTML('afterend',
+        '<div style="color:var(--text3);font-size:12.5px;margin-bottom:16px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px">⚠️ Không kết nối được cơ sở dữ liệu — đang hiển thị dữ liệu trống.</div>');
+    }
+
+    const el = document.getElementById('statsRoomsList');
+    const active = rooms.filter(r => r.status);
+    if (!active.length) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-icon">🎮</div><p>Không có phòng nào đang chơi.</p></div>';
+    } else {
+      el.innerHTML = active.map(r => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-weight:600;font-size:14px">${escHtml(r.guild_name||r.guild_id)}</div>
+            <div style="font-size:12px;color:var(--text3)">ID: ${r.guild_id}</div>
+          </div>
+          <span style="background:rgba(61,214,140,0.1);color:var(--green);border:1px solid var(--green);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600">${escHtml(String(r.status))}</span>
+        </div>
+      `).join('');
+    }
+  } catch(e) {
+    document.getElementById('statsGrid').innerHTML = '<div style="color:var(--red);padding:16px">Không tải được thống kê.</div>';
+  }
+}
+
+// ══════════════════════════════════════════
+// PLAYER LOOKUP
+// ══════════════════════════════════════════
+async function doPlayerLookup() {
+  const uid = document.getElementById('lookupId').value.trim();
+  if (!uid) { toast('Nhập User ID cần tra cứu!', 'error'); return; }
+  const el = document.getElementById('lookupResult');
+  el.innerHTML = '<div style="padding:12px;color:var(--text3)">Đang tra cứu...</div>';
+  try {
+    const res = await fetch(`/api/dash/player/lookup?user_id=${encodeURIComponent(uid)}`);
+    if (!res.ok) { el.innerHTML = '<div style="color:var(--red);padding:12px">Lỗi tra cứu.</div>'; return; }
+    const data = await res.json();
+    if (data.is_banned) {
+      const b = data.ban;
+      el.innerHTML = `
+        <div class="lookup-result lookup-banned">
+          <div style="font-size:16px;font-weight:700;color:var(--red);margin-bottom:8px">⛔ Đang bị BAN</div>
+          <div style="font-size:13.5px;color:var(--text2)"><b>Lý do:</b> ${escHtml(b.reason)}</div>
+          <div style="font-size:13px;color:var(--text3);margin-top:4px"><b>Chế độ:</b> ${escHtml(b.mode)} — <b>Từ:</b> ${fmtDate(b.created_at)}</div>
+        </div>`;
+    } else {
+      el.innerHTML = `
+        <div class="lookup-result lookup-clean">
+          <div style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:4px">✅ Không bị ban</div>
+          <div style="font-size:13px;color:var(--text3)">User ID <code>${escHtml(uid)}</code> không có trong danh sách ban.</div>
+        </div>`;
+    }
+  } catch(e) { el.innerHTML = '<div style="color:var(--red);padding:12px">Lỗi kết nối.</div>'; }
+}
+
+// FEEDBACK (SEND)
+// ══════════════════════════════════════════
+let fbImages = [];
+
+function handleFbImages(e) {
+  const files = Array.from(e.target.files);
+  files.slice(0, 5 - fbImages.length).forEach(f => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      fbImages.push(ev.target.result);
+      renderFbPreviews();
+    };
+    reader.readAsDataURL(f);
+  });
+  e.target.value = '';
+}
+
+function renderFbPreviews() {
+  document.getElementById('fbImgPreviews').innerHTML = fbImages.map((src, i) => `
+    <div class="img-preview-item">
+      <img src="${src}" alt=""/>
+      <div class="remove-img" onclick="removeFbImg(${i})">✕</div>
+    </div>
+  `).join('');
+}
+
+function removeFbImg(i) {
+  fbImages.splice(i, 1);
+  renderFbPreviews();
+}
+
+function clearFeedback() {
+  fbImages = [];
+  document.getElementById('fbContent').value = '';
+  renderFbPreviews();
+}
+
+async function compressImage(dataUrl, maxSide = 800, quality = 0.7) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      if (w > maxSide || h > maxSide) {
+        const ratio = Math.min(maxSide / w, maxSide / h);
+        w = Math.round(w * ratio); h = Math.round(h * ratio);
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+async function submitFeedback() {
+  const content = document.getElementById('fbContent').value.trim();
+  if (!content && !fbImages.length) { toast('Nhập nội dung hoặc thêm ảnh!', 'error'); return; }
+  const btn = document.querySelector('#page-feedback-send .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang gửi...'; }
+  try {
+    // Compress images to keep under 1MB each (base64)
+    const compressed = await Promise.all(fbImages.map(img => compressImage(img)));
+    const res = await fetch('/api/dash/feedback', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ content, images: compressed })
+    });
+    if (res.ok) {
+      const data = await res.json().catch(()=>({}));
+      toast('✅ Gửi feedback thành công!' + (data.id ? ` (ID: ${data.id})` : ''), 'success');
+      clearFeedback();
+    } else if (res.status === 401) {
+      toast('Bạn chưa đăng nhập. Vui lòng đăng nhập lại.', 'error');
+    } else {
+      const err = await res.json().catch(()=>({}));
+      toast('Gửi thất bại: ' + (err.detail || res.status), 'error');
+    }
+  } catch(e) { toast('Lỗi kết nối: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '📤 Gửi Feedback'; } }
+}
+
+// Drag-drop upload
+const uploadArea = document.getElementById('fbUploadArea');
+if (uploadArea) {
+  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.style.borderColor = 'var(--accent)'; });
+  uploadArea.addEventListener('dragleave', () => { uploadArea.style.borderColor = ''; });
+  uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.style.borderColor = '';
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    files.slice(0, 5 - fbImages.length).forEach(f => {
+      const r = new FileReader();
+      r.onload = ev => { fbImages.push(ev.target.result); renderFbPreviews(); };
+      r.readAsDataURL(f);
+    });
+  });
+}
+
+// ══════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════
+function renderSettingsGuild() {
+  const noGuild = document.getElementById('settingsNoGuild');
+  const content = document.getElementById('settingsContent');
+  const sIcon   = document.getElementById('settingsServerIcon');
+  const sInit   = document.getElementById('settingsServerInitial');
+  const sName   = document.getElementById('settingsServerName');
+  if (!SELECTED_GUILD) {
+    noGuild.style.display = '';
+    content.style.display = 'none';
+    sIcon.style.display = 'none';
+    sInit.style.display = 'none';
+    sName.textContent = 'Cài Đặt Phòng';
+  } else {
+    noGuild.style.display = 'none';
+    content.style.display = '';
+    sName.textContent = SELECTED_GUILD.name;
+    if (SELECTED_GUILD.icon) {
+      document.getElementById('settingsServerIconImg').src = SELECTED_GUILD.icon;
+      sIcon.style.display = '';
+      sInit.style.display = 'none';
+    } else {
+      sInit.textContent = (SELECTED_GUILD.name||'?')[0].toUpperCase();
+      sInit.style.display = 'grid';
+      sIcon.style.display = 'none';
+    }
+  }
+}
+
+async function loadSettings() {
+  if (!SELECTED_GUILD) return;
+  try {
+    const res = await fetch(`/api/dash/guild/${SELECTED_GUILD.id}/config`);
+    if (res.status === 404) {
+      document.getElementById('settingsNoAccess').style.display = '';
+      document.getElementById('settingsNoAccessMsg').textContent =
+        `Lỗi: Không tìm thấy cấu hình phòng của server ${SELECTED_GUILD.name}`;
+      document.getElementById('settingsForm').style.display = 'none';
+      return;
+    }
+    CURRENT_CONFIG = await res.json();
+
+    // Check access: owner or manage_guild (MANAGE_GUILD=0x20, ADMINISTRATOR=0x8)
+    const perm = Number(BigInt(SELECTED_GUILD.permissions || '0'));
+    CAN_EDIT_GUILD = ME.is_owner || ((perm & 0x20) !== 0) || ((perm & 0x8) !== 0);
+
+    const noAccessEl = document.getElementById('settingsNoAccess');
+    const formEl     = document.getElementById('settingsForm');
+
+    if (!CAN_EDIT_GUILD) {
+      noAccessEl.style.display = '';
+      document.getElementById('settingsNoAccessMsg').textContent =
+        `Lỗi: Bạn không có quyền chỉnh sửa phòng của server ${SELECTED_GUILD.name}`;
+      formEl.style.display = 'none';
+      return;
+    }
+
+    noAccessEl.style.display = 'none';
+    formEl.style.display = '';
+    document.getElementById('settingsReadonly').style.display = 'none';
+    document.getElementById('settingsSaveRow').style.display = '';
+
+    // Apply values
+    setInputVal('cfgCountdown',     CURRENT_CONFIG.countdown_time);
+    setInputVal('cfgDayTime',       CURRENT_CONFIG.day_time);
+    setInputVal('cfgVoteTime',      CURRENT_CONFIG.vote_time);
+    setInputVal('cfgSkipDelay',     CURRENT_CONFIG.skip_discussion_delay);
+    setInputVal('cfgMaxPlayers',    CURRENT_CONFIG.max_players);
+    setInputVal('cfgMinPlayers',    CURRENT_CONFIG.min_players);
+    setCheckVal('cfgAllowChat',     CURRENT_CONFIG.allow_chat);
+    setCheckVal('cfgMuteDead',      CURRENT_CONFIG.mute_dead);
+    setCheckVal('cfgNoRemoveRoles', CURRENT_CONFIG.no_remove_roles);
+    setCheckVal('cfgMusic',         CURRENT_CONFIG.music);
+    setCheckVal('cfgSkipDiscussion',CURRENT_CONFIG.skip_discussion);
+
+    formEl.style.filter = '';
+    formEl.querySelectorAll('input, select').forEach(inp => inp.disabled = false);
+
+  } catch(e) { toast('Không thể tải cài đặt.', 'error'); }
+}
+
+function setInputVal(id, val) { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; }
+function setCheckVal(id, val) { const el = document.getElementById(id); if (el) el.checked = !!val; }
+
+async function saveSettings() {
+  if (!SELECTED_GUILD || !CAN_EDIT_GUILD) return;
+  const data = {
+    countdown_time:        +document.getElementById('cfgCountdown').value,
+    day_time:              +document.getElementById('cfgDayTime').value,
+    vote_time:             +document.getElementById('cfgVoteTime').value,
+    skip_discussion_delay: +document.getElementById('cfgSkipDelay').value,
+    max_players:           +document.getElementById('cfgMaxPlayers').value,
+    min_players:           +document.getElementById('cfgMinPlayers').value,
+    allow_chat:            document.getElementById('cfgAllowChat').checked,
+    mute_dead:             document.getElementById('cfgMuteDead').checked,
+    no_remove_roles:       document.getElementById('cfgNoRemoveRoles').checked,
+    music:                 document.getElementById('cfgMusic').checked,
+    skip_discussion:       document.getElementById('cfgSkipDiscussion').checked,
+  };
+  try {
+    const res = await fetch(`/api/dash/guild/${SELECTED_GUILD.id}/config`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    if (res.ok) { toast('✅ Đã lưu cài đặt!', 'success'); CURRENT_CONFIG = data; }
+    else toast('Lưu thất bại.', 'error');
+  } catch(e) { toast('Lỗi kết nối.', 'error'); }
+}
+
+// ══════════════════════════════════════════
+// CHANGELOG
+// ══════════════════════════════════════════
+async function loadChangelog() {
+  try {
+    const res = await fetch('/api/dash/changelog');
+    const logs = await res.json();
+    const el = document.getElementById('changelogList');
+    if (!logs.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>Chưa có update nào.</p></div>'; return; }
+    el.innerHTML = logs.map((log, i) => `
+      <div class="changelog-item">
+        <div class="changelog-timeline">
+          <div class="changelog-dot"></div>
+          ${i < logs.length-1 ? '<div class="changelog-line"></div>' : ''}
+        </div>
+        <div class="changelog-body">
+          <div class="changelog-meta">
+            ${log.version ? `<span class="changelog-version">${log.version}</span>` : ''}
+            <span class="changelog-title">${log.title}</span>
+            <span class="changelog-date">${fmtDate(log.created_at)}</span>
+          </div>
+          <div class="changelog-content">${escHtml(log.content)}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    document.getElementById('changelogList').innerHTML = '<div class="empty-state"><p>Không thể tải dữ liệu.</p></div>';
+  }
+}
+
+// ══════════════════════════════════════════
+// FEEDBACKS (OWNER)
+// ══════════════════════════════════════════
+async function loadFeedbacks() {
+  if (!ME?.is_owner) return;
+  try {
+    const res = await fetch('/api/dash/admin/feedbacks');
+    const fbs = await res.json();
+    const el = document.getElementById('feedbacksList');
+    const unreplied = fbs.filter(f => !f.reply).length;
+    const badge = document.getElementById('feedbackBadge');
+    if (unreplied > 0) { badge.textContent = unreplied; badge.classList.remove('hidden'); }
+    else badge.classList.add('hidden');
+
+    if (!fbs.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>Chưa có feedback nào.</p></div>'; return; }
+    el.innerHTML = fbs.map(f => `
+      <div class="feedback-card">
+        <div class="feedback-header">
+          <img src="${f.avatar}" alt=""/>
+          <div>
+            <div class="feedback-username">${escHtml(f.username)}</div>
+            <div class="feedback-time">${fmtDate(f.created_at)}</div>
+          </div>
+        </div>
+        ${f.content ? `<div class="feedback-content">${escHtml(f.content)}</div>` : ''}
+        ${f.images?.length ? `<div class="feedback-images">${f.images.map(img=>`<img src="${img}" onclick="viewImg('${img}')" alt=""/>`).join('')}</div>` : ''}
+        ${f.reply ? `<div class="feedback-reply-box"><div class="feedback-reply-label">Đã phản hồi</div><div class="feedback-reply-text">${escHtml(f.reply)}</div></div>` : ''}
+        <div class="feedback-actions" style="margin-top:10px">
+          <button class="btn btn-ghost btn-sm" onclick="openReply('${f.created_at}')">💬 Phản Hồi</button>
+          <button class="btn btn-sm" style="background:rgba(240,80,80,0.1);color:var(--red);border:1px solid var(--red)" onclick="quickBanFromFeedback('${escHtml(f.user_id)}','${escHtml(f.username)}')">⛔ Ban User</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+function openReply(created_at) {
+  REPLY_TARGET = created_at;
+  document.getElementById('replyText').value = '';
+  openModal('modalReply');
+}
+
+function quickBanFromFeedback(user_id, username) {
+  if (!user_id || user_id === 'undefined') { toast('Không tìm được User ID.', 'error'); return; }
+  const reason = `Bị ban từ feedback của ${username}`;
+  document.getElementById('modalBanConfirmText' in document ? 'banConfirmText' : 'banConfirmText').textContent = `Ban user ${username} (${user_id})?`;
+  document.getElementById('banConfirmBtn').onclick = async () => {
+    closeModal('modalBanConfirm');
+    try {
+      const res = await fetch('/api/dash/admin/ban', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ user_id, reason, mode: 'ban' })
+      });
+      if (res.ok) { toast(`⛔ Đã ban ${username}!`, 'success'); loadBans(); }
+      else toast('Ban thất bại.', 'error');
+    } catch(e) { toast('Lỗi kết nối.', 'error'); }
+  };
+  openModal('modalBanConfirm');
+}
+
+async function submitReply() {
+  const reply = document.getElementById('replyText').value.trim();
+  if (!reply) { toast('Nhập nội dung phản hồi!', 'error'); return; }
+  try {
+    const res = await fetch(`/api/dash/admin/feedback/_/reply_by_index`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reply, created_at: REPLY_TARGET })
+    });
+    if (res.ok) { toast('✅ Đã gửi phản hồi!', 'success'); closeModal('modalReply'); loadFeedbacks(); }
+    else toast('Gửi thất bại.', 'error');
+  } catch(e) { toast('Lỗi kết nối.', 'error'); }
+}
+
+// ══════════════════════════════════════════
+// POST UPDATE (OWNER)
+// ══════════════════════════════════════════
+async function postUpdate() {
+  const title   = document.getElementById('updateTitle').value.trim();
+  const content = document.getElementById('updateContent').value.trim();
+  const version = document.getElementById('updateVersion').value.trim();
+  if (!title || !content) { toast('Cần có tiêu đề và nội dung!', 'error'); return; }
+  const btn = document.querySelector('#page-post-update .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang đăng...'; }
+  try {
+    const res = await fetch('/api/dash/admin/changelog', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ title, content, version })
+    });
+    if (res.ok) {
+      toast('✅ Đã đăng update!', 'success');
+      document.getElementById('updateTitle').value = '';
+      document.getElementById('updateContent').value = '';
+      document.getElementById('updateVersion').value = '';
+      loadChangelog();
+    } else {
+      const err = await res.json().catch(()=>({}));
+      toast('Đăng thất bại: ' + (err.detail || res.status), 'error');
+    }
+  } catch(e) { toast('Lỗi kết nối: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '📢 Đăng Update'; } }
+}
+
+// ══════════════════════════════════════════
+// BANS (OWNER)
+// ══════════════════════════════════════════
+async function loadBans() {
+  if (!ME?.is_owner) return;
+  try {
+    const res = await fetch('/api/dash/admin/bans');
+    const bans = await res.json();
+    const el = document.getElementById('banTableWrap');
+    if (!bans.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>Không có người chơi nào bị hạn chế.</p></div>'; return; }
+    el.innerHTML = `
+      <div style="overflow-x:auto">
+      <table class="ban-table">
+        <thead><tr>
+          <th>User ID</th><th>Lý do</th><th>Loại</th><th>Ngày</th><th>Hành động</th>
+        </tr></thead>
+        <tbody>
+          ${bans.map(b => `
+            <tr>
+              <td><span class="uid-mono">${b.user_id}</span></td>
+              <td style="color:var(--text2)">${escHtml(b.reason)}</td>
+              <td><span class="ban-mode ban-mode-${b.mode}">${b.mode === 'ban' ? '🚫 Ban' : '🏠 Lobby'}</span></td>
+              <td style="color:var(--text3);font-size:12px">${fmtDate(b.created_at)}</td>
+              <td>
+                <button class="btn btn-success btn-sm" onclick="confirmUnban('${b.user_id}')">✓ Gỡ lệnh</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      </div>
+    `;
+  } catch(e) {}
+}
+
+async function applyBan() {
+  const uid    = document.getElementById('banUserId').value.trim();
+  const reason = document.getElementById('banReason').value.trim() || 'Không có lý do';
+  const mode   = document.getElementById('banMode').value;
+  if (!uid) { toast('Nhập User ID!', 'error'); return; }
+  const modeText = mode === 'ban' ? 'ban hoàn toàn' : 'khóa lobby';
+  document.getElementById('banConfirmText').textContent = `Áp dụng lệnh ${modeText} cho ID: ${uid}?`;
+  document.getElementById('banConfirmBtn').onclick = async () => {
+    try {
+      const res = await fetch('/api/dash/admin/ban', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ user_id: uid, reason, mode })
+      });
+      if (res.ok) {
+        toast('✅ Đã áp dụng!', 'success');
+        closeModal('modalBanConfirm');
+        document.getElementById('banUserId').value = '';
+        document.getElementById('banReason').value = '';
+        loadBans();
+      } else toast('Thất bại.', 'error');
+    } catch(e) { toast('Lỗi kết nối.', 'error'); }
+  };
+  openModal('modalBanConfirm');
+}
+
+function confirmUnban(uid) {
+  document.getElementById('banConfirmText').textContent = `Gỡ lệnh hạn chế cho ID: ${uid}?`;
+  document.getElementById('banConfirmBtn').className = 'btn btn-success';
+  document.getElementById('banConfirmBtn').onclick = async () => {
+    try {
+      const res = await fetch(`/api/dash/admin/ban/${uid}`, { method: 'DELETE' });
+      if (res.ok) { toast('✅ Đã gỡ lệnh ban!', 'success'); closeModal('modalBanConfirm'); loadBans(); }
+      else toast('Thất bại.', 'error');
+    } catch(e) { toast('Lỗi kết nối.', 'error'); }
+  };
+  openModal('modalBanConfirm');
+}
+
+// ══════════════════════════════════════════
+// ROOMS (OWNER)
+// ══════════════════════════════════════════
+async function loadRooms() {
+  if (!ME?.is_owner) return;
+  try {
+    const res = await fetch('/api/dash/admin/rooms');
+    const rooms = await res.json();
+    const el = document.getElementById('roomsGrid');
+    if (!rooms.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏠</div><p>Chưa có phòng nào được thiết lập.</p></div>'; return; }
+    el.innerHTML = rooms.map(r => {
+      const status = r.status || null;
+      // FIX #4: Ưu tiên dữ liệu is_playing từ lobby_states (Bot ghi), fallback về status
+      let statusHtml = '';
+      if (r.is_playing) {
+        statusHtml = `<div class="status-pill status-game"><div class="status-dot"></div>Đang chơi (${r.active_players ?? 0} người)</div>`;
+      } else if (!status) {
+        statusHtml = `<div class="status-pill status-idle"><div class="status-dot"></div>Chờ</div>`;
+      } else if (status === 'lobby' || status?.includes?.('lobby')) {
+        statusHtml = `<div class="status-pill status-lobby"><div class="status-dot"></div>Lobby</div>`;
+      } else {
+        statusHtml = `<div class="status-pill status-game"><div class="status-dot"></div>Đang chơi</div>`;
+      }
+      return `
+        <div class="room-card">
+          <div class="room-card-header">
+            <div>
+              <div class="room-name">${escHtml(r.guild_name || 'Server')}</div>
+              <div class="room-id">${r.guild_id}</div>
+            </div>
+            ${statusHtml}
+          </div>
+          <div class="room-stats">
+            <div class="room-stat">
+              <div class="room-stat-value">${r.max_players ?? '—'}</div>
+              <div class="room-stat-label">Tối đa</div>
+            </div>
+            <div class="room-stat">
+              <div class="room-stat-value" style="color:var(--accent)">${r.active_players ?? 0}</div>
+              <div class="room-stat-label">Người chơi</div>
+            </div>
+            <div class="room-stat">
+              <div class="room-stat-value" style="color:${r.is_playing ? 'var(--green)' : 'var(--text3)'}">${r.is_playing ? '🎮 Live' : '—'}</div>
+              <div class="room-stat-label">Trạng thái</div>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="navigate('settings');selectGuild('${r.guild_id}')">⚙️ Cài đặt phòng này</button>
+        </div>
+      `;
+    }).join('');
+  } catch(e) {}
+}
+
+function startRoomsPolling() {
+  if (ROOMS_INTERVAL) clearInterval(ROOMS_INTERVAL);
+  ROOMS_INTERVAL = setInterval(() => {
+    const activePage = document.querySelector('.page.active');
+    if (activePage?.id === 'page-rooms') loadRooms();
+  }, 20000);
+}
+
+// ══════════════════════════════════════════
+// MODAL
+// ══════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+// ══════════════════════════════════════════
+// IMAGE VIEWER
+// ══════════════════════════════════════════
+function viewImg(src) {
+  document.getElementById('imgViewerImg').src = src;
+  document.getElementById('imgViewer').classList.add('open');
+}
+function closeImgViewer() { document.getElementById('imgViewer').classList.remove('open'); }
+
+// ══════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${type==='success'?'✅':'❌'}</span><span>${msg}</span>`;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ══════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════════════════
+// START
+// ══════════════════════════════════════════
+init();
+</script>
+</body>
+</html>

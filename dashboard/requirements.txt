@@ -1,0 +1,2 @@
+# Alias: cùng dependency với bot (pip install từ thư mục gốc repo)
+-r ../requirements.txt
