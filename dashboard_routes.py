@@ -226,16 +226,35 @@ def _get_guild_full_status(guild_id: str) -> dict:
     if guild_id in active_games:
         game = active_games[guild_id]
         try:
-            alive = [str(p.id) for p in game.alive_players] if hasattr(game, "alive_players") else []
-            dead  = [str(p.id) for p in game.dead_players]  if hasattr(game, "dead_players")  else []
+            # FIX: đếm chính xác từ property alive_players của class game
+            alive_players = list(game.alive_players) if hasattr(game, "alive_players") else []
+            dead_players  = list(game.dead_players)  if hasattr(game, "dead_players")  else []
+            alive_ids     = [str(p.id) for p in alive_players]
+            dead_ids      = [str(p.id) for p in dead_players]
+
+            # FIX: lấy danh sách vai trò đang có mặt từ game.roles dict
+            roles_map = getattr(game, "roles", {})
+            active_role_names = []
+            role_faction_counts = {}
+            for pid, role_obj in roles_map.items():
+                if str(pid) not in alive_ids:
+                    continue  # chỉ tính vai trò còn sống
+                rname    = getattr(role_obj, "name", "?")
+                rfaction = getattr(role_obj, "team", "?")
+                active_role_names.append(rname)
+                role_faction_counts[rfaction] = role_faction_counts.get(rfaction, 0) + 1
+
             game_info = {
-                "alive_count": len(alive),
-                "dead_count":  len(dead),
-                "day":         getattr(game, "day_count", 0),
-                "phase":       getattr(game, "phase", "unknown"),
+                "alive_count":    len(alive_ids),
+                "dead_count":     len(dead_ids),
+                "day":            getattr(game, "day_count", 0),
+                "phase":          getattr(game, "phase", "unknown"),
+                "active_roles":   sorted(set(active_role_names)),
+                "faction_counts": role_faction_counts,
             }
-        except Exception:
-            pass
+        except Exception as _ge:
+            print(f"[api_room_detail] game_info error: {_ge}")
+            game_info = {"alive_count": 0, "dead_count": 0, "day": 0, "phase": "unknown", "error": str(_ge)}
 
     cfg_col = _col("guild_configs")
     cfg = {}
@@ -258,276 +277,116 @@ def _get_guild_full_status(guild_id: str) -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────
-# ROLE CATALOG (43 vai trò)
+# ROLE CATALOG — tự động đọc từ roles/ classes
+# Hàm _build_roles_catalog() quét AST các file role và trích xuất
+# name, team, description, fake_good, anomaly_chat_mgr trực tiếp.
 # ──────────────────────────────────────────────────────────────────
 
-_ROLES_CATALOG = [
-    # ── Survivors ──────────────────────────────────────────────────
-    {
-        "name": "Thường Dân", "faction": "Survivors", "color": "#4ade80",
-        "description": "Không có kỹ năng đặc biệt. Sống sót đến cuối game là chiến thắng.",
-        "tips": "Quan sát hành vi người chơi và bỏ phiếu sáng suốt.",
-        "dm_message": "🏘️ **DÂN THƯỜNG**\n\nBạn thuộc phe **Người Sống Sót**.\n\nBạn không có khả năng đặc biệt, nhưng lá phiếu của bạn rất quan trọng.\n\n🎯 Mục tiêu: Giúp thị trấn xác định và loại bỏ tất cả Dị Thể.\n💡 Hãy lắng nghe, quan sát và đưa ra phán đoán chính xác mỗi ngày.",
-    },
-    {
-        "name": "Thám Trưởng", "faction": "Survivors", "color": "#60a5fa",
-        "description": "Điều tra một người mỗi đêm để biết họ thuộc phe nào.",
-        "tips": "Xác nhận thông tin từ nhiều nguồn trước khi cáo buộc công khai.",
-        "dm_message": "👮 **THÁM TRƯỞNG**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Mỗi đêm bạn chọn 1 người để kiểm tra danh tính.\nKết quả cho biết chính xác vai trò của họ.\n\n⚠ Chú ý: Một số Dị Thể có thể dùng khả năng đánh lừa kết quả điều tra.\n💡 Thông tin của bạn rất quý giá — hãy cân nhắc khi nào nên tiết lộ với thị trấn.",
-    },
-    {
-        "name": "Cai Ngục", "faction": "Survivors", "color": "#f59e0b",
-        "description": "Giam cầm một người mỗi đêm. Có thể thẩm vấn và xử tử. Có 1 viên đạn để xử tử tù nhân.",
-        "tips": "Nhốt người nghi vấn vào những đêm mấu chốt để vô hiệu hóa hành động của họ.",
-        "dm_message": "⚖️ **CAI NGỤC**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Mỗi đêm bạn có thể giam 1 người:\n  - Người bị giam không thể dùng kỹ năng và không thể bị giết.\n  - Bạn có thể trò chuyện ẩn danh với tù nhân.\n\n💥 Bạn có 1 viên đạn để xử tử tù nhân.\n⚠️ Nếu xử tử sai người thuộc phe Người Sống Sót, bạn sẽ tự mất khả năng hành động.",
-    },
-    {
-        "name": "Thị Trưởng", "faction": "Survivors", "color": "#a78bfa",
-        "description": "Có thể lộ diện để nhận 3 phiếu bầu. Rất mạnh nhưng nguy hiểm khi lộ diện.",
-        "tips": "Thời điểm lộ diện quyết định thắng bại — đừng hành động quá sớm.",
-        "dm_message": "🏛️ **THỊ TRƯỞNG**\n\nBạn thuộc phe **Người Sống Sót**.\n\n👑 Bạn là thủ lĩnh của thị trấn — phiếu bầu có hệ số x3 khi lộ diện.\n\n🔓 Lộ Diện: Tiết lộ bạn là Thị Trưởng để kích hoạt hiệu ứng phiếu.\n🔫 Bạn có 3 viên đạn để phản công nếu bị Dị Thể tấn công.",
-    },
-    {
-        "name": "Phụ Tá Thị Trưởng", "faction": "Survivors", "color": "#c4b5fd",
-        "description": "Hỗ trợ Thị Trưởng và biết danh tính Thị Trưởng ngay từ đầu trận.",
-        "tips": "Phối hợp chặt với Thị Trưởng để kiểm soát vote.",
-        "dm_message": "🤝 **PHỤ TÁ THỊ TRƯỞNG**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🔎 Bạn biết danh tính Thị Trưởng ngay từ đầu trận.\n💡 Phối hợp cùng Thị Trưởng để lãnh đạo thị trấn hiệu quả.",
-    },
-    {
-        "name": "Thám Tử", "faction": "Survivors", "color": "#38bdf8",
-        "description": "Điều tra sâu hơn, nhận thông tin về phe của mục tiêu (Survivor / Anomaly).",
-        "tips": "Kết hợp với Thám Trưởng để xác nhận nghi phạm nhanh hơn.",
-        "dm_message": "🔎 **THÁM TỬ**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Mỗi đêm bạn chọn 1 người để điều tra.\nKết quả sẽ cho biết người đó thuộc phe nào:\n• 🔴 ĐỎ = Dị Thể\n• 🟢 XANH = Người Sống Sót",
-    },
-    {
-        "name": "Nhà Ngoại Cảm", "faction": "Survivors", "color": "#94a3b8",
-        "description": "Giao tiếp với người đã chết để lấy thông tin mỗi đêm qua séance.",
-        "tips": "Thông tin từ người chết rất quý — hãy chuyển tải khéo léo mà không lộ vai trò.",
-        "dm_message": "🕯️ **NHÀ NGOẠI CẢM**\n\nBạn thuộc phe **Người Sống Sót**.\n\n👻 Vào ban đêm bạn có thể mở séance để trò chuyện với người đã chết.",
-    },
-    {
-        "name": "Điệp Viên", "faction": "Survivors", "color": "#34d399",
-        "description": "Theo dõi và tự động nhận thông tin về mục tiêu mà Dị Thể nhắm vào mỗi đêm.",
-        "tips": "Theo dõi những người im lặng nhưng có vẻ tự tin bất thường.",
-        "dm_message": "👁️ **ĐIỆP VIÊN**\n\nBạn thuộc phe **Người Sống Sót**.\n\n📡 Mỗi đêm bạn tự động nhận thông tin về mục tiêu mà Dị Thể nhắm vào.",
-    },
-    {
-        "name": "Kẻ Trừng Phạt", "faction": "Survivors", "color": "#fb923c",
-        "description": "Có 3 viên đạn để bắn tỉa. Bắn ban ngày bị lộ diện, bắn ban đêm ẩn danh.",
-        "tips": "Chỉ hành động khi chắc chắn — sai lầm có thể gây hại cho phe bạn.",
-        "dm_message": "🔫 **KẺ TRỪNG PHẠT**\n\nBạn thuộc phe **Người Sống Sót**.\n\n💥 Bạn có 3 viên đạn để trừng phạt kẻ tình nghi bất cứ lúc nào.\n☀️ Bắn ban ngày → lộ diện. 🌙 Bắn ban đêm → ẩn danh.",
-    },
-    {
-        "name": "Thợ Đặt Bẫy", "faction": "Survivors", "color": "#84cc16",
-        "description": "Đặt bẫy ở nhà — kẻ tấn công có thể bị lộ danh tính, bị giết, hoặc bị Stun.",
-        "tips": "Đặt bẫy gần người quan trọng (Thám Trưởng, Cai Ngục) để bảo vệ.",
-        "dm_message": "🪤 **THỢ ĐẶT BẪY**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🏠 Nhà bạn có bẫy — kích hoạt một lần khi bị tấn công.\n\nKết quả (25% mỗi loại):\n👁️ Lộ danh tính | 💀 Tiêu diệt | 💥 Phản đòn | 😵 Stun",
-    },
-    {
-        "name": "Kiến Trúc Sư", "faction": "Survivors", "color": "#06b6d4",
-        "description": "Gia cố nhà ở, bảo vệ Người Sống Sót khỏi bị giết trong đêm. Có 2 lượt.",
-        "tips": "Ưu tiên bảo vệ các vai trò điều tra và kiểm soát.",
-        "dm_message": "🏗️ **KIẾN TRÚC SƯ**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Bạn có thể gia cố nhà ở, bảo vệ Người Sống Sót khỏi bị giết trong đêm.\nBạn có **2 lượt** dùng trong suốt cả trận.",
-    },
-    {
-        "name": "Nhà Lưu Trữ", "faction": "Survivors", "color": "#8b5cf6",
-        "description": "Mỗi đêm đọc di chúc bí mật của người đã chết để thu thập thông tin.",
-        "tips": "Ghi chép kỹ lưỡng để cung cấp bằng chứng vào ban ngày.",
-        "dm_message": "📚 **NHÀ LƯU TRỮ**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Mỗi đêm bạn chọn 1 người đã chết để đọc di chúc bí mật của họ.",
-    },
-    {
-        "name": "Kẻ Báo Oán", "faction": "Survivors", "color": "#ec4899",
-        "description": "Hồi sinh một người đã chết một lần duy nhất. Cực kỳ hiếm và mạnh.",
-        "tips": "Hồi sinh Thám Trưởng hoặc Cai Ngục ở giai đoạn cuối để lật ngược thế cờ.",
-        "dm_message": "⚡ **KẺ BÁO OÁN**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🔄 Một lần duy nhất trong cả game, bạn có thể hồi sinh 1 Survivor đã chết.",
-    },
-    {
-        "name": "Người Giám Sát", "faction": "Survivors", "color": "#f97316",
-        "description": "Kiểm soát camera an ninh, mỗi đêm ghi lại 3 người đang hoạt động. Có 3 lượt.",
-        "tips": "Ưu tiên bảo vệ các vai trò quan trọng như Thám Trưởng hoặc Cai Ngục.",
-        "dm_message": "📷 **NGƯỜI GIÁM SÁT**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Bạn kiểm soát camera an ninh — mỗi đêm ghi lại tối đa 3 người đang hoạt động.\nBạn có **3 lượt** sử dụng.",
-    },
-    {
-        "name": "Người Tiên Tri", "faction": "Survivors", "color": "#6366f1",
-        "description": "Sở hữu 3 kỹ năng: Tiên Đoán, Kiểm Tra Ba người, và Bảo Hộ Linh Hồn.",
-        "tips": "Chú ý ai nói quá nhiều hoặc quá ít so với bình thường.",
-        "dm_message": "🔮 **NGƯỜI TIÊN TRI**\n\nBạn thuộc phe **Người Sống Sót**.\n\nBạn sở hữu 3 kỹ năng siêu nhiên:\n🔮 **Tiên Đoán** | 👁️ **Kiểm Tra Ba** | 🛡️ **Bảo Hộ Linh Hồn**",
-    },
-    {
-        "name": "Kẻ Ngủ Mê", "faction": "Survivors", "color": "#64748b",
-        "description": "Không thể tham gia chat Thị Trấn nhưng nhận báo cáo chi tiết mỗi sáng về những gì xảy ra đêm qua.",
-        "tips": "Giữ bình thản — thông tin đến khi bạn ít ngờ tới nhất.",
-        "dm_message": "😴 **KẺ NGỦ MÊ**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🚫 Bạn không thể thấy và không thể tham gia chat Thị Trấn.\n🌙 Mỗi sáng bạn nhận báo cáo chi tiết những gì đã xảy ra đêm qua.",
-    },
-    {
-        "name": "Nhà Dược Học Điên", "faction": "Survivors", "color": "#ef4444",
-        "description": "Có 4 loại thuốc đặc biệt: Hồi Phục Nhanh, Ngừng Tim, Phát Sáng, và Trường Sinh/Virus.",
-        "tips": "Rủi ro cao, phần thưởng cao — chỉ dùng khi thực sự cần thiết.",
-        "dm_message": "🧪 **NHÀ DƯỢC HỌC ĐIÊN**\n\nBạn thuộc phe **Người Sống Sót**.\n\nBạn có 4 loại thuốc:\n💊 Hồi Phục Nhanh ×2 | 💀 Ngừng Tim ×1 | ✨ Phát Sáng ×1 | ⚗️ Trường Sinh/Virus ×1",
-    },
-    {
-        "name": "Kẻ Báo Thù", "faction": "Survivors", "color": "#dc2626",
-        "description": "Sau khi chết, kéo kẻ thù xuống cùng. Bị trục xuất giết Mayor, bị Dị Thể giết sẽ tiêu diệt Lãnh Chúa.",
-        "tips": "Hãy để lại di chúc rõ ràng để đồng đội biết ai đã giết bạn.",
-        "dm_message": "⚔️ **KẺ BÁO THÙ**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🔥 Nếu bị giết, bạn sẽ kéo kẻ thù xuống cùng mình.",
-    },
-    # ── Anomalies ──────────────────────────────────────────────────
-    {
-        "name": "Dị Thể", "faction": "Anomalies", "color": "#f87171",
-        "description": "Chiến binh cốt lõi của phe Dị Thể. Mỗi đêm phe bỏ phiếu chọn 1 người để tiêu diệt.",
-        "tips": "Ưu tiên tiêu diệt Thám Trưởng, Cai Ngục và Thám Tử trước tiên.",
-        "dm_message": "🔴 **DỊ THỂ**\n\nBạn thuộc phe **Dị Thể**.\n\n📋 Mỗi đêm phe bạn cùng bỏ phiếu chọn 1 người để tiêu diệt.\n👁️ Bạn biết danh tính toàn bộ đồng đội Dị Thể.",
-    },
-    {
-        "name": "Dị Thể Hành Quyết", "faction": "Anomalies", "color": "#ef4444",
-        "description": "Hành quyết xuyên qua mọi lớp bảo vệ. Người bảo vệ mục tiêu cũng bị phản thương. Có 2 lượt.",
-        "tips": "Dùng khả năng khi Survivors đang có nhiều lớp bảo vệ.",
-        "dm_message": "⚔️ **DỊ THỂ HÀNH QUYẾT**\n\nBạn thuộc phe **Dị Thể**.\n\n🌙 Bạn có thể hành quyết xuyên qua mọi lớp bảo vệ.\nBạn có **2 lượt**.",
-    },
-    {
-        "name": "Lãnh Chúa", "faction": "Anomalies", "color": "#dc2626",
-        "description": "Chỉ huy Dị Thể. Quyết định mục tiêu tấn công của cả phe mỗi đêm và biết danh sách đồng đội.",
-        "tips": "Phân công rõ mục tiêu mỗi đêm để tối ưu hiệu quả tấn công.",
-        "dm_message": "👑 **LÃNH CHÚA**\n\nBạn thuộc phe **Dị Thể**.\n\nBạn là chỉ huy — quyết định mục tiêu tấn công của cả phe mỗi đêm.",
-    },
-    {
-        "name": "Lao Công", "faction": "Anomalies", "color": "#b91c1c",
-        "description": "Xóa vai trò của nạn nhân khỏi thông báo nếu họ chết trong đêm được chọn.",
-        "tips": "Ưu tiên xóa bằng chứng của Thám Trưởng và Cai Ngục.",
-        "dm_message": "🧹 **LAO CÔNG**\n\nBạn thuộc phe **Dị Thể**.\n\nBạn có thể xóa vai trò nạn nhân khỏi thông báo khi họ chết.",
-    },
-    {
-        "name": "Tín Hiệu Giả", "faction": "Anomalies", "color": "#991b1b",
-        "description": "Gửi kết quả điều tra sai lệch cho Thám Trưởng và Thám Tử. Có 3 lượt.",
-        "tips": "Tạo bóng nghi lên Survivors đáng tin nhất để gây hỗn loạn.",
-        "dm_message": "📡 **TÍN HIỆU GIẢ**\n\nBạn thuộc phe **Dị Thể**.\n\nBạn có thể gửi kết quả điều tra sai lệch cho Thám Trưởng và Thám Tử. Có **3 lượt**.",
-    },
-    {
-        "name": "Ký Sinh Thần Kinh", "faction": "Anomalies", "color": "#7f1d1d",
-        "description": "Ký sinh vào não nạn nhân. Cần 3 ngày để tha hóa hoàn toàn và biến vật chủ thành Anomaly.",
-        "tips": "Điều khiển Cai Ngục để nhốt đồng đội của Survivors.",
-        "dm_message": "🧠 **KÝ SINH THẦN KINH**\n\nBạn thuộc phe **Dị Thể**.\n\nBạn có thể ký sinh vào não nạn nhân. Sau 3 ngày, vật chủ trở thành Anomaly.",
-    },
-    {
-        "name": "Kiến Trúc Sư Bóng Tối", "faction": "Anomalies", "color": "#450a0a",
-        "description": "Phong tỏa 3 ngôi nhà mỗi đêm trong bóng tối — những người bị chọn không thể dùng kỹ năng.",
-        "tips": "Đặt bẫy ở nơi Survivors thường hoạt động.",
-        "dm_message": "🌑 **KIẾN TRÚC SƯ BÓNG TỐI**\n\nBạn thuộc phe **Dị Thể**.\n\nMỗi đêm phong tỏa 3 ngôi nhà — những người bị chọn không thể dùng kỹ năng.",
-    },
-    {
-        "name": "Kẻ Rình Rập", "faction": "Anomalies", "color": "#fca5a5",
-        "description": "Theo dõi Survivor mỗi đêm để phát hiện vai trò thực của họ. Không rình 2 đêm liên tiếp.",
-        "tips": "Kiên nhẫn quan sát trước khi ra tay để chắc chắn không bị chặn.",
-        "dm_message": "👀 **KẺ RÌNH RẬP**\n\nBạn thuộc phe **Dị Thể**.\n\nTheo dõi Survivor mỗi đêm để phát hiện vai trò của họ. Không rình 2 đêm liên tiếp.",
-    },
-    {
-        "name": "Kẻ Đánh Cắp Lời Thì Thầm", "faction": "Anomalies", "color": "#fecaca",
-        "description": "Nghe lén 2 người mỗi đêm và đọc được di chúc của cả hai nếu họ có tương tác bí mật.",
-        "tips": "Tập trung vào kênh liên lạc của Thám Trưởng và Cai Ngục.",
-        "dm_message": "🎧 **KẺ ĐÁNH CẮP LỜI THÌ THẦM**\n\nBạn thuộc phe **Dị Thể**.\n\nMỗi đêm nghe lén 2 người và đọc di chúc của họ.",
-    },
-    {
-        "name": "Nguồn Tĩnh Điện", "faction": "Anomalies", "color": "#fee2e2",
-        "description": "Phát nhiễu tin nhắn hệ thống của 1 người mỗi đêm — các nguyên âm bị biến dạng bằng ký hiệu.",
-        "tips": "Kích hoạt vào đêm quan trọng khi Survivors chuẩn bị phối hợp.",
-        "dm_message": "⚡ **NGUỒN TĨNH ĐIỆN**\n\nBạn thuộc phe **Dị Thể**.\n\nMỗi đêm phát nhiễu tin nhắn hệ thống của 1 người.",
-    },
-    {
-        "name": "Máy Hủy Tài Liệu", "faction": "Anomalies", "color": "#ef4444",
-        "description": "Đánh dấu 1 người mỗi đêm — nếu họ bị giết, di chúc bị xóa hoàn toàn.",
-        "tips": "Khóa Giám Hộ Viên trước khi tấn công mục tiêu chính.",
-        "dm_message": "🗑️ **MÁY HỦY TÀI LIỆU**\n\nBạn thuộc phe **Dị Thể**.\n\nĐánh dấu 1 người mỗi đêm — nếu họ bị giết, di chúc bị xóa.",
-    },
-    {
-        "name": "Kẻ Mô Phỏng Sinh Học", "faction": "Anomalies", "color": "#dc2626",
-        "description": "Liên kết cộng sinh với 1 Survivor. Nếu người cộng sinh chết trước, nhận 1 lần miễn nhiễm sát thương.",
-        "tips": "Phối hợp với Lãnh Chúa để tối ưu thông tin giả.",
-        "dm_message": "🧬 **KẺ MÔ PHỎNG SINH HỌC**\n\nBạn thuộc phe **Dị Thể**.\n\nLiên kết cộng sinh với 1 Survivor để nhận khả năng miễn nhiễm.",
-    },
-    # ── Unknown ────────────────────────────────────────────────────
-    {
-        "name": "Sát Nhân Hàng Loạt", "faction": "Unknown", "color": "#fbbf24",
-        "description": "Chiến thắng một mình. Giết 1 người mỗi đêm. Điều kiện thắng: chỉ còn mình sống sót.",
-        "tips": "Giữ bí mật tuyệt đối — dùng cả hai phe để loại lẫn nhau.",
-        "dm_message": "🔪 **SÁT NHÂN HÀNG LOẠT**\n\nBạn chiến thắng **một mình**.\n\nGiết 1 người mỗi đêm. Điều kiện thắng: chỉ còn mình bạn sống sót.",
-    },
-    {
-        "name": "Kẻ Tâm Thần", "faction": "Unknown", "color": "#f59e0b",
-        "description": "Mục tiêu bí ẩn: bị Cách Ly bằng bỏ phiếu mà không có phiếu nào từ phe Dị Thể.",
-        "tips": "Đọc kỹ mục tiêu trong DM — mỗi game có thể khác nhau.",
-        "dm_message": "🎭 **KẺ TÂM THẦN**\n\nMục tiêu bí ẩn: bị Cách Ly bằng bỏ phiếu mà không có phiếu nào từ Dị Thể.",
-    },
-    {
-        "name": "A.I Tha Hóa", "faction": "Unknown", "color": "#d97706",
-        "description": "Mỗi đêm thực hiện 2 hành động: QUÉT (thu tài nguyên) và GIẾT. Quét Anomaly → Điểm Khiên, Quét Survivor → Điểm Giết.",
-        "tips": "Thích nghi nhanh với mục tiêu mới — sự linh hoạt là chìa khóa.",
-        "dm_message": "🤖 **A.I THA HÓA**\n\nMỗi đêm thực hiện 2 hành động: QUÉT và GIẾT.\nQuét Anomaly → Điểm Khiên | Quét Survivor → Điểm Giết.",
-    },
-    {
-        "name": "Đồng Hồ Tận Thế", "faction": "Unknown", "color": "#b45309",
-        "description": "Thực thể bí ẩn đếm ngược đến thảm họa. Mục tiêu và cơ chế chiến thắng được tiết lộ dần.",
-        "tips": "Không ai biết bạn tồn tại cho đến khi quá muộn.",
-        "dm_message": "⏰ **ĐỒNG HỒ TẬN THẾ**\n\nThực thể bí ẩn đếm ngược đến thảm họa. Mục tiêu được tiết lộ dần.",
-    },
-    {
-        "name": "Kẻ Dệt Mộng", "faction": "Unknown", "color": "#7c3aed",
-        "description": "Điều khiển giấc mơ của người chơi và thao túng thực tại của trò chơi.",
-        "tips": "Ảo giác là vũ khí mạnh nhất của bạn.",
-        "dm_message": "🌙 **KẺ DỆT MỘNG**\n\nBạn điều khiển giấc mơ của người chơi và thao túng thực tại.",
-    },
-    {
-        "name": "Con Tàu Ma", "faction": "Unknown", "color": "#475569",
-        "description": "Thực thể vô hình lang thang trong trận đấu với khả năng bí ẩn.",
-        "tips": "Di chuyển trong bóng tối và không để lại dấu vết.",
-        "dm_message": "👻 **CON TÀU MA**\n\nThực thể vô hình lang thang trong trận đấu với khả năng bí ẩn.",
-    },
-    {
-        "name": "Sâu Lỗi", "faction": "Unknown", "color": "#ef4444",
-        "description": "Xâm nhập hệ thống và phá hủy di chúc, ghi chép của người chơi khác.",
-        "tips": "Nhắm vào Nhà Lưu Trữ và Kẻ Ngủ Mê để xóa thông tin quan trọng.",
-        "dm_message": "🐛 **SÂU LỖI**\n\nXâm nhập hệ thống và phá hủy di chúc, ghi chép của người chơi khác.",
-    },
-    {
-        "name": "Kẻ Tâm Thần Bạo Lực", "faction": "Unknown", "color": "#dc2626",
-        "description": "Thực thể không ổn định với mục tiêu thay đổi theo từng giai đoạn của trận đấu.",
-        "tips": "Đọc kỹ mục tiêu sau mỗi pha thay đổi.",
-        "dm_message": "😈 **KẺ TÂM THẦN BẠO LỰC**\n\nMục tiêu thay đổi theo từng giai đoạn của trận đấu.",
-    },
-    {
-        "name": "Kẻ Dệt Thời Gian", "faction": "Unknown", "color": "#8b5cf6",
-        "description": "Thao túng dòng thời gian và có thể đảo ngược một số sự kiện trong trận đấu.",
-        "tips": "Dùng khả năng vào thời điểm then chốt để lật ngược tình thế.",
-        "dm_message": "⌛ **KẺ DỆT THỜI GIAN**\n\nThao túng dòng thời gian và có thể đảo ngược một số sự kiện.",
-    },
-    # ── Survivors (bổ sung) ────────────────────────────────────────
-    {
-        "name": "Kẻ Giải Mã", "faction": "Survivors", "color": "#22d3ee",
-        "description": "Phá giải ám mã của Dị Thể, tiết lộ danh sách mục tiêu tấn công đêm qua.",
-        "tips": "Chia sẻ thông tin đúng lúc — quá sớm có thể khiến bạn thành mục tiêu.",
-        "dm_message": "🔓 **KẺ GIẢI MÃ**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Mỗi đêm giải mã thông tin phe Dị Thể — biết ai bị nhắm mục tiêu.",
-    },
-    {
-        "name": "Vệ Binh", "faction": "Survivors", "color": "#4ade80",
-        "description": "Canh gác một người mỗi đêm. Nếu mục tiêu bị tấn công, Vệ Binh lộ diện và ngăn chặn.",
-        "tips": "Canh gác Thám Trưởng vào những đêm quan trọng.",
-        "dm_message": "🛡️ **VỆ BINH**\n\nBạn thuộc phe **Người Sống Sót**.\n\n🌙 Canh gác 1 người mỗi đêm — tự lộ diện nếu mục tiêu bị tấn công.",
-    },
-    # ── Anomalies (bổ sung) ────────────────────────────────────────
-    {
-        "name": "Kẻ Điều Khiển", "faction": "Anomalies", "color": "#fb7185",
-        "description": "Ép 1 Survivor bỏ phiếu theo ý mình ban ngày. Có 2 lượt.",
-        "tips": "Dùng vào ngày có phiếu sát nút để kiểm soát kết quả trục xuất.",
-        "dm_message": "🎮 **KẺ ĐIỀU KHIỂN**\n\nBạn thuộc phe **Dị Thể**.\n\nÉp 1 Survivor bỏ phiếu theo ý mình. Bạn có **2 lượt**.",
-    },
-    # ── Unknown (bổ sung) ──────────────────────────────────────────
-    {
-        "name": "Kẻ Săn Mồi", "faction": "Unknown", "color": "#f97316",
-        "description": "Chọn 1 người làm con mồi đầu trận. Chiến thắng khi con mồi chết — bằng bất kỳ cách nào.",
-        "tips": "Hãy bảo vệ con mồi của bạn khỏi phe Dị Thể để kiểm soát thời điểm.",
-        "dm_message": "🏹 **KẺ SĂN MỒI**\n\nChọn 1 người làm con mồi. Thắng khi con mồi chết.",
-    },
-]
+def _build_roles_catalog() -> list:
+    """
+    Đọc trực tiếp từ các file class trong thư mục roles/.
+    Trả về danh sách 43 vai trò với name/team/faction/description
+    được lấy nguyên từ source code — không ghi đè thủ công.
+    """
+    import ast as _ast
+    import glob as _glob
 
+    _COLOR_MAP = {
+        'Dân Thường': '#4ade80', 'Thám Trưởng': '#60a5fa', 'Thám Tử': '#38bdf8',
+        'Cai Ngục': '#f59e0b', 'Nhà Dược Học Điên': '#ef4444', 'Thị Trưởng': '#a78bfa',
+        'Phụ Tá Thị Trưởng': '#c4b5fd', 'Nhà Ngoại Cảm': '#94a3b8',
+        'Người Tiên Tri': '#6366f1', 'Kẻ Báo Oán': '#ec4899', 'Điệp Viên': '#34d399',
+        'Kiến Trúc Sư': '#06b6d4', 'Nhà Lưu Trữ': '#8b5cf6', 'Kẻ Báo Thù': '#dc2626',
+        'Người Giám Sát': '#f97316', 'Kẻ Ngủ Mê': '#64748b', 'Thợ Đặt Bẫy': '#84cc16',
+        'Kẻ Trừng Phạt': '#fb923c', 'Dị Thể': '#f87171', 'Dị Thể Hành Quyết': '#ef4444',
+        'Lãnh Chúa': '#dc2626', 'Lao Công': '#b91c1c', 'Tín Hiệu Giả': '#991b1b',
+        'Ký Sinh Thần Kinh': '#7f1d1d', 'Kiến Trúc Sư Bóng Tối': '#450a0a',
+        'Kẻ Rình Rập': '#fca5a5', 'Kẻ Đánh Cắp Lời Thì Thầm': '#fecaca',
+        'Nguồn Tĩnh Điện': '#fee2e2', 'Máy Hủy Tài Liệu': '#ef4444',
+        'Kẻ Mô Phỏng Sinh Học': '#dc2626', 'Sứ Giả Tận Thế': '#ff6b35',
+        'Kẻ Điều Khiển': '#fb7185', 'Mù Quáng': '#a78bfa', 'Kẻ Giải Mã': '#22d3ee',
+        'Người Thử Nghiệm': '#38d9f5', 'KẺ GIẾT NGƯỜI HÀNG LOẠT': '#fbbf24',
+        'A.I THA HÓA': '#d97706', 'ĐỒNG HỒ TẬN THẾ': '#b45309',
+        'Kẻ Dệt Mộng': '#7c3aed', 'Con Tàu Ma': '#475569', 'Sâu Lỗi': '#ef4444',
+        'Kẻ Tâm Thần': '#f59e0b', 'Kẻ Dệt Thời Gian': '#8b5cf6',
+    }
+    # Vai trò có khả năng đặc biệt cần icon cảnh báo
+    _SPECIAL_FLAGS: dict = {
+        'Kẻ Mô Phỏng Sinh Học': {'fake_good': True},
+        'Tín Hiệu Giả':          {'fake_good': True},
+        'Mù Quáng':              {'anomaly_chat_mgr': True},
+        'Thám Trưởng':           {'anomaly_chat_mgr': True},
+        'Kẻ Tâm Thần':           {'anomaly_chat_mgr': True},
+    }
+    _FOLDER_FACTION = {
+        'survivors': 'Survivors',
+        'anomalies': 'Anomalies',
+        'unknown':   'Neutrals',
+        'event':     'Event',
+    }
+
+    import os as _os
+    base_dir = _os.path.dirname(_os.path.abspath(__file__))
+    pattern  = _os.path.join(base_dir, 'roles', '**', '*.py')
+    role_files = sorted(_glob.glob(pattern, recursive=True))
+    role_files = [
+        f for f in role_files
+        if '__init__' not in f
+        and 'base_role' not in f
+        and 'role_manager' not in f
+    ]
+
+    catalog = []
+    for filepath in role_files:
+        try:
+            with open(filepath, encoding='utf-8') as fh:
+                src = fh.read()
+            tree = _ast.parse(src)
+            for node in _ast.walk(tree):
+                if not isinstance(node, _ast.ClassDef):
+                    continue
+                attrs: dict = {}
+                for item in node.body:
+                    if not isinstance(item, _ast.Assign):
+                        continue
+                    for t in item.targets:
+                        if isinstance(t, _ast.Name) and t.id in (
+                            'name', 'team', 'description', 'dm_message'
+                        ):
+                            try:
+                                attrs[t.id] = _ast.literal_eval(item.value)
+                            except Exception:
+                                pass
+                if 'name' not in attrs or 'team' not in attrs:
+                    continue
+                # Xác định folder (survivors/anomalies/unknown/event)
+                parts = filepath.replace('\\', '/').split('/roles/')
+                folder = parts[1].split('/')[0] if len(parts) > 1 else 'unknown'
+                name   = attrs['name']
+                flags  = _SPECIAL_FLAGS.get(name, {})
+                catalog.append({
+                    'name':             name,
+                    'team':             attrs.get('team', ''),
+                    'faction':          _FOLDER_FACTION.get(folder, folder.capitalize()),
+                    'color':            _COLOR_MAP.get(name, '#888888'),
+                    'description':      (attrs.get('description') or '').strip(),
+                    'dm_message':       attrs.get('dm_message', ''),
+                    'fake_good':        flags.get('fake_good', False),
+                    'anomaly_chat_mgr': flags.get('anomaly_chat_mgr', False),
+                })
+        except Exception as exc:
+            print(f'[roles_catalog] Lỗi parse {filepath}: {exc}')
+
+    return catalog
+
+
+# Build catalog một lần khi module load — cache lại để tránh re-parse mỗi request
+try:
+    _ROLES_CATALOG = _build_roles_catalog()
+    print(f'[roles_catalog] Loaded {len(_ROLES_CATALOG)} roles from source files.')
+except Exception as _e:
+    print(f'[roles_catalog] Fallback — không đọc được roles/: {_e}')
+    _ROLES_CATALOG = []
 
 # ──────────────────────────────────────────────────────────────────
 # ROUTER
@@ -901,11 +760,14 @@ async def api_stats(request: Request):
 async def api_player_lookup(user_id: str, request: Request):
     """
     Tra cứu thông tin người chơi theo Discord user_id.
-    - Ép user_id về str để tránh lỗi BigInt JS (số Discord ID > 2^53).
-    - try/except đầy đủ: 400 nếu ID sai format, 503 nếu DB lỗi, 404 nếu không có.
+
+    FIX:
+    - Ép uid về str trước khi query MongoDB để tránh lỗi làm tròn số BigInt JS.
+    - Nếu người chơi đang trong game với vai Sheriff, trả thêm used_tonight
+      để Admin biết họ đã dùng kỹ năng chưa.
     """
     _require_auth(request)
-    # Luôn ép về string — JS có thể gửi BigInt gây sai số
+    # Luôn ép về string — Discord ID là 64-bit int, JS float64 mất chính xác
     uid_str = str(user_id).strip()
     if not uid_str or not uid_str.isdigit():
         raise HTTPException(400, "user_id không hợp lệ — phải là chuỗi số Discord ID")
@@ -913,10 +775,47 @@ async def api_player_lookup(user_id: str, request: Request):
         players_col = _col("players")
         if players_col is None:
             raise HTTPException(503, "Database chưa kết nối — thử lại sau")
+        # FIX: query bằng str, tránh int conversion gây mất bit trên ID lớn
         doc = players_col.find_one({"user_id": uid_str})
+        if not doc:
+            # Thử tìm bằng int (fallback cho DB cũ lưu int)
+            try:
+                doc = players_col.find_one({"user_id": int(uid_str)})
+            except Exception:
+                pass
         if not doc:
             raise HTTPException(404, f"Không tìm thấy người chơi ID={uid_str}")
         doc.pop("_id", None)
+
+        # Bổ sung trạng thái in-game nếu đang có game (Sheriff used_tonight)
+        active_games = _shared.get("active_games") or {}
+        in_game_info: dict | None = None
+        for gid, game in active_games.items():
+            try:
+                roles_map = getattr(game, "roles", {})
+                uid_int   = int(uid_str)
+                role      = roles_map.get(uid_int)
+                if role is None:
+                    continue
+                role_name = getattr(role, "name", "")
+                entry = {
+                    "guild_id":   gid,
+                    "role_name":  role_name,
+                    "is_alive":   uid_int in [
+                        p.id for p in (game.alive_players if hasattr(game, "alive_players") else [])
+                    ],
+                }
+                # Sheriff: hiển thị trạng thái used_tonight để Admin theo dõi
+                if role_name in ("Thám Trưởng", "Sheriff"):
+                    entry["used_tonight"] = bool(getattr(role, "used_tonight", False))
+                in_game_info = entry
+                break
+            except Exception:
+                pass
+
+        if in_game_info:
+            doc["in_game"] = in_game_info
+
         return JSONResponse(doc)
     except HTTPException:
         raise

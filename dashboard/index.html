@@ -1021,10 +1021,10 @@ select.form-input { appearance: none; cursor: pointer; }
         </div>
 
         <div class="roles-filter">
-          <button class="filter-btn all active" onclick="setFilter('all',this)">Tất cả</button>
-          <button class="filter-btn survivors" onclick="setFilter('Survivors',this)" style="color:var(--survivors)">⚙ Survivors</button>
-          <button class="filter-btn anomalies" onclick="setFilter('Anomalies',this)" style="color:var(--anomalies)">☠ Anomalies</button>
-          <button class="filter-btn unknown" onclick="setFilter('Unknown',this)" style="color:var(--unknown)">❓ Unknown</button>
+          <button class="filter-btn all active" onclick="setFilter('all',this)">🎮 Tất cả</button>
+          <button class="filter-btn survivors" onclick="setFilter('Survivors',this)" style="color:var(--survivors)">🟢 Survivors</button>
+          <button class="filter-btn anomalies" onclick="setFilter('Anomalies',this)" style="color:var(--anomalies)">🔴 Anomalies</button>
+          <button class="filter-btn unknown" onclick="setFilter('Neutrals',this)" style="color:var(--unknown)">⚫ Neutrals</button>
           <button class="filter-btn event" onclick="setFilter('Event',this)" style="color:var(--event)">⭐ Event</button>
         </div>
 
@@ -1056,7 +1056,7 @@ select.form-input { appearance: none; cursor: pointer; }
             <input class="form-input" id="lookupId" placeholder="Nhập User ID (vd: 123456789012345678)" style="max-width:100%"/>
           </div>
           <button class="btn btn-primary" onclick="doPlayerLookup()">🔍 Tra Cứu</button>
-          <div id="lookupResult"></div>
+          <div id="lookupResult" style="margin-top:14px"></div>
         </div>
       </div>
 
@@ -1220,7 +1220,8 @@ select.form-input { appearance: none; cursor: pointer; }
             <button class="btn btn-ghost btn-sm guide-faction-btn active" data-faction="all" onclick="filterGuideFaction(this,'all')">Tất cả</button>
             <button class="btn btn-ghost btn-sm guide-faction-btn" data-faction="Survivors" onclick="filterGuideFaction(this,'Survivors')" style="color:var(--survivors)">🟢 Survivors</button>
             <button class="btn btn-ghost btn-sm guide-faction-btn" data-faction="Anomalies" onclick="filterGuideFaction(this,'Anomalies')" style="color:var(--anomalies)">🔴 Anomalies</button>
-            <button class="btn btn-ghost btn-sm guide-faction-btn" data-faction="Unknown" onclick="filterGuideFaction(this,'Unknown')" style="color:var(--unknown)">⚫ Unknown</button>
+            <button class="btn btn-ghost btn-sm guide-faction-btn" data-faction="Neutrals" onclick="filterGuideFaction(this,'Neutrals')" style="color:var(--unknown)">⚫ Neutrals</button>
+            <button class="btn btn-ghost btn-sm guide-faction-btn" data-faction="Event" onclick="filterGuideFaction(this,'Event')" style="color:var(--event)">⭐ Event</button>
           </div>
           <div id="guideRolesGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
             <div class="empty-state"><div class="loading-spin"></div></div>
@@ -1711,10 +1712,17 @@ document.addEventListener('click', e => {
 async function loadRoles() {
   try {
     const res = await fetch('/api/dash/roles');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     ALL_ROLES = await res.json();
     renderRoles();
+    // Render guide tab nếu đang mở (lazy — chỉ nếu grid đang hiển thị)
+    const guideTab3 = document.getElementById('guideTab3');
+    if (guideTab3 && guideTab3.style.display !== 'none') {
+      renderGuideRoles();
+    }
   } catch(e) {
     document.getElementById('rolesGrid').innerHTML = '<div class="empty-state"><p>Không thể tải dữ liệu vai trò.</p></div>';
+    console.error('[loadRoles]', e);
   }
 }
 
@@ -1722,19 +1730,25 @@ function renderRoles() {
   const query = document.getElementById('roleSearch').value.toLowerCase();
   let roles = ALL_ROLES;
   if (CURRENT_FILTER !== 'all') roles = roles.filter(r => r.faction === CURRENT_FILTER);
-  if (query) roles = roles.filter(r => r.name.toLowerCase().includes(query) || r.description.toLowerCase().includes(query));
+  if (query) roles = roles.filter(r =>
+    r.name.toLowerCase().includes(query) ||
+    (r.description||'').toLowerCase().includes(query)
+  );
 
   if (!roles.length) {
     document.getElementById('rolesGrid').innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Không tìm thấy vai trò nào.</p></div>';
     return;
   }
   document.getElementById('rolesGrid').innerHTML = roles.map((r) => {
-    // First non-empty line of description as preview
     const preview = (r.description || '').split('\n').find(l => l.trim()) || 'Nhấn để xem chi tiết';
-    const short = preview.length > 72 ? preview.slice(0, 70) + '…' : preview;
+    const short   = preview.length > 72 ? preview.slice(0, 70) + '…' : preview;
+    // Cảnh báo icon cho vai trò có khả năng đặc biệt
+    let warnIcons = '';
+    if (r.fake_good)        warnIcons += '<span title="Có khả năng fake_good — Sheriff có thể bị đánh lừa" style="margin-left:4px;font-size:12px">🎭</span>';
+    if (r.anomaly_chat_mgr) warnIcons += '<span title="Có thể đọc/ảnh hưởng kênh chat Dị Thể" style="margin-left:4px;font-size:12px">⚠️</span>';
     return `
     <div class="role-card" style="--role-color:${r.color}" onclick="showRoleDetail(${ALL_ROLES.indexOf(r)})">
-      <div class="role-card-name">${escHtml(r.name)}</div>
+      <div class="role-card-name" style="display:flex;align-items:center;gap:2px">${escHtml(r.name)}${warnIcons}</div>
       <div class="role-card-faction">${r.faction}</div>
       <div class="role-card-hint">${escHtml(short)}</div>
     </div>`;
@@ -1744,11 +1758,22 @@ function renderRoles() {
 function showRoleDetail(idx) {
   const r = ALL_ROLES[idx];
   if (!r) return;
-  document.getElementById('roleDetailName').textContent    = r.name;
-  document.getElementById('roleDetailFaction').textContent = r.faction + ' · ' + (r.team || r.faction);
+  // Tên + icons cảnh báo
+  let nameExtra = '';
+  if (r.fake_good)        nameExtra += ' 🎭';
+  if (r.anomaly_chat_mgr) nameExtra += ' ⚠️';
+  document.getElementById('roleDetailName').textContent    = r.name + nameExtra;
+  document.getElementById('roleDetailFaction').textContent = `${r.faction} · ${r.team || r.faction}`;
   document.getElementById('roleDetailFaction').style.color = r.color;
   document.getElementById('roleDetailDot').style.background = r.color;
-  document.getElementById('roleDetailDesc').textContent    = r.description || '(Chưa có mô tả)';
+
+  // Mô tả lấy trực tiếp từ description trong file class
+  let descText = r.description || '(Chưa có mô tả)';
+  // Sheriff: ghi rõ cơ chế fake_good
+  if (r.anomaly_chat_mgr && r.name.includes('Thám Trưởng')) {
+    descText += '\n\n⚠️ Cơ chế Sheriff: Biết vai trò thật, TRỪ KHI mục tiêu có fake_good (ví dụ: Tín Hiệu Giả, Kẻ Mô Phỏng Sinh Học đang hoạt động).';
+  }
+  document.getElementById('roleDetailDesc').textContent = descText;
   openModal('modalRoleDetail');
 }
 
@@ -1759,6 +1784,81 @@ function setFilter(f, btn) {
   renderRoles();
 }
 function filterRoles() { renderRoles(); }
+// ══════════════════════════════════════════
+// GUIDE TAB (43 Vai Trò — auto từ ALL_ROLES)
+// ══════════════════════════════════════════
+let GUIDE_FACTION_FILTER = 'all';
+
+function switchGuideTab(idx) {
+  for (let i = 0; i < 4; i++) {
+    const tab = document.getElementById('guideTab' + i);
+    const btn = document.getElementById('guideTabBtn' + i);
+    if (tab) tab.style.display = (i === idx) ? '' : 'none';
+    if (btn) {
+      btn.className = i === idx ? 'btn btn-primary' : 'btn btn-ghost';
+    }
+  }
+  // Render vai trò khi mở tab 3
+  if (idx === 3) renderGuideRoles();
+}
+
+function renderGuideRoles() {
+  const grid  = document.getElementById('guideRolesGrid');
+  if (!grid) return;
+  const query = (document.getElementById('roleSearchGuide')?.value || '').toLowerCase().trim();
+  let roles   = ALL_ROLES.slice();
+  if (GUIDE_FACTION_FILTER !== 'all') roles = roles.filter(r => r.faction === GUIDE_FACTION_FILTER);
+  if (query) roles = roles.filter(r =>
+    r.name.toLowerCase().includes(query) ||
+    (r.description || '').toLowerCase().includes(query)
+  );
+  if (!roles.length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🔍</div><p>Không tìm thấy vai trò phù hợp.</p></div>';
+    return;
+  }
+
+  const FACTION_COLOR = {
+    Survivors: 'var(--survivors)', Anomalies: 'var(--anomalies)',
+    Neutrals: 'var(--unknown)', Event: 'var(--event)',
+  };
+
+  grid.innerHTML = roles.map(r => {
+    const color   = FACTION_COLOR[r.faction] || 'var(--accent)';
+    const descRaw = (r.description || '').trim();
+    // First paragraph (up to 2 newlines) as short summary
+    const summary = descRaw.split(/\n\n/)[0].replace(/\n/g, ' ').slice(0, 180);
+    const shortDesc = summary.length >= 180 ? summary + '…' : summary;
+    // Sheriff: add fake_good note in description
+    let sheriffNote = '';
+    if (r.anomaly_chat_mgr && r.name.includes('Thám Trưởng')) {
+      sheriffNote = '<div style="margin-top:6px;font-size:11.5px;padding:5px 8px;background:rgba(240,80,80,0.08);border-radius:6px;border-left:2px solid var(--red);color:var(--text2)">⚠️ Biết vai trò thật, TRỪ KHI mục tiêu có <b>fake_good</b></div>';
+    }
+    let warnBadges = '';
+    if (r.fake_good)        warnBadges += '<span style="font-size:10.5px;background:rgba(251,146,60,0.15);color:#fb923c;border-radius:4px;padding:1px 6px;margin-right:4px">🎭 fake_good</span>';
+    if (r.anomaly_chat_mgr) warnBadges += '<span style="font-size:10.5px;background:rgba(240,80,80,0.12);color:var(--red);border-radius:4px;padding:1px 6px">⚠️ anomaly_chat</span>';
+    return `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;border-top:3px solid ${color}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px">
+          <div style="font-weight:700;font-size:14.5px;color:var(--text)">${escHtml(r.name)}</div>
+          <div style="font-size:11px;font-weight:600;color:${color};white-space:nowrap;margin-top:2px">${escHtml(r.faction)}</div>
+        </div>
+        ${warnBadges ? `<div style="margin-bottom:6px">${warnBadges}</div>` : ''}
+        <div style="font-size:12.5px;color:var(--text2);line-height:1.55">${escHtml(shortDesc)}</div>
+        ${sheriffNote}
+      </div>`;
+  }).join('');
+}
+
+function filterGuideRoles() { renderGuideRoles(); }
+
+function filterGuideFaction(btn, faction) {
+  GUIDE_FACTION_FILTER = faction;
+  document.querySelectorAll('.guide-faction-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderGuideRoles();
+}
+
+
 
 // ══════════════════════════════════════════
 // ══════════════════════════════════════════
@@ -1817,31 +1917,81 @@ async function loadStats() {
 // PLAYER LOOKUP
 // ══════════════════════════════════════════
 async function doPlayerLookup() {
-  // Luôn ép về String — Discord ID là BigInt, JS float64 sẽ mất chính xác
+  // FIX: Luôn giữ uid là String — Discord ID là 64-bit int, JS float64 mất bit
   const uid = String(document.getElementById('lookupId').value.trim());
-  if (!uid || uid === 'null') { toast('Nhập User ID cần tra cứu!', 'error'); return; }
+  if (!uid || uid === 'null' || !/^\d+$/.test(uid)) {
+    toast('Nhập User ID hợp lệ (chỉ gồm số)!', 'error'); return;
+  }
   const el = document.getElementById('lookupResult');
-  el.innerHTML = '<div style="padding:12px;color:var(--text3)">Đang tra cứu...</div>';
+  el.innerHTML = '<div style="padding:12px;color:var(--text3)">⏳ Đang tra cứu...</div>';
   try {
-    const res = await fetch(`/api/dash/player/lookup?user_id=${encodeURIComponent(uid)}`);
-    if (!res.ok) { el.innerHTML = '<div style="color:var(--red);padding:12px">Lỗi tra cứu.</div>'; return; }
+    // FIX: truyền uid dưới dạng path param string, không phải query (tránh parse float)
+    const res = await fetch(`/api/dash/player/${encodeURIComponent(uid)}`);
+    if (res.status === 404) {
+      el.innerHTML = `<div class="lookup-result" style="border-color:var(--border2)">
+        <div style="font-size:15px;font-weight:700;color:var(--text2);margin-bottom:4px">❓ Không tìm thấy</div>
+        <div style="font-size:13px;color:var(--text3)">User ID <code>${escHtml(uid)}</code> chưa có trong database.</div>
+      </div>`;
+      return;
+    }
+    if (!res.ok) {
+      el.innerHTML = `<div style="color:var(--red);padding:12px">Lỗi ${res.status}: ${res.statusText}</div>`;
+      return;
+    }
     const data = await res.json();
+
+    // ── In-game info block (Sheriff used_tonight, role, alive status) ──
+    let inGameHtml = '';
+    if (data.in_game) {
+      const ig = data.in_game;
+      const aliveLabel = ig.is_alive
+        ? '<span style="color:var(--green)">● Đang sống</span>'
+        : '<span style="color:var(--red)">● Đã chết</span>';
+      let sheriffBadge = '';
+      if (typeof ig.used_tonight !== 'undefined') {
+        sheriffBadge = ig.used_tonight
+          ? '<span style="background:rgba(240,80,80,0.1);color:var(--red);border:1px solid var(--red);border-radius:4px;padding:1px 7px;font-size:11px;margin-left:6px">Đã dùng kỹ năng tối nay</span>'
+          : '<span style="background:rgba(61,214,140,0.1);color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 7px;font-size:11px;margin-left:6px">Chưa dùng kỹ năng</span>';
+      }
+      inGameHtml = `
+        <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--radius-sm);border:1px solid var(--border)">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">🎮 Đang trong game</div>
+          <div style="font-size:13.5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <b>${escHtml(ig.role_name || '?')}</b>${sheriffBadge} ${aliveLabel}
+          </div>
+        </div>`;
+    }
+
+    // ── Ban status ──
     if (data.is_banned) {
-      const b = data.ban;
+      const b = data.ban || {};
       el.innerHTML = `
         <div class="lookup-result lookup-banned">
           <div style="font-size:16px;font-weight:700;color:var(--red);margin-bottom:8px">⛔ Đang bị BAN</div>
-          <div style="font-size:13.5px;color:var(--text2)"><b>Lý do:</b> ${escHtml(b.reason)}</div>
-          <div style="font-size:13px;color:var(--text3);margin-top:4px"><b>Chế độ:</b> ${escHtml(b.mode)} — <b>Từ:</b> ${fmtDate(b.created_at)}</div>
+          <div style="font-size:13.5px;color:var(--text2)"><b>Lý do:</b> ${escHtml(b.reason||'—')}</div>
+          <div style="font-size:13px;color:var(--text3);margin-top:4px">
+            <b>Chế độ:</b> ${escHtml(b.mode||'—')} — <b>Từ:</b> ${fmtDate(b.created_at)}
+          </div>
+          ${inGameHtml}
         </div>`;
     } else {
+      const games   = data.total_games   ?? data.games_played ?? '—';
+      const wins    = data.total_wins    ?? data.wins         ?? '—';
+      const username = data.username || data.name || uid;
       el.innerHTML = `
         <div class="lookup-result lookup-clean">
-          <div style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:4px">✅ Không bị ban</div>
-          <div style="font-size:13px;color:var(--text3)">User ID <code>${escHtml(uid)}</code> không có trong danh sách ban.</div>
+          <div style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:8px">✅ Không bị ban</div>
+          <div style="font-size:13.5px;color:var(--text2);margin-bottom:4px">
+            <b>${escHtml(username)}</b>
+            <code style="font-size:11px;margin-left:6px;color:var(--text3)">${escHtml(uid)}</code>
+          </div>
+          <div style="font-size:13px;color:var(--text3)">
+            🎮 Trận đã chơi: <b>${games}</b> &nbsp;|&nbsp; 🏆 Chiến thắng: <b>${wins}</b>
+          </div>
+          ${inGameHtml}
         </div>`;
     }
-  } catch(e) { el.innerHTML = '<div style="color:var(--red);padding:12px">Lỗi kết nối.</div>'; }
+  } catch(e) { el.innerHTML = `<div style="color:var(--red);padding:12px">Lỗi kết nối: ${escHtml(e.message)}</div>`; }
 }
 
 // FEEDBACK (SEND)
@@ -2290,18 +2440,43 @@ async function loadRooms() {
     const el = document.getElementById('roomsGrid');
     if (!rooms.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏠</div><p>Chưa có phòng nào được thiết lập.</p></div>'; return; }
     el.innerHTML = rooms.map(r => {
-      const status = r.status || null;
-      // FIX #4: Ưu tiên dữ liệu is_playing từ lobby_states (Bot ghi), fallback về status
+      // ── Trạng thái ──
       let statusHtml = '';
-      if (r.is_playing) {
-        statusHtml = `<div class="status-pill status-game"><div class="status-dot"></div>Đang chơi (${r.active_players ?? 0} người)</div>`;
-      } else if (!status) {
-        statusHtml = `<div class="status-pill status-idle"><div class="status-dot"></div>Chờ</div>`;
-      } else if (status === 'lobby' || status?.includes?.('lobby')) {
-        statusHtml = `<div class="status-pill status-lobby"><div class="status-dot"></div>Lobby</div>`;
+      const gi = r.game_info || {};
+      if (r.status === 'playing' || r.is_playing) {
+        // FIX: dùng alive_count từ game_info thay vì active_players
+        const alive = gi.alive_count ?? r.active_players ?? 0;
+        statusHtml = `<div class="status-pill status-game"><div class="status-dot"></div>🎮 Đang chơi (${alive} alive)</div>`;
+      } else if (r.status === 'countdown') {
+        statusHtml = `<div class="status-pill status-lobby"><div class="status-dot"></div>⏳ Đếm ngược</div>`;
+      } else if (r.status === 'full') {
+        statusHtml = `<div class="status-pill status-lobby"><div class="status-dot"></div>🔴 Đầy phòng</div>`;
       } else {
-        statusHtml = `<div class="status-pill status-game"><div class="status-dot"></div>Đang chơi</div>`;
+        statusHtml = `<div class="status-pill status-idle"><div class="status-dot"></div>Chờ</div>`;
       }
+
+      // ── Danh sách vai trò trong game (từ game.roles) ──
+      let rolesHtml = '';
+      if (gi.active_roles && gi.active_roles.length) {
+        const roleList = gi.active_roles.map(n =>
+          `<span style="font-size:11px;background:var(--bg3);border-radius:4px;padding:1px 6px;border:1px solid var(--border)">${escHtml(n)}</span>`
+        ).join(' ');
+        rolesHtml = `<div style="margin-top:10px">
+          <div style="font-size:11px;color:var(--text3);font-weight:600;margin-bottom:4px">VAI TRÒ CÒN SỐNG</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">${roleList}</div>
+        </div>`;
+      }
+
+      // ── Phe còn lại ──
+      let factionHtml = '';
+      if (gi.faction_counts && Object.keys(gi.faction_counts).length) {
+        factionHtml = Object.entries(gi.faction_counts).map(([f, n]) => {
+          const c = f === 'Survivors' ? 'var(--survivors)' : f === 'Anomalies' ? 'var(--anomalies)' : 'var(--unknown)';
+          return `<span style="color:${c};font-size:12px;font-weight:600">${escHtml(f)}: ${n}</span>`;
+        }).join(' &nbsp;|&nbsp; ');
+        factionHtml = `<div style="margin-top:6px;font-size:12.5px">${factionHtml}</div>`;
+      }
+
       return `
         <div class="room-card">
           <div class="room-card-header">
@@ -2317,14 +2492,20 @@ async function loadRooms() {
               <div class="room-stat-label">Tối đa</div>
             </div>
             <div class="room-stat">
-              <div class="room-stat-value" style="color:var(--accent)">${r.active_players ?? 0}</div>
-              <div class="room-stat-label">Người chơi</div>
+              <div class="room-stat-value" style="color:var(--green)">${gi.alive_count ?? r.active_players ?? 0}</div>
+              <div class="room-stat-label">Alive</div>
             </div>
             <div class="room-stat">
-              <div class="room-stat-value" style="color:${r.is_playing ? 'var(--green)' : 'var(--text3)'}">${r.is_playing ? '🎮 Live' : '—'}</div>
-              <div class="room-stat-label">Trạng thái</div>
+              <div class="room-stat-value" style="color:var(--red)">${gi.dead_count ?? 0}</div>
+              <div class="room-stat-label">Dead</div>
+            </div>
+            <div class="room-stat">
+              <div class="room-stat-value">${gi.day ? 'N' + gi.day : '—'}</div>
+              <div class="room-stat-label">Ngày</div>
             </div>
           </div>
+          ${factionHtml}
+          ${rolesHtml}
           <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="navigate('settings');selectGuild('${r.guild_id}')">⚙️ Cài đặt phòng này</button>
         </div>
       `;
