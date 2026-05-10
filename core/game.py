@@ -21,6 +21,15 @@
 # 15. Event Role Integration (Blind, Pro Tester, Cipher Breaker)
 # ==============================
 
+import os as _os, sys as _sys
+_BASE_DIR = _os.path.dirname(_os.path.abspath(__file__))
+# Đi ngược lên root nếu file này nằm trong subfolder
+for _candidate in [_BASE_DIR, _os.path.dirname(_BASE_DIR)]:
+    _core = _os.path.join(_candidate, "core")
+    if _os.path.isdir(_core) and _core not in _sys.path:
+        _sys.path.insert(0, _core)
+del _os, _sys, _BASE_DIR, _candidate, _core
+
 from __future__ import annotations
 
 import asyncio
@@ -62,6 +71,9 @@ def _narrator_api_key() -> str:
 
 _NARRATOR_MODEL = (os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash").strip()
 
+# Model riêng cho narrator kết thúc trận — dùng Gemini 2.5 Flash
+_NARRATOR_ENDING_MODEL = "gemini-2.5-flash-preview-05-20"
+
 _NARRATOR_SYSTEM = (
     "Ngươi là NGƯỜI KỂ CHUYỆN huyền bí của trận Ma Sói 'Anomalies'. "
     "Phong cách: tối tăm, thơ mộng, đầy ám ảnh — như một tiểu thuyết kinh dị hạng sang. "
@@ -89,6 +101,95 @@ _NARRATOR_PROMPTS = {
         "Câu phải gợi lên không khí đêm tối và sự nguy hiểm rình rập."
     ),
 }
+
+
+_NARRATOR_ENDING_SYSTEM = (
+    "Ngươi là NGƯỜI KỂ CHUYỆN huyền bí của trận Ma Sói 'Anomalies'. "
+    "Phong cách: tối tăm, thơ mộng, sử thi — như đoạn kết của một tiểu thuyết kinh dị hạng sang. "
+    "Ngôn ngữ: Tiếng Việt. "
+    "Độ dài: 3–5 câu giàu hình ảnh, đầy cảm xúc, mang tính tổng kết và ám ảnh. "
+    "TUYỆT ĐỐI không tiết lộ vai trò cụ thể của bất kỳ ai. "
+    "TUYỆT ĐỐI không giải thích hay thêm bình luận ngoài lề. "
+    "Chỉ trả về đúng đoạn tường thuật kết thúc, không có dấu nháy bao ngoài."
+)
+
+_NARRATOR_ENDING_PROMPTS = {
+    # Phe Người Sống Sót thắng
+    "survivor_win": (
+        "Trận Anomalies vừa kết thúc với chiến thắng thuộc về Phe Người Sống Sót. "
+        "Tổng số người chơi: {total}. Số người sống sót đến cuối: {survivors}. "
+        "Có {eliminated} người đã bị loại trong suốt cuộc chiến. "
+        "Hãy viết một đoạn tường thuật 3–5 câu mô tả khoảnh khắc bình minh trở lại sau đêm dài kinh hoàng — "
+        "sự nhẹ nhõm, nỗi đau mất mát, và hy vọng le lói dù thị trấn vẫn còn đầy vết thương. "
+        "Không nhắc đến tên người chơi hay vai trò cụ thể."
+    ),
+    # Phe Dị Thể thắng
+    "anomaly_win": (
+        "Trận Anomalies vừa kết thúc với chiến thắng thuộc về Phe Dị Thể. "
+        "Tổng số người chơi: {total}. Các Dị Thể đã chiếm ưu thế hoàn toàn. "
+        "Có {eliminated} người đã gục ngã trước bóng tối. "
+        "Hãy viết một đoạn tường thuật 3–5 câu mô tả khoảnh khắc thị trấn hoàn toàn rơi vào tay bóng tối — "
+        "sự im lặng chết chóc, những tiếng thì thầm kỳ dị, và thế giới đã không còn như trước. "
+        "Không nhắc đến tên người chơi hay vai trò cụ thể."
+    ),
+    # Thực Thể Không Xác Định thắng (solo win)
+    "unknown_win": (
+        "Trận Anomalies vừa kết thúc với một kẻ bí ẩn giành chiến thắng: {winner_name}. "
+        "Không thuộc về phe nào, không theo quy tắc của ai — kẻ đó chơi một ván cờ riêng và thắng. "
+        "Tổng số người chơi: {total}. Có {eliminated} người đã bị loại trước khi trận kết thúc. "
+        "Hãy viết một đoạn tường thuật 3–5 câu mô tả khoảnh khắc cả hai phe nhận ra "
+        "mình đã bị thao túng từ đầu bởi một thế lực thứ ba vô hình — "
+        "sự kinh ngạc, phản bội, và cái cúi đầu bất lực trước số phận. "
+        "Không nhắc đến tên người chơi hay vai trò cụ thể."
+    ),
+}
+
+# Ảnh embed theo từng loại kết thúc
+_ENDING_IMAGES = {
+    "survivor_win": "https://cdn.discordapp.com/attachments/1400774089664364636/1503143917728829551/Sunrise.jpg?ex=6a02475d&is=6a00f5dd&hm=baf5408ee7c6d69d482f474cef16c3e1f94af1adc61ed865fbd0e55ea64615c2&",
+    "anomaly_win":  "https://cdn.discordapp.com/attachments/1400774089664364636/1503143934921019473/Love_never_dies_a_natural_death__She_dies_from_blindness_mistakes_and_betrayals..jpg?ex=6a024761&is=6a00f5e1&hm=281b146228e7263a6b602ead161ea44581bb7e92a4dba4a2ab224a6a3f163937&",
+    "unknown_win":  "https://cdn.discordapp.com/attachments/1400774089664364636/1503143947420041376/Picsart_26-05-10_21-20-40-952.jpg?ex=6a024764&is=6a00f5e4&hm=9562f0700e1483af1770c8091ecb79448c74097e6d6d3b14bb5b70a2ced17cbb&",
+}
+
+
+async def _ai_narrate_ending(ending_type: str, **kwargs) -> str:
+    """
+    Gọi Gemini 2.5 Flash để sinh câu dẫn chuyện kết thúc trận.
+    ending_type: 'survivor_win' | 'anomaly_win' | 'unknown_win'
+    Trả về chuỗi rỗng nếu lỗi hoặc không có API key.
+    """
+    if not _NARRATOR_GENAI_OK:
+        return ""
+    api_key = _narrator_api_key()
+    if not api_key:
+        return ""
+
+    prompt_template = _NARRATOR_ENDING_PROMPTS.get(ending_type, "")
+    if not prompt_template:
+        return ""
+
+    try:
+        prompt = prompt_template.format(**kwargs)
+    except KeyError:
+        return ""
+
+    try:
+        client = _genai.Client(api_key=api_key)
+        cfg = _genai_types.GenerateContentConfig(
+            system_instruction=_NARRATOR_ENDING_SYSTEM,
+            temperature=1.2,
+            top_p=0.97,
+        )
+        resp = await client.aio.models.generate_content(
+            model=_NARRATOR_ENDING_MODEL,
+            contents=prompt,
+            config=cfg,
+        )
+        text = (getattr(resp, "text", "") or "").strip()
+        return text
+    except Exception as _e:
+        print(f"[NarratorEnding] Lỗi Gemini: {_e}")
+        return ""
 
 
 async def _ai_narrate(event_type: str, **kwargs) -> str:
@@ -2853,11 +2954,47 @@ class GameEngine:
         colors = {TEAM_SURVIVOR: 0x2ecc71, TEAM_ANOMALY: 0xe74c3c, "Draw": 0x95a5a6}
         color  = colors.get(winner, 0x9b59b6)
 
+        # ── Xác định loại kết thúc + ảnh ──────────────────────────────
+        total_players   = len(self._players_dict)
+        alive_count     = len(self.alive_players)
+        eliminated      = total_players - alive_count
+
+        if winner == TEAM_SURVIVOR:
+            _ending_type = "survivor_win"
+        elif winner == TEAM_ANOMALY:
+            _ending_type = "anomaly_win"
+        else:
+            # Solo win (unknown entity) hoặc draw
+            _ending_type = "unknown_win"
+
+        _ending_image = _ENDING_IMAGES.get(_ending_type, "")
+
+        # ── Gọi Gemini 2.5 Flash sinh câu dẫn chuyện kết thúc ─────────
+        _narrator_text = ""
+        try:
+            _narrator_kwargs = dict(
+                total=total_players,
+                survivors=alive_count,
+                eliminated=eliminated,
+                winner_name=winner,
+            )
+            _narrator_text = await _ai_narrate_ending(_ending_type, **_narrator_kwargs)
+        except Exception as _ne:
+            self.logger.warn(f"[NarratorEnding] Lỗi gọi AI: {_ne}")
+
+        # ── Build embed kết thúc ───────────────────────────────────────
+        _description = _narrator_text if _narrator_text else f"**Người chiến thắng: {winner}**"
+        if _narrator_text:
+            _description += f"\n\n**🏆 Người chiến thắng: {winner}**"
+
         embed = disnake.Embed(
             title="🏁 TRẬN ĐẤU KẾT THÚC",
-            description=f"**Người chiến thắng: {winner}**",
+            description=_description,
             color=color
         )
+
+        if _ending_image:
+            embed.set_image(url=_ending_image)
 
         lines = []
         for pid, member in self._players_dict.items():

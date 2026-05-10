@@ -5,6 +5,15 @@ No hardcoded descriptions. Tips are derived from each role's own description tex
 All 4 buttons are fully functional.
 """
 
+import os as _os, sys as _sys
+_BASE_DIR = _os.path.dirname(_os.path.abspath(__file__))
+# Đi ngược lên root nếu file này nằm trong subfolder
+for _candidate in [_BASE_DIR, _os.path.dirname(_BASE_DIR)]:
+    _core = _os.path.join(_candidate, "core")
+    if _os.path.isdir(_core) and _core not in _sys.path:
+        _sys.path.insert(0, _core)
+del _os, _sys, _BASE_DIR, _candidate, _core
+
 from __future__ import annotations
 
 import ast
