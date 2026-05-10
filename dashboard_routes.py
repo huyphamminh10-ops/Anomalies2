@@ -124,6 +124,20 @@ def _col(name: str):
     return fn(name) if fn else None
 
 
+def _discord_permissions_int(g: dict) -> int:
+    """Discord trả `permissions` dạng string (bitfield); ép int an toàn."""
+    p = g.get("permissions", 0)
+    if isinstance(p, str):
+        try:
+            return int(p)
+        except ValueError:
+            return 0
+    try:
+        return int(p or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _guild_state_summary() -> list[dict]:
     """Lấy trạng thái tất cả guild từ in-memory state (real-time), fallback về DB."""
     bot          = _shared.get("bot")
@@ -597,7 +611,68 @@ async def api_roles(request: Request):
 @router.get("/api/dash/guilds")
 @router.get("/api/dash/me/guilds")
 async def api_guilds(request: Request):
-    """Server mà user thuộc về và có config trong bot."""
+    """
+    Server mà user tham gia trên Discord VÀ bot đang ở server đó
+    (hoặc đã có bản ghi guild_configs / lobby in-memory).
+    Trước đây chỉ hiện khi đã có MongoDB config → user không thấy server mới.
+    """
+    s = _require_auth(request)
+    async with httpx.AsyncClient() as http:
+        resp = await http.get(
+            f"{DISCORD_API}/users/@me/guilds",
+            headers={"Authorization": f"Bearer {s['access_token']}"},
+        )
+        raw = resp.json() if resp.status_code == 200 else []
+    user_guilds = raw if isinstance(raw, list) else []
+
+    bot         = _shared.get("bot")
+    cfg_col     = _col("guild_configs")
+    in_memory   = _shared.get("guilds") or {}
+    result      = []
+
+    for g in user_guilds:
+        gid = str(g.get("id", ""))
+        if not gid:
+            continue
+
+        has_config = False
+        if cfg_col:
+            has_config = cfg_col.count_documents({"guild_id": gid}, limit=1) > 0
+
+        bot_in_guild = False
+        discord_guild = None
+        if bot is not None and getattr(bot, "user", None):
+            try:
+                discord_guild = bot.get_guild(int(gid))
+                bot_in_guild = discord_guild is not None
+            except (ValueError, TypeError):
+                bot_in_guild = False
+
+        if not has_config and gid not in in_memory and not bot_in_guild:
+            continue
+
+        perms = _discord_permissions_int(g)
+        is_manager = bool(perms & 0x20) or bool(perms & 0x08) or bool(g.get("owner", False))
+        icon_api = g.get("icon")
+        if discord_guild and discord_guild.icon:
+            icon_url = str(discord_guild.icon.url)
+        elif icon_api:
+            icon_url = f"https://cdn.discordapp.com/icons/{gid}/{icon_api}.png?size=64"
+        else:
+            icon_url = None
+
+        result.append({
+            "id":           gid,
+            "name":         g.get("name", gid),
+            "icon":         icon_url,
+            "is_manager":   is_manager,
+            "permissions":  str(perms),
+        })
+    return JSONResponse(result)
+
+
+@router.get("/api/dash/guild/{guild_id}/config")
+async def api_guild_config(guild_id: str, request: Request):
     s = _require_auth(request)
     async with httpx.AsyncClient() as http:
         resp = await http.get(
@@ -605,39 +680,14 @@ async def api_guilds(request: Request):
             headers={"Authorization": f"Bearer {s['access_token']}"},
         )
         user_guilds = resp.json() if resp.status_code == 200 else []
+    if not isinstance(user_guilds, list):
+        user_guilds = []
+    if not any(str(g.get("id")) == str(guild_id) for g in user_guilds):
+        raise HTTPException(403, "Bạn không thuộc server này")
 
-    cfg_col = _col("guild_configs")
-    result  = []
-    for g in user_guilds:
-        gid = g["id"]
-        has_config = False
-        if cfg_col:
-            has_config = cfg_col.count_documents({"guild_id": gid}, limit=1) > 0
-        if not has_config and gid not in _shared.get("guilds", {}):
-            continue
-        perms      = int(g.get("permissions", 0))
-        is_manager = bool(perms & 0x20) or g.get("owner", False)
-        icon       = g.get("icon")
-        result.append({
-            "id":         gid,
-            "name":       g["name"],
-            "icon":       f"https://cdn.discordapp.com/icons/{gid}/{icon}.png" if icon else None,
-            "is_manager": is_manager,
-        })
-    return JSONResponse(result)
-
-
-@router.get("/api/dash/guild/{guild_id}/config")
-async def api_guild_config(guild_id: str, request: Request):
-    _require_auth(request)
-    cfg_col = _col("guild_configs")
-    if not cfg_col:
-        raise HTTPException(404, "404 ×[")
-    doc = cfg_col.find_one({"guild_id": guild_id})
-    if not doc:
-        raise HTTPException(404, "404 ×[")
-    doc.pop("_id", None)
-    return JSONResponse(doc)
+    # Không bắt buộc đã có document — trả default giống bot (load_guild_config)
+    cfg = config_manager.load_guild_config(guild_id)
+    return JSONResponse(cfg)
 
 
 @router.post("/api/dash/guild/{guild_id}/config")
@@ -652,12 +702,12 @@ async def api_update_config(guild_id: str, request: Request):
         )
         user_guilds = resp.json() if resp.status_code == 200 else []
 
-    guild = next((g for g in user_guilds if g["id"] == guild_id), None)
+    guild = next((g for g in user_guilds if str(g.get("id")) == str(guild_id)), None)
     if not guild:
         raise HTTPException(403, "Lỗi: Bạn không có quyền chỉnh sửa phòng của server này")
 
-    perms      = int(guild.get("permissions", 0))
-    is_manager = bool(perms & 0x20) or guild.get("owner", False)
+    perms      = _discord_permissions_int(guild)
+    is_manager = bool(perms & 0x20) or bool(perms & 0x08) or bool(guild.get("owner", False))
     if not is_manager and not s["is_owner"]:
         raise HTTPException(403, f"Lỗi: Bạn không có quyền chỉnh sửa phòng của server {guild['name']}")
 

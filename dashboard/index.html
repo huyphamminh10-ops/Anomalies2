@@ -1504,9 +1504,12 @@ function navigate(page) {
   document.getElementById('topbarTitle').textContent = PAGE_TITLES[page] || page;
   toggleSidebar(false);
 
-  // Show guild selector on settings
+  // Show guild selector on settings — tải lại danh sách mỗi lần vào (bot có thể vừa vào server mới)
   document.getElementById('guildSelector').style.display = (page === 'settings') ? 'flex' : 'none';
-  if (page === 'settings') renderSettingsGuild();
+  if (page === 'settings') {
+    loadGuilds();
+    renderSettingsGuild();
+  }
   if (page === 'rooms') loadRooms();
   if (page === 'stats') loadStats();
   if (page === 'player-lookup') document.getElementById('lookupResult').innerHTML = '';
@@ -1546,10 +1549,19 @@ function toggleSidebar(open) {
 // ══════════════════════════════════════════
 async function loadGuilds() {
   try {
-    const res = await fetch('/api/dash/guilds');
-    GUILDS = await res.json();
+    const res = await fetch('/api/dash/guilds', { credentials: 'same-origin' });
+    if (!res.ok) {
+      GUILDS = [];
+      renderGuildDropdown();
+      return;
+    }
+    const data = await res.json();
+    GUILDS = Array.isArray(data) ? data : [];
     renderGuildDropdown();
-  } catch(e) {}
+  } catch(e) {
+    GUILDS = [];
+    renderGuildDropdown();
+  }
 }
 
 function renderGuildDropdown() {
