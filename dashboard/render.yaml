@@ -2,10 +2,14 @@ services:
   - type: web
     name: anomalies-dashboard
     env: python
-    buildCommand: pip install -r dashboard/requirements.txt
-    # Sửa: dùng python -m uvicorn thay vì uvicorn trực tiếp
-    # Đảm bảo module path đúng: dashboard.server:app
-    startCommand: python -m uvicorn dashboard.server:app --host 0.0.0.0 --port $PORT
+    # ── Build: cài tất cả dependencies (Bot + Web) ──────────────────
+    buildCommand: pip install -r requirements.txt
+    # ── Start: Bot khởi động và kéo Web Dashboard theo ─────────────
+    # bot_main.py là entry point duy nhất:
+    #   - Chạy uvicorn (FastAPI Web) trên port $PORT
+    #   - Khởi động Disnake Bot trong cùng event loop (asyncio.create_task)
+    #   - Gán app.state.bot để Web truy cập bot.guilds trực tiếp
+    startCommand: python bot_main.py
     envVars:
       - key: DISCORD_TOKEN
         sync: false
@@ -19,6 +23,8 @@ services:
         generateValue: true
       - key: MONGO_URI
         sync: false
+      - key: TIDB_URL
+        sync: false
       - key: BOT_OWNER_ID
         sync: false
       - key: RENDER
@@ -27,3 +33,5 @@ services:
         sync: false
       - key: IS_HTTPS
         value: "true"
+      - key: PORT
+        value: "10000"

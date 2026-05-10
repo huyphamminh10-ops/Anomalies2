@@ -1,11 +1,26 @@
-disnake>=2.12.0
-aiohttp>=3.9.0,<3.10.0
-ujson>=5.9.0
-fastapi>=0.110.0
-uvicorn>=0.29.0
-pymongo[srv]>=4.6.0
-dnspython>=2.4.0
-motor>=3.3.0
-certifi
-httpx>=0.27.0
+# ── Discord Bot ───────────────────────────────────────────────────
+disnake>=2.9.2
+
+# ── Web Framework ─────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+websockets==13.1
 python-multipart>=0.0.9
+httpx>=0.27.0
+
+# ── MongoDB (config_manager — dùng chung Bot + Web) ───────────────
+pymongo[srv]==4.6.3
+dnspython>=2.4.2
+motor>=3.3.0
+
+# ── TiDB / MySQL (database_tidb.py — Feedback & Update Log) ───────
+mysql-connector-python>=8.3.0
+
+# ── Validation & Serialization ────────────────────────────────────
+pydantic==2.10.4
+
+# ── Utilities ─────────────────────────────────────────────────────
+python-dotenv==1.0.1
+certifi
+aiohttp>=3.9.0
+ujson>=5.9.0
