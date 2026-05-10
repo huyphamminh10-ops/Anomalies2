@@ -211,6 +211,13 @@ def _get_connection():
     for attempt in range(1, _TIDB_CONNECT_RETRIES + 1):
         try:
             conn = mysql.connector.connect(**connect_kw)
+            # Safety: explicitly USE the project database to avoid falling into sys schema
+            try:
+                _safe_cur = conn.cursor()
+                _safe_cur.execute(f"USE `{db_name}`")
+                _safe_cur.close()
+            except Exception:
+                pass  # connection already has DB set via connect_kw
             if attempt > 1:
                 print(f"[database_tidb] ✓ Kết nối TiDB thành công sau {attempt} lần thử.")
             return conn

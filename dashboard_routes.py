@@ -144,7 +144,7 @@ def _guild_state_summary() -> list[dict]:
     guilds       = _shared.get("guilds", {})
     active_games = _shared.get("active_games", {})
 
-    if not guilds:
+    if guilds is None:
         cfg_col = _col("guild_configs")
         if cfg_col is not None:
             docs = list(cfg_col.find({}, {"_id": 0, "guild_id": 1, "guild_name": 1, "status": 1, "max_players": 1, "min_players": 1, "countdown_time": 1}))
@@ -705,17 +705,22 @@ async def api_stats(request: Request):
             def _mongo_counts():
                 db = config_manager._get_db()
                 if db is None:
-                    return (0, 0)
-                return (
-                    db["guild_configs"].count_documents({}),
-                    db["bans"].count_documents({}),
-                )
+                    return (0, 0, 0)
+                guilds_n = db["guild_configs"].count_documents({})
+                bans_n   = db["bans"].count_documents({})
+                # Feedback count tu MongoDB collection (backup neu TiDB chua san)
+                try:
+                    feedbacks_n = db["feedbacks"].count_documents({})
+                except Exception:
+                    feedbacks_n = 0
+                return (guilds_n, bans_n, feedbacks_n)
 
             loop = asyncio.get_event_loop()
-            total_guilds, total_bans = await loop.run_in_executor(None, _mongo_counts)
+            total_guilds, total_bans, mongo_feedback_count = await loop.run_in_executor(None, _mongo_counts)
         except Exception as e:
             print(f"[api_stats] Lỗi MongoDB count: {e}")
             mongo_ok = False
+            mongo_feedback_count = 0
 
     tidb_ok = False
     total_feedbacks = 0
@@ -741,6 +746,10 @@ async def api_stats(request: Request):
         tidb_ok = True
     except Exception as e:
         print(f"[api_stats] Lỗi TiDB count: {e}")
+
+    # Nếu TiDB không trả được số feedback, fallback về MongoDB count
+    if not tidb_ok and mongo_ok:
+        total_feedbacks = locals().get("mongo_feedback_count", 0)
 
     return JSONResponse({
         "total_guilds":     total_guilds,
