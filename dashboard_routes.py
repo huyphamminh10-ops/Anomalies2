@@ -1061,6 +1061,132 @@ async def api_admin_room_config(guild_id: str, request: Request):
     return JSONResponse({"ok": True})
 
 
+# ══════════════════════════════════════════════════════════════════
+# DLC / ECONOMY ROUTES — DOELCES v1.0
+# ══════════════════════════════════════════════════════════════════
+
+try:
+    from core.dlc_loader  import get_all_dlcs_summary, scan_dlcs
+    from core.dlc_economy import (
+        get_player_wallet, get_player_dlcs, purchase_dlc,
+        generate_serial_key, list_serials_for_mod,
+        ensure_economy_tables,
+    )
+    _DLC_OK = True
+except Exception as _dlc_e:
+    _DLC_OK = False
+    print(f"[Dashboard] Không load được DLC modules: {_dlc_e}")
+
+
+@router.get("/api/dash/dlc/list")
+async def api_dlc_list(request: Request):
+    """Danh sách tất cả DLC packs (ai cũng xem được)."""
+    _require_auth(request)
+    if not _DLC_OK:
+        return JSONResponse({"dlcs": [], "error": "DLC system unavailable"})
+    user_id = _get_session(request).get("user_id", "")
+    owned   = set(get_player_dlcs(str(user_id))) if user_id else set()
+    dlcs    = get_all_dlcs_summary()
+    for d in dlcs:
+        d["owned"] = d["folder_name"] in owned
+    return JSONResponse({"dlcs": dlcs})
+
+
+@router.get("/api/dash/dlc/wallet")
+async def api_dlc_wallet(request: Request):
+    """Xem số dư ví của user đang đăng nhập."""
+    _require_auth(request)
+    user_id = _get_session(request).get("user_id", "")
+    if not user_id or not _DLC_OK:
+        return JSONResponse({"gold": 0, "gems": 0, "total_games": 0})
+    wallet = get_player_wallet(str(user_id))
+    dlcs   = get_player_dlcs(str(user_id))
+    return JSONResponse({**wallet, "owned_mods": dlcs})
+
+
+@router.post("/api/dash/dlc/buy")
+async def api_dlc_buy(request: Request):
+    """Mua DLC bằng Gold hoặc Gems."""
+    _require_auth(request)
+    if not _DLC_OK:
+        raise HTTPException(503, "DLC system unavailable")
+
+    data       = await request.json()
+    mod_name   = str(data.get("mod_name", "")).strip()
+    user_id    = _get_session(request).get("user_id", "")
+
+    if not mod_name or not user_id:
+        raise HTTPException(400, "Thiếu mod_name")
+
+    # Lấy thông tin giá từ DLC list
+    dlcs     = get_all_dlcs_summary()
+    dlc_info = next((d for d in dlcs if d["folder_name"] == mod_name), None)
+    if dlc_info is None:
+        raise HTTPException(404, "Mod không tồn tại")
+
+    price    = dlc_info["price"]
+    result   = purchase_dlc(
+        user_id       = str(user_id),
+        mod_name      = mod_name,
+        price_amount  = price["amount"],
+        price_currency= price["currency"],
+    )
+    return JSONResponse(result)
+
+
+@router.get("/api/dash/dlc/icon/{folder_name}")
+async def api_dlc_icon(folder_name: str, request: Request):
+    """Phục vụ file ảnh icon của DLC."""
+    import mimetypes
+    from fastapi.responses import FileResponse
+    dlcs = get_all_dlcs_summary() if _DLC_OK else []
+    dlc  = next((d for d in dlcs if d["folder_name"] == folder_name), None)
+    if dlc is None:
+        raise HTTPException(404, "Mod không tồn tại")
+
+    # Tìm icon path từ DLC root
+    from core.dlc_loader import DLC_ROOT
+    for ext in (".jpg", ".jpeg", ".png", ".webp"):
+        icon_path = DLC_ROOT / folder_name / f"pack{ext}"
+        if icon_path.exists():
+            mime = mimetypes.guess_type(str(icon_path))[0] or "image/png"
+            return FileResponse(str(icon_path), media_type=mime)
+    raise HTTPException(404, "Icon không tồn tại")
+
+
+# ── OWNER ONLY: Admin DLC routes ───────────────────────────────────
+
+@router.post("/api/dash/admin/dlc/generate-serial")
+async def api_dlc_generate_serial(request: Request):
+    """Owner tạo mã serial mới cho một mod."""
+    _require_owner(request)
+    if not _DLC_OK:
+        raise HTTPException(503, "DLC system unavailable")
+    data     = await request.json()
+    mod_name = str(data.get("mod_name", "")).strip()
+    if not mod_name:
+        raise HTTPException(400, "Thiếu mod_name")
+    serial = generate_serial_key(mod_name)
+    if serial is None:
+        raise HTTPException(500, "Lỗi tạo serial key")
+    return JSONResponse({"ok": True, "serial": serial})
+
+
+@router.get("/api/dash/admin/dlc/serials/{mod_name}")
+async def api_dlc_serials(mod_name: str, request: Request):
+    """Owner xem tất cả serial của một mod."""
+    _require_owner(request)
+    if not _DLC_OK:
+        return JSONResponse({"serials": []})
+    serials = list_serials_for_mod(mod_name)
+    # Convert datetime objects to string
+    for s in serials:
+        for k, v in s.items():
+            if hasattr(v, "isoformat"):
+                s[k] = v.isoformat()
+    return JSONResponse({"serials": serials})
+
+
 # ── SPA SERVE ──────────────────────────────────────────────────────
 
 def _load_spa_html() -> str:

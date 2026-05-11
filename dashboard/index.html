@@ -1021,6 +1021,10 @@ select.form-input { appearance: none; cursor: pointer; }
       <div class="nav-item" data-page="changelog" onclick="navigate('changelog')">
         <span class="nav-icon">📋</span> Update Log
       </div>
+      <div class="nav-item" data-page="mod-shop" onclick="navigate('mod-shop')">
+        <span class="nav-icon">🛒</span> Cửa Hàng Mod
+        <span class="nav-badge hidden" id="shopBadge" style="background:linear-gradient(135deg,#f1c40f,#e67e22);color:#000;font-size:9px;padding:2px 5px">MỚI</span>
+      </div>
     </div>
 
     <!-- NAV OWNER -->
@@ -1705,6 +1709,64 @@ select.form-input { appearance: none; cursor: pointer; }
         <div id="changelogList"><div class="empty-state"><div class="loading-spin"></div></div></div>
       </div>
 
+
+      <!-- PAGE: MOD SHOP (DOELCES v1.0) -->
+      <div class="page" id="page-mod-shop">
+        <div class="section-title">🛒 Cửa Hàng Mod DLC</div>
+        <div class="section-sub">Mua và kích hoạt Mod để mở rộng trải nghiệm Anomalies. Kiếm Gold &amp; Gems bằng cách chơi game!</div>
+
+        <!-- Wallet card -->
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+          <div class="card" style="flex:1;min-width:160px;text-align:center;padding:18px 12px">
+            <div style="font-size:28px;margin-bottom:4px">🪙</div>
+            <div style="font-size:22px;font-weight:700;color:var(--accent)" id="shopGold">—</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Gold</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;text-align:center;padding:18px 12px">
+            <div style="font-size:28px;margin-bottom:4px">💎</div>
+            <div style="font-size:22px;font-weight:700;color:#a78bfa" id="shopGems">—</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Gems</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;text-align:center;padding:18px 12px">
+            <div style="font-size:28px;margin-bottom:4px">🎮</div>
+            <div style="font-size:22px;font-weight:700" id="shopGames">—</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Trận đã chơi</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;text-align:center;padding:18px 12px">
+            <div style="font-size:28px;margin-bottom:4px">📦</div>
+            <div style="font-size:22px;font-weight:700;color:#34d399" id="shopOwned">—</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Mods đã sở hữu</div>
+          </div>
+        </div>
+
+        <!-- Earn info -->
+        <div class="card" style="background:linear-gradient(135deg,rgba(250,166,26,0.08),rgba(167,139,250,0.08));border:1px solid rgba(250,166,26,0.2);margin-bottom:24px;padding:16px 20px">
+          <div style="font-weight:700;margin-bottom:8px;font-size:14px">💡 Cách kiếm Gold &amp; Gems</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.8">
+            🪙 <strong>Gold:</strong> Sống sót đến cuối → 1–35 Gold + số ngày sống sót &nbsp;|&nbsp; Chết giữa trận → 30 Gold cố định<br>
+            💎 <strong>Gems:</strong> Mỗi hành động trong game có <strong>50%</strong> cơ hội nhận 1–5 Gems (có thể cộng dồn)
+          </div>
+        </div>
+
+        <!-- DLC Grid -->
+        <div style="font-size:15px;font-weight:700;margin-bottom:14px">Tất Cả Mod DLC</div>
+        <div id="shopDlcGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+          <div class="empty-state"><div class="loading-spin"></div></div>
+        </div>
+      </div>
+
+      <!-- MODAL: Mua DLC -->
+      <div class="modal-overlay" id="modalBuyDlc">
+        <div class="modal" style="max-width:460px">
+          <div class="modal-title" id="buyDlcTitle">🛒 Xác nhận mua Mod</div>
+          <div id="buyDlcBody" style="color:var(--text2);font-size:14px;line-height:1.7;margin-bottom:16px"></div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('modalBuyDlc')">Hủy</button>
+            <button class="btn" id="buyDlcConfirmBtn" onclick="confirmBuyDlc()" style="background:linear-gradient(135deg,#f1c40f,#e67e22);color:#000;border:none">🛒 Xác Nhận Mua</button>
+          </div>
+        </div>
+      </div>
+
       <!-- PAGE: FEEDBACKS (OWNER) -->
       <div class="page" id="page-feedbacks">
         <div class="section-title">Feedback Người Chơi</div>
@@ -1921,6 +1983,7 @@ const PAGE_TITLES = {
   'guide':         'Hướng Dẫn Chơi',
   'settings':      'Cài Đặt Phòng',
   'changelog':     'Update Log',
+  'mod-shop':      '🛒 Cửa Hàng Mod DLC',
   'feedbacks':     'Feedback Người Chơi',
   'post-update':   'Đăng Update',
   'bans':          'Quản Lí Ban',
@@ -1946,6 +2009,7 @@ function navigate(page) {
   if (page === 'rooms') loadRooms();
   if (page === 'stats') loadStats();
   if (page === 'player-lookup') document.getElementById('lookupResult').innerHTML = '';
+  if (page === 'mod-shop') loadModShop();
 }
 
 // ══════════════════════════════════════════
@@ -2738,6 +2802,140 @@ function fmtDate(iso) {
 }
 function escHtml(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════════════════
+// MOD SHOP — DOELCES v1.0
+// ══════════════════════════════════════════
+let _shopDlcs = [];
+let _buyTarget = null;
+
+async function loadModShop() {
+  const grid = document.getElementById('shopDlcGrid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="empty-state"><div class="loading-spin"></div></div>';
+
+  try {
+    // Wallet
+    const [walletRes, dlcRes] = await Promise.all([
+      fetch('/api/dash/dlc/wallet'),
+      fetch('/api/dash/dlc/list'),
+    ]);
+    const wallet = await walletRes.json();
+    const dlcData = await dlcRes.json();
+
+    document.getElementById('shopGold').textContent  = (wallet.gold  || 0).toLocaleString('vi-VN');
+    document.getElementById('shopGems').textContent  = (wallet.gems  || 0).toLocaleString('vi-VN');
+    document.getElementById('shopGames').textContent = (wallet.total_games || 0).toLocaleString('vi-VN');
+    const ownedCount = (wallet.owned_mods || []).length;
+    document.getElementById('shopOwned').textContent = ownedCount;
+
+    _shopDlcs = dlcData.dlcs || [];
+
+    if (!_shopDlcs.length) {
+      grid.innerHTML = '<div class="empty-state">📭 Chưa có Mod DLC nào. Hãy kiểm tra lại sau!</div>';
+      return;
+    }
+
+    grid.innerHTML = _shopDlcs.map(dlc => _renderDlcCard(dlc)).join('');
+
+    // Show badge if there are new DLCs
+    const badge = document.getElementById('shopBadge');
+    if (badge && _shopDlcs.some(d => !d.owned)) badge.classList.remove('hidden');
+
+  } catch(e) {
+    grid.innerHTML = '<div class="empty-state">❌ Không thể tải danh sách Mod. Vui lòng thử lại.</div>';
+  }
+}
+
+function _renderDlcCard(dlc) {
+  const priceDisplay = dlc.price.display;
+  const owned = dlc.owned;
+  const features = (dlc.features || []).slice(0, 4).map(f =>
+    `<span style="font-size:10px;padding:2px 7px;border-radius:99px;background:rgba(88,101,242,0.15);color:#a5b4fc">${f}</span>`
+  ).join(' ');
+
+  const iconUrl = `/api/dash/dlc/icon/${encodeURIComponent(dlc.folder_name)}`;
+
+  return `
+  <div class="card" style="display:flex;flex-direction:column;gap:0;overflow:hidden;padding:0;border:1px solid var(--border);transition:box-shadow 0.2s" onmouseover="this.style.boxShadow='0 4px 24px rgba(88,101,242,0.18)'" onmouseout="this.style.boxShadow=''">
+    <!-- Icon header -->
+    <div style="height:120px;background:linear-gradient(135deg,#1a1f3e,#0d1021);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
+      <img src="${iconUrl}" alt="${escHtml(dlc.name)}" style="max-height:100px;max-width:100%;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.5))"
+           onerror="this.style.display='none';this.parentElement.innerHTML+='<div style=\\'font-size:48px\\'>📦</div>'">
+      ${owned ? '<div style="position:absolute;top:8px;right:8px;background:#57F287;color:#000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px">✅ Đã sở hữu</div>' : ''}
+      ${dlc.price.is_free ? '<div style="position:absolute;top:8px;left:8px;background:#f1c40f;color:#000;font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px">🆓 MIỄN PHÍ</div>' : ''}
+    </div>
+    <!-- Content -->
+    <div style="padding:16px;flex:1;display:flex;flex-direction:column;gap:8px">
+      <div style="font-weight:700;font-size:15px">${escHtml(dlc.name)}</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.5;flex:1">${escHtml(dlc.description)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">${features}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+        <div style="font-size:13px;font-weight:700;color:${dlc.price.currency==='gems'?'#a78bfa':'#f1c40f'}">${priceDisplay}</div>
+        ${owned
+          ? `<button class="btn" style="font-size:12px;padding:6px 14px;background:rgba(87,242,135,0.12);color:#57F287;border:1px solid rgba(87,242,135,0.3);cursor:default" disabled>✅ Đã có</button>`
+          : `<button class="btn" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,rgba(88,101,242,0.8),rgba(88,101,242,0.5));border:none" onclick="openBuyModal('${escHtml(dlc.folder_name)}')">🛒 Mua Ngay</button>`
+        }
+      </div>
+      <div style="font-size:10px;color:var(--text3)">v${escHtml(dlc.version)} · by ${escHtml(dlc.author)}</div>
+    </div>
+  </div>`;
+}
+
+function openBuyModal(folderName) {
+  const dlc = _shopDlcs.find(d => d.folder_name === folderName);
+  if (!dlc) return;
+  _buyTarget = dlc;
+  document.getElementById('buyDlcTitle').textContent = `🛒 Mua Mod: ${dlc.name}`;
+  const priceHtml = dlc.price.is_free
+    ? '🆓 <strong>Miễn phí!</strong> Bạn có thể nhận Mod này mà không tốn Gold hoặc Gems.'
+    : `Giá: <strong>${dlc.price.display}</strong><br>Số dư của bạn: <strong id="modalBalance">...</strong>`;
+  document.getElementById('buyDlcBody').innerHTML = `
+    <div style="margin-bottom:10px">${priceHtml}</div>
+    <div style="color:var(--text3);font-size:12px">Sau khi mua, Mod sẽ được kích hoạt ngay. Dùng <code>/settings</code> trên Discord để bật trong server.</div>
+  `;
+  // Load balance vào modal
+  if (!dlc.price.is_free) {
+    fetch('/api/dash/dlc/wallet').then(r=>r.json()).then(w => {
+      const el = document.getElementById('modalBalance');
+      if (el) {
+        const icon = dlc.price.currency === 'gems' ? '💎' : '🪙';
+        const bal  = dlc.price.currency === 'gems' ? (w.gems||0) : (w.gold||0);
+        el.textContent = `${icon} ${bal.toLocaleString('vi-VN')} ${dlc.price.currency}`;
+        el.style.color = bal >= dlc.price.amount ? '#57F287' : '#ff4444';
+      }
+    });
+  }
+  openModal('modalBuyDlc');
+}
+
+async function confirmBuyDlc() {
+  if (!_buyTarget) return;
+  const btn = document.getElementById('buyDlcConfirmBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang xử lý...';
+  try {
+    const res  = await fetch('/api/dash/dlc/buy', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ mod_name: _buyTarget.folder_name }),
+    });
+    const data = await res.json();
+    closeModal('modalBuyDlc');
+    if (data.ok) {
+      toast(`✅ Đã mua Mod "${_buyTarget.meta?.name || _buyTarget.folder_name}" thành công!`, 'success');
+      loadModShop(); // refresh
+    } else {
+      toast(`❌ ${data.message || 'Mua thất bại'}`, 'error');
+    }
+  } catch(e) {
+    toast('❌ Lỗi kết nối. Vui lòng thử lại.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🛒 Xác Nhận Mua';
+    _buyTarget = null;
+  }
 }
 
 // ══════════════════════════════════════════

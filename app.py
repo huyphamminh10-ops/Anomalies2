@@ -328,6 +328,22 @@ async def update_game_board():
 @update_game_board.before_loop
 async def startup_check():
     await bot.wait_until_ready()
+    # ── Khởi tạo hệ thống kinh tế DLC ─────────────────────────────
+    try:
+        from core.dlc_economy import ensure_economy_tables
+        ensure_economy_tables()
+    except Exception as _dlc_e:
+        print(f"[DLC] Lỗi khởi tạo bảng kinh tế: {_dlc_e}")
+
+    # ── Quét và load DLC ───────────────────────────────────────────
+    try:
+        from core.dlc_loader import initialize_dlcs
+        from roles.role_manager import RoleManager
+        _dlc_role_mgr = RoleManager()
+        _dlc_role_mgr.load_roles()
+        initialize_dlcs(role_manager=_dlc_role_mgr)
+    except Exception as _dlc_e:
+        print(f"[DLC] Lỗi khởi tạo DLC system: {_dlc_e}")
 
 
 MIN_PLAYERS       = 5
