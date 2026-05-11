@@ -1438,10 +1438,11 @@ async def on_voice_state_update(member, before, after):
                 return
 
             gs["original_nicknames"][pid] = member.nick
-            try:
-                await member.edit(nick="👻 Spectator")
-            except Exception:
-                pass
+            if not raw_config.get("no_remove_roles", False):
+                try:
+                    await member.edit(nick="👻 Spectator")
+                except Exception:
+                    pass
 
             engine.spectators.add(pid)
             await engine.dead_chat_mgr.add_spectator(member)

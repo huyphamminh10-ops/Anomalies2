@@ -1862,12 +1862,19 @@ class GameEngine:
     # ══════════════════════════════════════════════════
 
     def save_nick(self, member: disnake.Member) -> None:
-        """Lưu nick gốc của member nếu chưa lưu. Gọi TRƯỚC khi edit(nick=...)."""
+        """Lưu nick gốc của member nếu chưa lưu. Gọi TRƯỚC khi edit(nick=...).
+        Không làm gì nếu no_remove_roles đang bật."""
+        if self.config.no_remove_roles:
+            return
         if member.id not in self.nick_registry:
             self.nick_registry[member.id] = member.nick  # None nếu chưa có nick
 
     async def restore_nick(self, member: disnake.Member) -> None:
-        """Trả lại nick gốc đã lưu cho member."""
+        """Trả lại nick gốc đã lưu cho member.
+        Không làm gì nếu no_remove_roles đang bật."""
+        if self.config.no_remove_roles:
+            self.nick_registry.pop(member.id, None)
+            return
         original = self.nick_registry.pop(member.id, "NOT_SAVED")
         if original == "NOT_SAVED":
             return  # không có trong registry → bỏ qua
@@ -1877,7 +1884,11 @@ class GameEngine:
             pass
 
     async def restore_all_nicks(self) -> None:
-        """Trả lại tất cả nick đã lưu trong registry. Gọi lúc end_game."""
+        """Trả lại tất cả nick đã lưu trong registry. Gọi lúc end_game.
+        Không làm gì nếu no_remove_roles đang bật."""
+        if self.config.no_remove_roles:
+            self.nick_registry.clear()
+            return
         for pid, original in list(self.nick_registry.items()):
             member = self.guild.get_member(pid)
             if member:
