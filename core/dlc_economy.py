@@ -46,8 +46,7 @@ try:
 except ImportError:
     _SSL_CA = None
 
-# ── Config ─────────────────────────────────────────────────────────
-TIDB_URL = (os.environ.get("TIDB_URL") or "").strip()
+TIDB_URL = (os.environ.get("TIDB_URL_DLC") or os.environ.get("TIDB_URL") or "").strip()
 
 # Ký tự hợp lệ trong key
 _KEY_CHARSET = string.ascii_letters + string.digits + "@&%₫"

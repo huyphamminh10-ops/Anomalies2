@@ -306,7 +306,7 @@ class ProphecyModal(disnake.ui.Modal):
             "     Đêm nay Thám Tử Soi trúng Dị Thể\n"
             "     Đêm nay Sói giết Cá Mập"
         ),
-        style=disnake.TextStyle.paragraph,
+        style=disnake.TextInputStyle.paragraph,
         max_length=300,
         required=True
     )

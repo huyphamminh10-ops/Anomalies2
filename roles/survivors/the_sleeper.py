@@ -90,7 +90,7 @@ class TheSleeper(BaseRole):
         note_input = disnake.ui.TextInput(
             label="Ghi chú mới",
             placeholder="Viết quan sát, nghi ngờ của bạn...",
-            style=disnake.TextStyle.paragraph,
+            style=disnake.TextInputStyle.paragraph,
             max_length=500,
             required=True
         )
