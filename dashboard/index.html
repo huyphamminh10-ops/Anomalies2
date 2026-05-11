@@ -1012,6 +1012,9 @@ select.form-input { appearance: none; cursor: pointer; }
       <div class="nav-item" data-page="feedback-send" onclick="navigate('feedback-send')">
         <span class="nav-icon">📝</span> Báo Lỗi / Feedback
       </div>
+      <div class="nav-item" data-page="my-feedbacks" onclick="navigate('my-feedbacks')" id="navMyFeedbacks">
+        <span class="nav-icon">🔍</span> Xem Feedback của Tôi
+      </div>
       <div class="nav-item" data-page="guide" onclick="navigate('guide')">
         <span class="nav-icon">📖</span> Hướng Dẫn Chơi
       </div>
@@ -1136,12 +1139,17 @@ select.form-input { appearance: none; cursor: pointer; }
           </div>
 
           <div class="form-group">
-            <label class="form-label">Ảnh đính kèm (tối đa 5)</label>
+            <label class="form-label">Ảnh & File đính kèm (tối đa 12 ảnh + 6 file)</label>
             <div class="img-previews" id="fbImgPreviews"></div>
             <div class="feedback-upload-area" id="fbUploadArea" onclick="document.getElementById('fbFileInput').click()">
-              📁 Nhấn để chọn ảnh hoặc kéo thả vào đây
+              🖼️ Nhấn để chọn ảnh hoặc kéo thả (tối đa 12)
             </div>
             <input type="file" id="fbFileInput" accept="image/*" multiple style="display:none" onchange="handleFbImages(event)"/>
+            <input type="file" id="fbDocInput" accept=".pdf,.doc,.docx,.txt,.zip,.rar,.7z,.xlsx,.pptx" multiple style="display:none" onchange="handleFbFiles(event)"/>
+            <div class="feedback-upload-area" id="fbDocUploadArea" onclick="document.getElementById('fbDocInput').click()" style="margin-top:8px">
+              📎 Nhấn để đính kèm File (PDF, DOC, ZIP...)
+            </div>
+            <div class="img-previews" id="fbFilePreviews" style="margin-top:8px"></div>
           </div>
 
           <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -1774,6 +1782,13 @@ select.form-input { appearance: none; cursor: pointer; }
         <div id="feedbacksList"><div class="empty-state"><div class="loading-spin"></div></div></div>
       </div>
 
+      <!-- PAGE: XEM FEEDBACK CỦA TÔI (mọi user) -->
+      <div class="page" id="page-my-feedbacks">
+        <div class="section-title">📬 Feedback của Tôi</div>
+        <div class="section-sub">Xem lại các feedback bạn đã gửi và phản hồi từ Dev.</div>
+        <div id="myFeedbacksList"><div class="empty-state"><div class="loading-spin"></div></div></div>
+      </div>
+
       <!-- PAGE: POST UPDATE (OWNER) -->
       <div class="page" id="page-post-update">
         <div class="section-title">Đăng Thông Báo Update</div>
@@ -1872,13 +1887,21 @@ select.form-input { appearance: none; cursor: pointer; }
 
 <!-- MODAL: REPLY FEEDBACK -->
 <div class="modal-overlay" id="modalReply">
-  <div class="modal">
+  <div class="modal" style="max-width:520px">
     <div class="modal-title">💬 Phản Hồi Feedback</div>
     <div class="form-group">
-      <textarea class="form-input" id="replyText" placeholder="Nhập nội dung phản hồi..." rows="4"></textarea>
+      <textarea class="form-input" id="replyText" placeholder="Nhập nội dung phản hồi (có thể để trống nếu chỉ gửi ảnh)..." rows="4"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="font-size:12px;color:var(--text2)">Ảnh đính kèm (tối đa 12)</label>
+      <div class="img-previews" id="replyImgPreviews"></div>
+      <div class="feedback-upload-area" onclick="document.getElementById('replyImgInput').click()" style="margin-top:6px;padding:10px 14px;font-size:13px">
+        🖼️ Thêm ảnh vào phản hồi
+      </div>
+      <input type="file" id="replyImgInput" accept="image/*" multiple style="display:none" onchange="handleReplyImages(event)"/>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modalReply')">Hủy</button>
+      <button class="btn btn-ghost" onclick="closeModal('modalReply');replyImages=[];renderReplyPreviews()">Hủy</button>
       <button class="btn btn-primary" onclick="submitReply()">Gửi Phản Hồi</button>
     </div>
   </div>
@@ -1922,7 +1945,9 @@ let SELECTED_GUILD = null;
 let CAN_EDIT_GUILD = false;
 let CURRENT_CONFIG = {};
 let REPLY_TARGET = null;
+let REPLY_FB_ID   = null;   // TiDB ID (15 chars) nếu có
 let ROOMS_INTERVAL = null;
+let replyImages = [];       // Ảnh trong reply modal
 
 // ══════════════════════════════════════════
 // INIT
@@ -1980,6 +2005,7 @@ const PAGE_TITLES = {
   'stats':         'Thống Kê',
   'player-lookup': 'Tra Cứu Người Chơi',
   'feedback-send': 'Báo Lỗi / Feedback',
+  'my-feedbacks':  'Feedback của Tôi',
   'guide':         'Hướng Dẫn Chơi',
   'settings':      'Cài Đặt Phòng',
   'changelog':     'Update Log',
@@ -2006,8 +2032,12 @@ function navigate(page) {
     loadGuilds();
     renderSettingsGuild();
   }
-  if (page === 'rooms') loadRooms();
-  if (page === 'stats') loadStats();
+  if (page === 'rooms')        loadRooms();
+  if (page === 'stats')        loadStats();
+  if (page === 'feedbacks')    loadFeedbacks();
+  if (page === 'my-feedbacks') loadMyFeedbacks();
+  if (page === 'changelog')    loadChangelog();
+  if (page === 'bans')         loadBans();
   if (page === 'player-lookup') document.getElementById('lookupResult').innerHTML = '';
   if (page === 'mod-shop') loadModShop();
 }
@@ -2273,7 +2303,7 @@ let fbImages = [];
 
 function handleFbImages(e) {
   const files = Array.from(e.target.files);
-  files.slice(0, 5 - fbImages.length).forEach(f => {
+  files.slice(0, 12 - fbImages.length).forEach(f => {
     const reader = new FileReader();
     reader.onload = ev => {
       fbImages.push(ev.target.result);
@@ -2283,6 +2313,35 @@ function handleFbImages(e) {
   });
   e.target.value = '';
 }
+
+// Xử lý file đính kèm (không phải ảnh)
+let fbFiles = [];  // {name, dataUrl, size}
+function handleFbFiles(e) {
+  const files = Array.from(e.target.files);
+  files.slice(0, 6 - fbFiles.length).forEach(f => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      fbFiles.push({ name: f.name, dataUrl: ev.target.result, size: f.size, type: f.type });
+      renderFbFilePreviews();
+    };
+    reader.readAsDataURL(f);
+  });
+  e.target.value = '';
+}
+function renderFbFilePreviews() {
+  const el = document.getElementById('fbFilePreviews');
+  if (!el) return;
+  if (!fbFiles.length) { el.innerHTML = ''; return; }
+  el.innerHTML = fbFiles.map((f, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;margin-bottom:4px">
+      <span>📎</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(f.name)}</span>
+      <span style="color:var(--text3)">${(f.size/1024).toFixed(0)}KB</span>
+      <button onclick="removeFbFile(${i})" style="color:var(--red);font-size:14px;line-height:1">✕</button>
+    </div>
+  `).join('');
+}
+function removeFbFile(i) { fbFiles.splice(i, 1); renderFbFilePreviews(); }
 
 function renderFbPreviews() {
   document.getElementById('fbImgPreviews').innerHTML = fbImages.map((src, i) => `
@@ -2300,8 +2359,10 @@ function removeFbImg(i) {
 
 function clearFeedback() {
   fbImages = [];
+  fbFiles  = [];
   document.getElementById('fbContent').value = '';
   renderFbPreviews();
+  renderFbFilePreviews();
 }
 
 async function compressImage(dataUrl, maxSide = 800, quality = 0.7) {
@@ -2325,16 +2386,18 @@ async function compressImage(dataUrl, maxSide = 800, quality = 0.7) {
 
 async function submitFeedback() {
   const content = document.getElementById('fbContent').value.trim();
-  if (!content && !fbImages.length) { toast('Nhập nội dung hoặc thêm ảnh!', 'error'); return; }
+  if (!content && !fbImages.length && !fbFiles.length) { toast('Nhập nội dung hoặc thêm ảnh/file!', 'error'); return; }
   const btn = document.querySelector('#page-feedback-send .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang gửi...'; }
   try {
-    // Compress images to keep under 1MB each (base64)
+    // Compress images
     const compressed = await Promise.all(fbImages.map(img => compressImage(img)));
+    // Files as base64 data URLs
+    const fileUrls = fbFiles.map(f => f.dataUrl);
     const res = await fetch('/api/dash/feedback', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ content, images: compressed })
+      body: JSON.stringify({ content, images: compressed, files: fileUrls })
     });
     if (res.ok) {
       const data = await res.json().catch(()=>({}));
@@ -2359,7 +2422,7 @@ if (uploadArea) {
     e.preventDefault();
     uploadArea.style.borderColor = '';
     const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
-    files.slice(0, 5 - fbImages.length).forEach(f => {
+    files.slice(0, 12 - fbImages.length).forEach(f => {
       const r = new FileReader();
       r.onload = ev => { fbImages.push(ev.target.result); renderFbPreviews(); };
       r.readAsDataURL(f);
@@ -2534,11 +2597,18 @@ async function loadFeedbacks() {
           </div>
         </div>
         ${f.content ? `<div class="feedback-content">${escHtml(f.content)}</div>` : ''}
-        ${f.images?.length ? `<div class="feedback-images">${f.images.map(img=>`<img src="${img}" onclick="viewImg('${img}')" alt=""/>`).join('')}</div>` : ''}
-        ${f.reply ? `<div class="feedback-reply-box"><div class="feedback-reply-label">Đã phản hồi</div><div class="feedback-reply-text">${escHtml(f.reply)}</div></div>` : ''}
+        ${f.images?.filter(u=>u&&!u.startsWith('data:application')&&!u.includes('/api/dash/feedback/file/')).length ? `<div class="feedback-images">${f.images.filter(u=>u&&!u.startsWith('data:application')).map(img=>`<img src="${img}" onclick="viewImg('${img}')" alt=""/>`).join('')}</div>` : ''}
+        ${f.files?.length ? `<div style="margin-bottom:8px">${f.files.map((fu,fi)=>`<a href="${fu}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--accent);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 8px;margin:2px;text-decoration:none">📎 File ${fi+1}</a>`).join('')}</div>` : ''}
+        ${f.files?.length ? `<div style="margin-bottom:8px">${f.files.map((fu,fi)=>`<a href="${fu}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--accent);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 8px;margin:2px;text-decoration:none">📎 File ${fi+1}</a>`).join('')}</div>` : ''}
+        ${f.reply || f.reply_images?.length ? `
+          <div class="feedback-reply-box">
+            <div class="feedback-reply-label">✅ Đã phản hồi</div>
+            ${f.reply ? `<div class="feedback-reply-text">${escHtml(f.reply)}</div>` : ''}
+            ${f.reply_images?.length ? `<div class="feedback-images" style="margin-top:8px">${f.reply_images.map(img=>`<img src="${img}" onclick="viewImg('${img}')" alt=""/>`).join('')}</div>` : ''}
+          </div>` : ''}
         <div class="feedback-actions" style="margin-top:10px">
-          <button class="btn btn-ghost btn-sm" onclick="openReply('${f.created_at}')">💬 Phản Hồi</button>
-          <button class="btn btn-sm" style="background:rgba(240,80,80,0.1);color:var(--red);border:1px solid var(--red)" onclick="deleteFeedback('${escHtml(f._id || f.created_at)}', this)">🗑 Xóa</button>
+          <button class="btn btn-ghost btn-sm" onclick="openReply('${f.created_at}','${f.id||''}')">💬 Phản Hồi</button>
+          <button class="btn btn-sm" style="background:rgba(240,80,80,0.1);color:var(--red);border:1px solid var(--red)" onclick="deleteFeedback('${escHtml(f.id || f._id || f.created_at)}', this)">🗑 Xóa</button>
           <button class="btn btn-sm" style="background:rgba(240,80,80,0.1);color:var(--red);border:1px solid var(--red)" onclick="quickBanFromFeedback('${escHtml(f.user_id)}','${escHtml(f.username)}')">⛔ Ban User</button>
         </div>
       </div>
@@ -2546,10 +2616,33 @@ async function loadFeedbacks() {
   } catch(e) {}
 }
 
-function openReply(created_at) {
+function openReply(created_at, fb_id) {
   REPLY_TARGET = created_at;
+  REPLY_FB_ID  = fb_id || null;
+  replyImages  = [];
   document.getElementById('replyText').value = '';
+  renderReplyPreviews();
   openModal('modalReply');
+}
+
+function handleReplyImages(e) {
+  const files = Array.from(e.target.files);
+  files.slice(0, 12 - replyImages.length).forEach(f => {
+    const r = new FileReader();
+    r.onload = ev => { replyImages.push(ev.target.result); renderReplyPreviews(); };
+    r.readAsDataURL(f);
+  });
+  e.target.value = '';
+}
+function renderReplyPreviews() {
+  const el = document.getElementById('replyImgPreviews');
+  if (!el) return;
+  el.innerHTML = replyImages.map((src, i) => `
+    <div class="img-preview-item">
+      <img src="${src}" alt=""/>
+      <div class="remove-img" onclick="replyImages.splice(${i},1);renderReplyPreviews()">✕</div>
+    </div>
+  `).join('');
 }
 
 function quickBanFromFeedback(user_id, username) {
@@ -2586,16 +2679,76 @@ async function deleteFeedback(fbId, btn) {
 
 async function submitReply() {
   const reply = document.getElementById('replyText').value.trim();
-  if (!reply) { toast('Nhập nội dung phản hồi!', 'error'); return; }
+  if (!reply && !replyImages.length) { toast('Nhập nội dung hoặc thêm ảnh phản hồi!', 'error'); return; }
+  const btn = document.querySelector('#modalReply .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang gửi...'; }
   try {
+    // Compress reply images
+    const compressedReplyImgs = await Promise.all(replyImages.map(img => compressImage(img)));
     const res = await fetch(`/api/dash/admin/feedback/reply`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ reply, created_at: REPLY_TARGET })
+      body: JSON.stringify({
+        reply,
+        reply_images: compressedReplyImgs,
+        created_at:   REPLY_TARGET,
+        fb_id:        REPLY_FB_ID || ''
+      })
     });
-    if (res.ok) { toast('✅ Đã gửi phản hồi!', 'success'); closeModal('modalReply'); loadFeedbacks(); }
-    else toast('Gửi thất bại.', 'error');
+    if (res.ok) {
+      toast('✅ Đã gửi phản hồi!', 'success');
+      replyImages = [];
+      closeModal('modalReply');
+      loadFeedbacks();
+    } else toast('Gửi thất bại.', 'error');
   } catch(e) { toast('Lỗi kết nối.', 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = 'Gửi Phản Hồi'; } }
+}
+
+// ══════════════════════════════════════════
+// XEM FEEDBACK CỦA TÔI (mọi user đã đăng nhập)
+// ══════════════════════════════════════════
+async function loadMyFeedbacks() {
+  const el = document.getElementById('myFeedbacksList');
+  if (!el) return;
+  el.innerHTML = '<div class="empty-state"><div class="loading-spin"></div></div>';
+  try {
+    const res = await fetch('/api/dash/my-feedbacks');
+    if (res.status === 401) {
+      el.innerHTML = '<div class="empty-state"><p>Bạn chưa đăng nhập.</p></div>';
+      return;
+    }
+    const fbs = await res.json();
+    if (!Array.isArray(fbs) || !fbs.length) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>Bạn chưa gửi feedback nào.</p></div>';
+      return;
+    }
+    el.innerHTML = fbs.map(f => `
+      <div class="feedback-card">
+        <div class="feedback-header">
+          <img src="${f.avatar||'/favicon.ico'}" alt="" onerror="this.src='/favicon.ico'"/>
+          <div>
+            <div class="feedback-username">Feedback của bạn</div>
+            <div class="feedback-time">${fmtDate(f.created_at)}</div>
+          </div>
+          <span style="margin-left:auto;font-size:11px;padding:2px 8px;border-radius:99px;background:${f.reply||f.reply_images?.length?'rgba(61,214,140,0.12)':'rgba(245,194,49,0.12)'};color:${f.reply||f.reply_images?.length?'var(--green)':'var(--yellow)'}">
+            ${f.reply||f.reply_images?.length?'✅ Đã phản hồi':'⏳ Chờ phản hồi'}
+          </span>
+        </div>
+        ${f.content ? `<div class="feedback-content">${escHtml(f.content)}</div>` : ''}
+        ${f.images?.length ? `<div class="feedback-images">${f.images.filter(u=>u&&!u.startsWith('data:application')).map(img=>`<img src="${img}" onclick="viewImg('${img}')" alt=""/>`).join('')}</div>` : ''}
+        ${f.files?.length ? `<div style="margin-bottom:8px">${f.files.map(fu=>`<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);padding:3px 0">📎 <span>${escHtml(fu.split('/').pop()||fu.slice(0,40))}</span></div>`).join('')}</div>` : ''}
+        ${f.reply || f.reply_images?.length ? `
+          <div class="feedback-reply-box">
+            <div class="feedback-reply-label">💬 Phản hồi từ Dev</div>
+            ${f.reply ? `<div class="feedback-reply-text">${escHtml(f.reply)}</div>` : ''}
+            ${f.reply_images?.length ? `<div class="feedback-images" style="margin-top:8px">${f.reply_images.map(img=>`<img src="${img}" onclick="viewImg('${img}')" alt=""/>`).join('')}</div>` : ''}
+          </div>` : ''}
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state"><p style="color:var(--red)">Lỗi tải feedback: ${e.message}</p></div>`;
+  }
 }
 
 // ══════════════════════════════════════════

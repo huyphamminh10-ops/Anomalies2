@@ -663,10 +663,21 @@ async def api_guild_status(guild_id: str, request: Request):
 @router.get("/api/dash/changelog")
 async def api_changelog(request: Request):
     _require_auth(request)
+
+    # Ưu tiên TiDB
+    try:
+        loop = asyncio.get_event_loop()
+        res  = await loop.run_in_executor(None, lambda: database_tidb.get_update_logs(limit=50, offset=0))
+        if isinstance(res, dict) and res.get("ok") and res.get("items"):
+            return JSONResponse(res["items"])
+    except Exception as e:
+        print(f"[api_changelog] Lỗi TiDB get: {e}")
+
+    # Fallback: MongoDB
     cl_col = _col("changelogs")
     if cl_col is None:
         return JSONResponse([])
-    logs = list(cl_col.find({}, {"_id": 0}).sort("created_at", -1).limit(30))
+    logs = list(cl_col.find({}, {"_id": 0}).sort("created_at", -1).limit(50))
     return JSONResponse(logs)
 
 
@@ -675,22 +686,53 @@ async def api_feedback(request: Request):
     s    = _require_auth(request)
     data = await request.json()
     content = str(data.get("content", "")).strip()[:2000]
-    images  = [str(u) for u in data.get("images", [])[:5] if u]
-    # FIX: cho phép nội dung rỗng nếu có ảnh
-    if not content and not images:
+    # Tăng giới hạn ảnh lên 12, hỗ trợ thêm file đính kèm (tối đa 6)
+    images  = [str(u) for u in data.get("images", [])[:12] if u]
+    files   = [str(u) for u in data.get("files",  [])[:6]  if u]
+    if not content and not images and not files:
         raise HTTPException(400, "Nội dung trống")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Lưu vào TiDB (primary) — dùng đúng hàm insert_feedback
+    tidb_id = None
+    try:
+        loop = asyncio.get_event_loop()
+        def _tidb_insert():
+            all_media = images + files
+            return database_tidb.insert_feedback(
+                user_id  = s["user_id"],
+                username = s["username"],
+                avatar   = s["avatar"],
+                content  = content,
+                images   = all_media,
+            )
+        res = await loop.run_in_executor(None, _tidb_insert)
+        if isinstance(res, dict) and res.get("ok"):
+            tidb_id = res.get("id")
+    except Exception as e:
+        print(f"[api_feedback] Lỗi TiDB insert: {e}")
+
+    # Lưu vào MongoDB (backup / fallback)
     fb_col = _col("feedbacks")
     if fb_col is not None:
-        fb_col.insert_one({
-            "user_id":    s["user_id"],
-            "username":   s["username"],
-            "avatar":     s["avatar"],
-            "content":    content,
-            "images":     images,
-            "reply":      None,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-    return JSONResponse({"ok": True})
+        try:
+            fb_col.insert_one({
+                "user_id":      s["user_id"],
+                "username":     s["username"],
+                "avatar":       s["avatar"],
+                "content":      content,
+                "images":       images,
+                "files":        files,
+                "reply":        None,
+                "reply_images": [],
+                "tidb_id":      tidb_id,
+                "created_at":   now,
+            })
+        except Exception as e:
+            print(f"[api_feedback] Lỗi MongoDB insert: {e}")
+
+    return JSONResponse({"ok": True, "id": tidb_id})
 
 
 @router.get("/api/dash/stats")
@@ -841,15 +883,78 @@ async def api_player_lookup(user_id: str, request: Request):
         raise HTTPException(500, f"Lỗi kết nối database: {type(exc).__name__}")
 
 
+# ── API FEEDBACK — USER XEM FEEDBACK CỦA CHÍNH MÌNH ──────────────
+
+@router.get("/api/dash/my-feedbacks")
+async def api_my_feedbacks(request: Request):
+    """
+    User thường xem lại feedback của chính họ (kèm reply từ Owner).
+    """
+    s = _require_auth(request)
+    uid = s["user_id"]
+
+    results = []
+
+    # Tìm trong TiDB theo user_id
+    try:
+        loop = asyncio.get_event_loop()
+        def _fetch():
+            # get_feedbacks trả tất cả — filter theo user_id phía Python
+            res = database_tidb.get_feedbacks(limit=500, offset=0)
+            if not (isinstance(res, dict) and res.get("ok")):
+                return []
+            return [i for i in res.get("items", []) if str(i.get("user_id", "")) == str(uid)]
+        results = await loop.run_in_executor(None, _fetch)
+    except Exception as e:
+        print(f"[api_my_feedbacks] Lỗi TiDB: {e}")
+
+    # Fallback MongoDB nếu TiDB rỗng
+    if not results:
+        fb_col = _col("feedbacks")
+        if fb_col is not None:
+            try:
+                docs = list(
+                    fb_col.find({"user_id": uid}, {"_id": 0})
+                           .sort("created_at", -1)
+                           .limit(50)
+                )
+                for d in docs:
+                    d.setdefault("files", [])
+                    d.setdefault("reply_images", [])
+                results = docs
+            except Exception as e:
+                print(f"[api_my_feedbacks] Lỗi MongoDB: {e}")
+
+    return JSONResponse(results)
+
+
 # ── API — OWNER ONLY ───────────────────────────────────────────────
 
 @router.get("/api/dash/admin/feedbacks")
 async def api_admin_feedbacks(request: Request):
     _require_owner(request)
+
+    # Ưu tiên lấy từ TiDB (source of truth)
+    try:
+        loop = asyncio.get_event_loop()
+        res  = await loop.run_in_executor(None, lambda: database_tidb.get_feedbacks(limit=200, offset=0))
+        if isinstance(res, dict) and res.get("ok") and res.get("items"):
+            items = res["items"]
+            for item in items:
+                item.setdefault("files", [])
+                item.setdefault("reply_images", [])
+            return JSONResponse(items)
+    except Exception as e:
+        print(f"[api_admin_feedbacks] Lỗi TiDB get: {e}")
+
+    # Fallback: MongoDB
     fb_col = _col("feedbacks")
     if fb_col is None:
         return JSONResponse([])
-    docs = list(fb_col.find({}, {"_id": 0}).sort("created_at", -1).limit(100))
+    docs = list(fb_col.find({}, {"_id": 0}).sort("created_at", -1).limit(200))
+    for d in docs:
+        d.setdefault("files", [])
+        d.setdefault("reply_images", [])
     return JSONResponse(docs)
 
 
@@ -901,19 +1006,21 @@ async def api_reply_feedback(request: Request):
     """
     Ghi phản hồi feedback vào DB và (tuỳ chọn) gửi qua Discord Webhook.
     Body JSON:
-      created_at  — định danh feedback trong MongoDB
-      fb_id       — ID 15 ký tự TiDB (nếu có)
-      reply       — nội dung phản hồi (tối đa 1000 ký tự)
-      webhook_url — (tuỳ chọn) Discord Webhook URL để thông báo user
+      created_at   — định danh feedback trong MongoDB
+      fb_id        — ID 15 ký tự TiDB (nếu có)
+      reply        — nội dung phản hồi (tối đa 1000 ký tự)
+      reply_images — list URL ảnh đính kèm trong reply (tối đa 12)
+      webhook_url  — (tuỳ chọn) Discord Webhook URL để thông báo user
     """
     _require_owner(request)
-    data        = await request.json()
-    created_at  = data.get("created_at", "")
-    fb_id       = str(data.get("fb_id", "")).strip()
-    reply       = str(data.get("reply", "")).strip()[:1000]
-    webhook_url = str(data.get("webhook_url", "")).strip()
+    data         = await request.json()
+    created_at   = data.get("created_at", "")
+    fb_id        = str(data.get("fb_id", "")).strip()
+    reply        = str(data.get("reply", "")).strip()[:1000]
+    reply_images = [str(u) for u in data.get("reply_images", [])[:12] if u]
+    webhook_url  = str(data.get("webhook_url", "")).strip()
 
-    if not reply:
+    if not reply and not reply_images:
         raise HTTPException(400, "Nội dung phản hồi không được trống")
 
     # Lưu vào MongoDB
@@ -922,7 +1029,7 @@ async def api_reply_feedback(request: Request):
         try:
             fb_col.update_one(
                 {"created_at": created_at},
-                {"$set": {"reply": reply}},
+                {"$set": {"reply": reply, "reply_images": reply_images}},
             )
         except Exception as exc:
             print(f"[api_reply_feedback] Lỗi MongoDB: {exc}")
@@ -931,7 +1038,9 @@ async def api_reply_feedback(request: Request):
     if fb_id:
         try:
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, database_tidb.reply_feedback, fb_id, reply)
+            # Nếu TiDB reply_feedback chỉ nhận text, kết hợp reply + image urls
+            combined_reply = reply
+            await loop.run_in_executor(None, database_tidb.reply_feedback, fb_id, combined_reply)
         except Exception as exc:
             print(f"[api_reply_feedback] Lỗi TiDB: {exc}")
 
@@ -939,16 +1048,25 @@ async def api_reply_feedback(request: Request):
     webhook_sent = False
     if webhook_url.startswith("https://discord.com/api/webhooks/"):
         try:
-            payload = {
-                "embeds": [{
-                    "title": "💬 Phản hồi từ Bot Owner",
-                    "description": reply,
-                    "color": 0x7c6af7,
-                    "footer": {
-                        "text": f"Anomalies Bot • {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
-                    },
-                }]
+            embed: dict = {
+                "title": "💬 Phản hồi từ Bot Owner",
+                "color": 0x7c6af7,
+                "footer": {
+                    "text": f"Anomalies Bot • {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+                },
             }
+            if reply:
+                embed["description"] = reply
+            if reply_images:
+                embed["image"] = {"url": reply_images[0]}
+            payload: dict = {"embeds": [embed]}
+            # Thêm ảnh phụ như attachments nếu có nhiều hơn 1
+            if len(reply_images) > 1:
+                extra_embeds = [
+                    {"image": {"url": u}, "color": 0x7c6af7}
+                    for u in reply_images[1:]
+                ]
+                payload["embeds"] = [embed] + extra_embeds
             async with httpx.AsyncClient() as http:
                 wh_resp = await http.post(webhook_url, json=payload, timeout=10)
                 webhook_sent = wh_resp.status_code in (200, 204)
@@ -960,22 +1078,49 @@ async def api_reply_feedback(request: Request):
 
 @router.post("/api/dash/admin/changelog")
 async def api_post_changelog(request: Request):
-    _require_owner(request)
+    s = _require_owner(request)
     data    = await request.json()
     title   = str(data.get("title",   "")).strip()[:200]
-    content = str(data.get("content", "")).strip()[:5000]
+    content_text = str(data.get("content", "")).strip()[:5000]
     version = str(data.get("version", "")).strip()[:20]
-    if not title or not content:
+    if not title or not content_text:
         raise HTTPException(400, "Thiếu tiêu đề hoặc nội dung")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Lưu vào TiDB (primary)
+    tidb_id = None
+    try:
+        loop = asyncio.get_event_loop()
+        res  = await loop.run_in_executor(
+            None,
+            lambda: database_tidb.insert_update_log(
+                user_id = s["user_id"],
+                title   = title,
+                content = content_text,
+                version = version,
+            )
+        )
+        if isinstance(res, dict) and res.get("ok"):
+            tidb_id = res.get("id")
+    except Exception as e:
+        print(f"[api_post_changelog] Lỗi TiDB insert: {e}")
+
+    # Backup vào MongoDB
     cl_col = _col("changelogs")
     if cl_col is not None:
-        cl_col.insert_one({
-            "title":      title,
-            "content":    content,
-            "version":    version,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-    return JSONResponse({"ok": True})
+        try:
+            cl_col.insert_one({
+                "title":      title,
+                "content":    content_text,
+                "version":    version,
+                "tidb_id":    tidb_id,
+                "created_at": now,
+            })
+        except Exception as e:
+            print(f"[api_post_changelog] Lỗi MongoDB insert: {e}")
+
+    return JSONResponse({"ok": True, "id": tidb_id})
 
 
 @router.get("/api/dash/admin/bans")

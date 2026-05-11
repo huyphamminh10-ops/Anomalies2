@@ -463,3 +463,125 @@ def validate_balance(roles: dict) -> tuple[bool, str]:
     return True, "✅ Cân bằng ổn định"
 
 
+
+
+# ══════════════════════════════════════════════════════════════════
+# v2.0 EXTENSION — Hỗ trợ phe mới từ DLC (NewTeam + CUSTOM_META)
+# ══════════════════════════════════════════════════════════════════
+
+class ExtendedRoleDistributor(RoleDistributor):
+    """
+    Mở rộng RoleDistributor để hỗ trợ:
+    - Phe mới từ DLC (NewTeam)
+    - CUSTOM_META.py override phân phối
+    - Nhiều phe tuỳ chỉnh cùng lúc
+
+    Cách dùng:
+        from core.role_distributor import ExtendedRoleDistributor
+        from core.dlc_loader import collect_all_custom_metas
+
+        custom_metas = collect_all_custom_metas()
+        distributor = ExtendedRoleDistributor(role_classes, custom_metas)
+        result = distributor.distribute(members)
+    """
+
+    def __init__(self, role_classes: list, custom_meta_modules: dict = None):
+        super().__init__(role_classes)
+        # custom_meta_modules: {folder_name: module}
+        self._custom_metas = custom_meta_modules or {}
+        # Gộp tất cả TEAM_META_MAP từ custom_metas
+        self._extra_team_metas: dict[str, dict] = {}      # {team_name: meta_dict}
+        self._extra_slot_fns: list[callable] = []          # [get_slot_counts(total) → dict]
+        for folder_name, module in self._custom_metas.items():
+            if hasattr(module, "TEAM_META_MAP"):
+                self._extra_team_metas.update(module.TEAM_META_MAP)
+            if hasattr(module, "get_slot_counts"):
+                self._extra_slot_fns.append(module.get_slot_counts)
+
+    def distribute(self, members: list) -> dict:
+        total = len(members)
+        if total < 5:
+            raise ValueError(f"Cần ít nhất 5 người chơi, hiện có {total}.")
+
+        # ── 1. Tính slot cho các phe mặc định ─────────────────────
+        if total == 5:   n_s, n_a, n_u = 4, 1, 0
+        elif total == 6: n_s, n_a, n_u = 4, 2, 0
+        elif total == 7: n_s, n_a, n_u = 4, 2, 1
+        elif total == 8: n_s, n_a, n_u = 4, 2, 2
+        elif total == 9: n_s, n_a, n_u = 5, 3, 1
+        elif 10 <= total <= 12:
+            n_s = round(total * 0.50); n_a = round(total * 0.25); n_u = total - n_s - n_a
+        else:
+            n_s = round(total * 0.55); n_a = round(total * 0.30); n_u = total - n_s - n_a
+        if n_a < 1: n_a = 1; n_s -= 1
+
+        # ── 2. Tính slot cho phe tuỳ chỉnh ────────────────────────
+        custom_slots: dict[str, int] = {}
+        for fn in self._extra_slot_fns:
+            try: custom_slots.update(fn(total))
+            except Exception as e: print(f"[ExtDistributor] ⚠ get_slot_counts lỗi: {e}")
+
+        # Trừ slot của phe tuỳ chỉnh từ survivors (phe lớn nhất) để tổng = total
+        total_custom = sum(custom_slots.values())
+        n_s = max(0, n_s - total_custom)
+
+        print(
+            f"[ExtDistributor] {total} người → "
+            f"Survivors={n_s} | Anomalies={n_a} | Unknown={n_u} | "
+            + " | ".join(f"{k}={v}" for k, v in custom_slots.items())
+        )
+
+        # ── 3. Build pool từng phe ─────────────────────────────────
+        s_pool = self._build_pool("Survivors", SURVIVORS_META, n_s, total)
+        a_pool = self._build_pool("Anomalies", ANOMALIES_META, n_a, total)
+        u_pool = self._build_pool("Unknown",   UNKNOWN_META,   n_u, total)
+        s_pool = self._apply_requires(s_pool)
+
+        # Build pool cho phe tuỳ chỉnh
+        custom_pools = []
+        for team_name, count in custom_slots.items():
+            meta = self._extra_team_metas.get(team_name, {})
+            if meta and count > 0:
+                pool = self._build_pool(team_name, meta, count, total)
+                custom_pools.extend(pool)
+            elif count > 0:
+                print(f"[ExtDistributor] ⚠ Không tìm thấy META cho phe '{team_name}', bỏ qua {count} slot")
+
+        full_pool = s_pool + a_pool + u_pool + custom_pools
+        full_pool = self._fix_size(full_pool, total, n_s, n_a, n_u)
+
+        # ── 4. Inject event role ───────────────────────────────────
+        try:
+            from event_roles_loader import get_loader as _get_event_loader
+            event_loader = _get_event_loader()
+            full_pool = event_loader.inject_into_pool(full_pool, total)
+            ecls = event_loader.get_current_role_class()
+            if ecls and ecls.name not in self._class_map:
+                self._class_map[ecls.name] = ecls
+        except Exception as _e:
+            print(f"[ExtDistributor] ⚠ Event inject lỗi: {_e}")
+
+        random.shuffle(full_pool)
+
+        # ── 5. Gán role cho member ─────────────────────────────────
+        result = {}
+        for member, role_name in zip(members, full_pool):
+            cls = self._class_map.get(role_name)
+            if cls is None:
+                cls = self._class_map.get("Dân Thường") or self._class_map.get("Dị Thể")
+            if cls:
+                result[member.id] = cls(member)
+            else:
+                print(f"[ExtDistributor] ⚠ Không tìm thấy class cho '{role_name}'!")
+
+        self._log_summary(result)
+        return result
+
+
+def distribute_roles_extended(members: list, role_classes: list, custom_metas: dict = None) -> dict:
+    """
+    Wrapper gọi ExtendedRoleDistributor — dùng thay cho distribute_roles() khi có DLC phe mới.
+    custom_metas: kết quả của collect_all_custom_metas() từ dlc_loader.
+    """
+    distributor = ExtendedRoleDistributor(role_classes, custom_metas)
+    return distributor.distribute(members)
