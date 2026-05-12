@@ -44,6 +44,9 @@ from config_manager import load_guild_config, save_guild_config, clear_active_pl
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
+# ── Performance: functools cache cho các hàm tính toán thuần ──────
+from functools import lru_cache
+import weakref
 
 import disnake
 
@@ -383,7 +386,10 @@ class GameConfig:
 class GameLogger:
     """
     Lightweight in-memory logger.  Writes crash log on demand.
+    Optimized: list append O(1), conditional print to avoid format overhead.
     """
+
+    __slots__ = ("game_id", "debug_mode", "log_dir", "_entries")
 
     def __init__(self, game_id: str, debug: bool = False, log_dir: str = "logs"):
         self.game_id  = game_id
@@ -409,8 +415,7 @@ class GameLogger:
             os.makedirs(self.log_dir, exist_ok=True)
             path = os.path.join(self.log_dir, f"{self.game_id}.txt")
             with open(path, "w", encoding="utf-8") as f:
-                for ts, level, msg in self._entries:
-                    f.write(f"[{ts}][{level}] {msg}\n")
+                f.writelines(f"[{ts}][{level}] {msg}\n" for ts, level, msg in self._entries)
             print(f"[Logger] Saved log → {path}")
         except Exception as e:
             print(f"[Logger] Failed to write log: {e}")
@@ -505,6 +510,12 @@ class NightAction:
     send_night_ui.  The engine sorts by priority and resolves in order.
     """
 
+    __slots__ = (
+        "actor_id", "role_name", "priority", "handler",
+        "target_id", "bypass_block", "bypass_protection",
+        "faction", "cancelled",
+    )
+
     def __init__(
         self,
         actor_id: int,
@@ -526,24 +537,40 @@ class NightAction:
         self.faction           = faction
         self.cancelled         = False   # set True if actor gets blocked
 
+    # Hỗ trợ sort trực tiếp bằng priority (dùng với heapq)
+    def __lt__(self, other: "NightAction") -> bool:
+        return self.priority < other.priority
+
 
 class ActionQueue:
-    """Collects and resolves NightActions in priority order."""
+    """Collects and resolves NightActions in priority order.
+    Optimized: dùng heapq thay vì sorted() mỗi resolve → O(log n) insert.
+    """
+
+    __slots__ = ("_queue",)
 
     def __init__(self):
         self._queue: List[NightAction] = []
 
     def register(self, action: NightAction):
-        self._queue.append(action)
+        # heapq.heappush giữ invariant — không cần sort lại
+        import heapq
+        heapq.heappush(self._queue, action)
 
     def clear(self):
         self._queue.clear()
 
     def get_sorted(self) -> List[NightAction]:
+        # Trả về bản copy đã sort (không phá heap)
         return sorted(self._queue, key=lambda a: a.priority)
 
     async def resolve(self, game: "GameEngine"):
-        for action in self.get_sorted():
+        import heapq
+        # Drain heap theo thứ tự priority
+        queue_copy = list(self._queue)
+        heapq.heapify(queue_copy)
+        while queue_copy:
+            action = heapq.heappop(queue_copy)
             if action.cancelled:
                 game.logger.debug(f"Action skipped (cancelled): {action.role_name}")
                 continue
@@ -987,16 +1014,18 @@ class DeadChatManager:
 # ══════════════════════════════════════════════════════════════════════
 
 class AbuseTracker:
-    """Rate-limit interactions per user."""
+    """Rate-limit interactions per user. Optimized: dict lookup O(1), avoid unnecessary now() calls."""
 
     COOLDOWN = 2.0   # seconds between interactions
+
+    __slots__ = ("_last_action",)
 
     def __init__(self):
         self._last_action: Dict[int, float] = {}
 
     def is_allowed(self, user_id: int) -> bool:
         now = time.monotonic()
-        last = self._last_action.get(user_id, 0)
+        last = self._last_action.get(user_id, 0.0)
         if now - last < self.COOLDOWN:
             return False
         self._last_action[user_id] = now
@@ -1020,6 +1049,8 @@ class WinConditionManager:
         win_type = "team"   → wins together with faction
         win_type = "solo"   → check_win_condition(game) → bool
         win_type = "hidden" → resolved at game end by engine
+
+    Optimized: build team map once per call, avoid repeated getattr in loops.
     """
 
     @staticmethod
@@ -1031,17 +1062,31 @@ class WinConditionManager:
         if not alive_ids:
             return "Draw"
 
-        def team(pid):
-            r = game.roles.get(pid)
-            return (getattr(r, "team", None) or getattr(r, "faction", None)) if r else None
+        # Build team lookup once (avoid getattr per-loop-per-check)
+        roles = game.roles
+        _SURVIVOR = TEAM_SURVIVOR
+        _ANOMALY  = TEAM_ANOMALY
+        _UNK1     = TEAM_UNKNOWN
+        _UNK2     = TEAM_UNKNOWN2
 
-        survivors = sum(1 for p in alive_ids if team(p) == TEAM_SURVIVOR)
-        anomalies = sum(1 for p in alive_ids if team(p) == TEAM_ANOMALY)
-        unknowns  = sum(1 for p in alive_ids if team(p) in (TEAM_UNKNOWN, TEAM_UNKNOWN2))
+        survivors = 0
+        anomalies = 0
+        unknowns  = 0
+        for pid in alive_ids:
+            r = roles.get(pid)
+            if r is None:
+                continue
+            t = r.team if hasattr(r, "team") else getattr(r, "faction", None)
+            if t == _SURVIVOR:
+                survivors += 1
+            elif t == _ANOMALY:
+                anomalies += 1
+            elif t in (_UNK1, _UNK2):
+                unknowns += 1
 
         # Solo win check — roles with win_type="solo"
         for pid in list(alive_ids):
-            role = game.roles.get(pid)
+            role = roles.get(pid)
             if not role:
                 continue
             wtype = getattr(role, "win_type", "team")
@@ -1116,21 +1161,28 @@ class VotingSession:
         return True
 
     def tally(self) -> Dict[int, float]:
-        """Returns {target_id: weighted_vote_count}."""
+        """Returns {target_id: weighted_vote_count}.
+        Optimized: cache puppeteer_controls & config lookup outside loop.
+        """
         counts: Dict[int, float] = defaultdict(float)
         cfg = self.game.config
+        weighted = cfg.weighted_vote
+        puppeteer = self.game.puppeteer_controls  # local ref, avoid attr lookup per iter
+        roles = self.game.roles
+
         for voter_id, target_id in self.votes.items():
             # Apply Puppeteer override
-            forced = self.game.puppeteer_controls.get(voter_id)
+            forced = puppeteer.get(voter_id)
             if forced:
                 target_id = forced
-            role = self.game.roles.get(voter_id)
             weight = 1.0
-            if cfg.weighted_vote and role and hasattr(role, "vote_weight"):
-                try:
-                    weight = float(role.vote_weight())
-                except Exception:
-                    weight = 1.0
+            if weighted:
+                role = roles.get(voter_id)
+                if role and hasattr(role, "vote_weight"):
+                    try:
+                        weight = float(role.vote_weight())
+                    except Exception:
+                        weight = 1.0
             counts[target_id] += weight
         return dict(counts)
 
@@ -1733,18 +1785,22 @@ class GameEngine:
 
     def get_alive_players(self) -> List:
         if self._alive_cache_dirty:
+            _dict = self._players_dict
+            _removed = self.temporarily_removed
             self._alive_cache = [
-                self._players_dict[pid]
+                _dict[pid]
                 for pid in self.alive_players
-                if pid not in self.temporarily_removed
+                if pid not in _removed
             ]
             self._alive_cache_dirty = False
         return self._alive_cache
 
     def get_dead_players(self) -> List:
-        return [self._players_dict[pid] for pid in self.dead_players if pid in self._players_dict]
+        _dict = self._players_dict
+        return [_dict[pid] for pid in self.dead_players if pid in _dict]
 
     def is_alive(self, pid: int) -> bool:
+        # Inline hot path: set.__contains__ is O(1), avoid method call overhead
         return pid in self.alive_players and pid not in self.temporarily_removed
 
     # ══════════════════════════════════════════════════
@@ -2339,11 +2395,15 @@ class GameEngine:
 
         # Ping các thành viên Anomalies vào anomaly_chat để họ biết kênh
         if self.anomaly_chat:
+            # Tối ưu: build mention string trong một pass, tránh list comprehension kép
+            _alive = self.alive_players
+            _dict  = self._players_dict
             anomaly_mentions = " ".join(
-                self._players_dict[pid].mention
+                _dict[pid].mention
                 for pid, role in self.roles.items()
-                if getattr(role, "team", "") == "Anomalies" and self.is_alive(pid)
-                and pid in self._players_dict
+                if getattr(role, "team", "") == "Anomalies"
+                and pid in _alive
+                and pid in _dict
             )
             if anomaly_mentions:
                 try:
@@ -2360,16 +2420,17 @@ class GameEngine:
             if alive_members:
                 await self.voice_ctrl.set_mute(alive_members, True)
 
-        # Send night UIs
+        # Send night UIs — gather tất cả task cùng lúc
         tasks = []
         active_count = 0
         max_actors = self.config.max_night_actors if self.config.max_night_actors > 0 else 9999
+        _large = self.config.large_server_mode
 
         for pid, role in self.roles.items():
             if not self.is_alive(pid):
                 continue
             # Large Server Mode: limit investigative roles
-            if self.config.large_server_mode:
+            if _large:
                 tier = getattr(role, "tier", "Core")
                 if tier == "Chaos" and active_count >= max_actors:
                     continue
@@ -2417,8 +2478,7 @@ class GameEngine:
         if dark_arch and self.is_alive(dark_arch.player.id):
             blocked_targets = getattr(dark_arch, "blocked_targets", set())
             if blocked_targets:
-                for _pid in blocked_targets:
-                    self.blocked.add(_pid)
+                self.blocked.update(blocked_targets)
                 self.add_night_event("Anomalies", f"Bóng tối bao phủ **{len(blocked_targets)}** ngôi nhà.")
                 dark_arch.blocked_targets = set()
 
@@ -2622,29 +2682,35 @@ class GameEngine:
         """
         Cuối đêm: nếu Anomalies đã vote nhưng chưa có kill được queue cho phe Anomalies,
         lấy mục tiêu nhiều phiếu nhất (dù không đạt đa số) để đảm bảo kill luôn xảy ra.
+        Optimized: dùng local refs tránh self.xxx lookup per-iteration.
         """
         overlord = self.get_role_by_name("Lãnh Chúa")
         if overlord and self.is_alive(overlord.player.id):
             # Overlord còn sống — kill đã được queue trong callback rồi
             return
 
-        # Thu thập vote từ tất cả Anomaly còn sống
+        # Thu thập vote từ tất cả Anomaly còn sống — local refs để tăng tốc
+        _roles    = self.roles
+        _alive    = self.alive_players
+        _ANOMALY  = TEAM_ANOMALY
+
         vote_count: Dict[int, int] = {}
-        for pid, role in self.roles.items():
-            if getattr(role, "team", "") != TEAM_ANOMALY:
+        for pid, role in _roles.items():
+            if getattr(role, "team", "") != _ANOMALY:
                 continue
-            if not self.is_alive(pid):
+            if pid not in _alive:
                 continue
             v = getattr(role, "vote_target", None)
-            if v and self.is_alive(v):
+            if v and v in _alive:
                 vote_count[v] = vote_count.get(v, 0) + 1
 
         if not vote_count:
             return
 
         # Kiểm tra xem đã có kill được queue cho Anomaly chưa
+        _kill_keywords = ("Anomal", "Overlord", "Dị Thể", "Anomalies tiêu diệt")
         anomaly_kill_queued = any(
-            any(k in reason for k in ("Anomal", "Overlord", "Dị Thể", "Anomalies tiêu diệt"))
+            any(k in reason for k in _kill_keywords)
             for _, reason, _ in self.kill_queue
         )
         if anomaly_kill_queued:

@@ -386,10 +386,11 @@ def _to_int(value, default=None):
 
 
 def get_cached_config(guild_id: str) -> dict:
-    import time
+    import time as _t
     gid = str(guild_id)
-    now = time.monotonic()
-    if gid not in _config_cache or now - _config_cache_time.get(gid, 0) > 30:
+    now = _t.monotonic()
+    # TTL 30s — tránh round-trip MongoDB trong game loop
+    if gid not in _config_cache or now - _config_cache_time.get(gid, 0.0) > 30.0:
         _config_cache[gid] = load_guild_config(gid)
         _config_cache_time[gid] = now
     return _config_cache[gid]

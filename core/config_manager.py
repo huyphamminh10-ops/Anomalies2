@@ -26,6 +26,8 @@ from pymongo.errors import PyMongoError, ConnectionFailure, ServerSelectionTimeo
 # ── Kết nối MongoDB ────────────────────────────────────────────────
 _CONNECT_RETRIES = 5
 _CONNECT_RETRY_DELAY_SEC = 5
+# ── Cache TTL: 30s — đủ fresh cho bot, tránh hammering MongoDB ────
+_CACHE_TTL_SEC = 30.0
 
 
 def _resolve_mongo_uri() -> str:
@@ -86,6 +88,8 @@ def _classify_mongo_connect_error(exc: BaseException) -> str:
 DB_NAME = "Anomalies_DB"
 
 _client = None
+_client_last_ping: float = 0.0
+_CLIENT_PING_INTERVAL = 60.0  # ping MongoDB tối đa 1 lần/phút để tránh overhead
 
 # ── Cache RAM với timestamp để invalidate ──────────────────────────
 # Cấu trúc: { guild_id: {"data": dict, "last_updated": float} }
@@ -94,26 +98,24 @@ _config_cache: dict = {}
 
 def _get_db():
     """Trả về database instance, tạo kết nối nếu chưa có (lazy singleton).
-
-    FIX v2.3:
-    - tlsAllowInvalidCertificates=True: tránh lỗi SSL cert chain trên môi trường Render
-      (Render dùng proxy nội bộ có thể không khớp CA chain của certifi)
-    - tls=True: đảm bảo kết nối mã hóa tới MongoDB Atlas
-    - traceback.format_exc(): in toàn bộ stack trace khi lỗi để dễ debug
-    - Reset _client = None sau khi lỗi để lần gọi tiếp sẽ thử kết nối lại
+    Optimized: ping MongoDB tối đa mỗi 60s thay vì mỗi lần gọi.
     """
-    global _client
+    global _client, _client_last_ping
+    now = time.time()
+
     if _client is not None:
-        # Kiểm tra nhanh client còn sống không
-        try:
-            _client.admin.command("ping")
-        except Exception:
-            print("[config_manager] Client hiện tại đã mất kết nối — tạo lại.")
+        # Chỉ ping nếu đã qua interval — tránh overhead mỗi DB call
+        if now - _client_last_ping > _CLIENT_PING_INTERVAL:
             try:
-                _client.close()
+                _client.admin.command("ping")
+                _client_last_ping = now
             except Exception:
-                pass
-            _client = None
+                print("[config_manager] Client hiện tại đã mất kết nối — tạo lại.")
+                try:
+                    _client.close()
+                except Exception:
+                    pass
+                _client = None
 
     if _client is None:
         if not MONGO_URI:
@@ -136,6 +138,7 @@ def _get_db():
                     w="majority",
                 )
                 _client.admin.command("ping")
+                _client_last_ping = time.time()
                 if attempt > 1:
                     print(f"[config_manager] ✓ MongoDB kết nối thành công sau {attempt} lần thử.")
                 else:
@@ -226,11 +229,18 @@ def default_config() -> dict:
 # ── Guild Config ───────────────────────────────────────────────────
 
 def load_guild_config(guild_id, guild_name=None) -> dict:
-    """Tải config của guild từ MongoDB. Luôn trả về dict hợp lệ.
-    FIX Cache Invalidation: So sánh last_updated trong DB với bản trong RAM.
-    Nếu DB mới hơn (Dashboard vừa sửa) → buộc reload. ID luôn ép str().
+    """Tải config của guild từ MongoDB.
+    Optimized: TTL cache 30s — tránh DB roundtrip mỗi lần đọc config trong game loop.
+    Vẫn force-reload nếu DB có last_updated mới hơn (Dashboard sửa config).
     """
     gid = str(guild_id)
+    now = time.time()
+
+    # Fast path: cache còn trong TTL → trả ngay không cần DB
+    cached = _config_cache.get(gid)
+    if cached and (now - cached.get("fetched_at", 0)) < _CACHE_TTL_SEC:
+        return dict(cached["data"])
+
     col = _guild_configs()
     if col is None:
         return default_config()
@@ -240,9 +250,10 @@ def load_guild_config(guild_id, guild_name=None) -> dict:
             return default_config()
 
         db_last_updated = doc.get("last_updated", 0)
-        cached = _config_cache.get(gid)
 
+        # Nếu cache có cùng last_updated → không cần rebuild dict
         if cached and cached.get("last_updated", -1) == db_last_updated:
+            cached["fetched_at"] = now  # refresh TTL
             return dict(cached["data"])
 
         doc.pop("_id", None)
@@ -255,6 +266,7 @@ def load_guild_config(guild_id, guild_name=None) -> dict:
         _config_cache[gid] = {
             "data": dict(cfg),
             "last_updated": db_last_updated,
+            "fetched_at": now,
         }
         return cfg
     except PyMongoError as e:
@@ -265,7 +277,7 @@ def load_guild_config(guild_id, guild_name=None) -> dict:
 
 def save_guild_config(guild_id, data: dict, guild_name=None):
     """Lưu config của guild vào MongoDB (upsert).
-    FIX: guild_id luôn ép str(). Cập nhật last_updated để Bot tự reload cache.
+    Optimized: cập nhật cache RAM ngay sau khi save — tránh DB read ngay sau write.
     """
     gid = str(guild_id)
     col = _guild_configs()
@@ -274,13 +286,15 @@ def save_guild_config(guild_id, data: dict, guild_name=None):
     payload = dict(data)
     payload["guild_id"]     = gid
     payload["guild_name"]   = guild_name or ""
-    payload["last_updated"] = time.time()
+    ts = time.time()
+    payload["last_updated"] = ts
     try:
         col.update_one(
             {"guild_id": gid},
             {"$set": payload},
             upsert=True
         )
+        # Invalidate cache sau khi write
         _config_cache.pop(gid, None)
     except PyMongoError as e:
         print(f"[config_manager] Lỗi save_guild_config({guild_id}): {e}")

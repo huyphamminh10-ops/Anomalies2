@@ -218,90 +218,86 @@ class RoleDistributor:
         }
 
         # ── Override max_count cho role event theo lobby size ────────
-        # Đọc từ event_state.json thông qua get_event_meta()
         event_meta = get_event_meta()
         for role_name, emeta in event_meta.items():
             if role_name in eligible:
                 eligible[role_name] = {**eligible[role_name], "max_count": emeta["max_count"]}
-        
+
         if not eligible:
             fallback = "Dân Thường" if team == "Survivors" else ("Dị Thể" if team == "Anomalies" else "KẺ GIẾT NGƯỜI HÀNG LOẠT")
             return [fallback] * count
 
-        pool = []
-        used = {}
-        
+        pool: list[str] = []
+        used: dict[str, int] = {}
+
         power_roles = {n: m for n, m in eligible.items() if not m.get("core")}
-        core_roles = [n for n, m in eligible.items() if m.get("core")]
-        
+        core_roles  = [n for n, m in eligible.items() if m.get("core")]
+
         # ── XÁC ĐỊNH SỐ LƯỢNG POWER ROLE ──
         base_max_power = max(1, total_players // 5)
         target_power = 0
-        
+
         if team == "Survivors":
             max_civ = math.floor(count * 0.5) if total_players < 10 else math.floor(count * 0.4)
             min_power = count - max_civ
             if total_players >= 6:
                 min_power = max(1, min_power)
             target_power = min_power
-            
+
         elif team == "Anomalies":
             limit = int(count * 0.5)
             target_power = min(base_max_power, limit)
             if count >= 2:
                 target_power = max(1, target_power)
-                
-        else: # Unknown
+
+        else:  # Unknown
             limit = math.ceil(count * 0.3)
             target_power = min(base_max_power, limit)
             if total_players >= 10:
                 target_power = max(1, target_power)
-                
+
         target_power = min(target_power, count)
 
-        # ── ĐỔ POWER ROLE VÀO POOL ──
+        # ── ĐỔ POWER ROLE VÀO POOL — pre-build candidate list + weight list ──
         power_candidates = list(power_roles.keys())
 
-        # Nếu không có power role nào eligible → không cố fill, để core lấp đầy
         if not power_candidates:
             target_power = 0
-        
+
         while len(pool) < target_power and power_candidates:
+            # Pre-build weight list aligned with power_candidates (avoid per-iter lookup)
             weights = [power_roles[n]["weight"] for n in power_candidates]
             chosen = random.choices(power_candidates, weights=weights, k=1)[0]
-            
+
             max_c = power_roles[chosen]["max_count"]
-            cur_count = used.get(chosen, 0)
-            
-            if cur_count < max_c:
+            cur   = used.get(chosen, 0)
+
+            if cur < max_c:
                 pool.append(chosen)
-                used[chosen] = cur_count + 1
+                used[chosen] = cur + 1
                 if used[chosen] >= max_c:
                     power_candidates.remove(chosen)
             else:
                 power_candidates.remove(chosen)
-                
+
         # ── ĐỔ CORE ROLE VÀO POOL (LẤP ĐẦY SLOT) ──
         slots_left = count - len(pool)
-        
+
         if team == "Survivors" and slots_left > 0:
-            max_civ = math.floor(count * 0.5) if total_players < 10 else math.floor(count * 0.4)
+            max_civ    = math.floor(count * 0.5) if total_players < 10 else math.floor(count * 0.4)
             civ_to_add = min(slots_left, max_civ)
-            for _ in range(civ_to_add):
-                pool.append("Dân Thường")
-                used["Dân Thường"] = used.get("Dân Thường", 0) + 1
-                slots_left -= 1
-                
-            # Nếu vẫn còn thiếu slot (do max_civ chặn), buộc thêm power role
-            # Rebuild power_candidates từ đầu để không bị giới hạn bởi max_count cũ
+            pool.extend(["Dân Thường"] * civ_to_add)
+            used["Dân Thường"] = used.get("Dân Thường", 0) + civ_to_add
+            slots_left -= civ_to_add
+
             remaining_power = [
                 n for n, m in power_roles.items()
                 if used.get(n, 0) < m["max_count"]
             ]
             while slots_left > 0 and remaining_power:
                 weights = [power_roles[n]["weight"] for n in remaining_power]
-                chosen = random.choices(remaining_power, weights=weights, k=1)[0]
-                max_c = power_roles[chosen]["max_count"]
+                chosen  = random.choices(remaining_power, weights=weights, k=1)[0]
+                max_c   = power_roles[chosen]["max_count"]
                 if used.get(chosen, 0) < max_c:
                     pool.append(chosen)
                     used[chosen] = used.get(chosen, 0) + 1
@@ -311,15 +307,15 @@ class RoleDistributor:
                 else:
                     remaining_power.remove(chosen)
 
-            while slots_left > 0:
-                pool.append("Dân Thường")
-                slots_left -= 1
-                
+            if slots_left > 0:
+                pool.extend(["Dân Thường"] * slots_left)
+                slots_left = 0
+
         elif team == "Unknown" and slots_left > 0:
             available_cores = list(core_roles)
             while slots_left > 0 and available_cores:
                 chosen = random.choice(available_cores)
-                max_c = eligible[chosen]["max_count"]
+                max_c  = eligible[chosen]["max_count"]
                 if used.get(chosen, 0) < max_c:
                     pool.append(chosen)
                     used[chosen] = used.get(chosen, 0) + 1
@@ -328,34 +324,32 @@ class RoleDistributor:
                         available_cores.remove(chosen)
                 else:
                     available_cores.remove(chosen)
-                    
+
             while slots_left > 0 and power_candidates:
                 chosen = random.choice(power_candidates)
-                max_c = eligible[chosen]["max_count"]
+                max_c  = eligible[chosen]["max_count"]
                 if used.get(chosen, 0) < max_c:
                     pool.append(chosen)
                     used[chosen] = used.get(chosen, 0) + 1
                     slots_left -= 1
                 power_candidates.remove(chosen)
-                
-            # Fallback cuối: chỉ thêm KẺ GIẾT NGƯỜI HÀNG LOẠT nếu chưa đạt max_count
+
             serial_killer_name = "KẺ GIẾT NGƯỜI HÀNG LOẠT"
-            serial_killer_max = eligible.get(serial_killer_name, {}).get("max_count", 1)
+            serial_killer_max  = eligible.get(serial_killer_name, {}).get("max_count", 1)
             while slots_left > 0:
                 if used.get(serial_killer_name, 0) < serial_killer_max:
                     pool.append(serial_killer_name)
                     used[serial_killer_name] = used.get(serial_killer_name, 0) + 1
                 else:
-                    # Đã đạt giới hạn, không thể thêm nữa → dừng để tránh vượt max
                     print(f"[Distributor] ⚠ Không thể thêm '{serial_killer_name}' (đã đạt max_count={serial_killer_max}). Bỏ qua {slots_left} slot còn lại.")
                     break
                 slots_left -= 1
-                
+
         elif team == "Anomalies" and slots_left > 0:
             available_cores = list(core_roles)
             while slots_left > 0 and available_cores:
                 chosen = random.choice(available_cores)
-                max_c = eligible[chosen]["max_count"]
+                max_c  = eligible[chosen]["max_count"]
                 if used.get(chosen, 0) < max_c:
                     pool.append(chosen)
                     used[chosen] = used.get(chosen, 0) + 1
@@ -364,17 +358,16 @@ class RoleDistributor:
                         available_cores.remove(chosen)
                 else:
                     available_cores.remove(chosen)
-                    
+
             while slots_left > 0 and power_candidates:
                 chosen = random.choice(power_candidates)
                 pool.append(chosen)
                 power_candidates.remove(chosen)
                 slots_left -= 1
-                
-            while slots_left > 0:
-                pool.append("Dị Thể")
-                slots_left -= 1
-                
+
+            if slots_left > 0:
+                pool.extend(["Dị Thể"] * slots_left)
+
         return pool
 
     def _apply_requires(self, pool: list[str]) -> list[str]:
