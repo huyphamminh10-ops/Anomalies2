@@ -173,6 +173,54 @@ class ProTester(BaseRole):
         # Đánh dấu để Người Thử Nghiệm còn lại không chọn trùng
         ProTester._claimed_targets.add(victim_id)
 
+        # ── 45% Trục Trặc khi cả 2 Pro Tester cùng kích hoạt đêm đó ──
+        # Kiểm tra xem đây có phải Pro Tester thứ 2 không (claimed_targets đã có ≥ 2)
+        if len(ProTester._claimed_targets) >= 2:
+            import random
+            if random.random() < 0.45:
+                # Trục trặc: 1 trong 2 Dị Thể bị chọn chết ngẫu nhiên, còn lại an toàn
+                # Đồng thời 1 trong 2 Pro Tester chết ngẫu nhiên
+                all_claimed = list(ProTester._claimed_targets)
+                dying_anomaly = random.choice(all_claimed)
+                safe_anomaly  = [x for x in all_claimed if x != dying_anomaly][0] if len(all_claimed) > 1 else None
+
+                # Tìm tất cả Pro Tester đang sống
+                pro_testers = [
+                    (pid, r) for pid, r in game.roles.items()
+                    if isinstance(r, ProTester) and game.is_alive(pid)
+                ]
+                dying_pt_id = random.choice([pid for pid, _ in pro_testers]) if pro_testers else None
+
+                # Thông báo trục trặc
+                try:
+                    text_ch = game.text_channel
+                    if text_ch:
+                        await text_ch.send(
+                            embed=disnake.Embed(
+                                title="⚡ TRỤC TRẶC HỆ THỐNG!",
+                                description=(
+                                    "**Hai Người Thử Nghiệm cùng kích hoạt giao thức — hệ thống bị quá tải!**\n\n"
+                                    "🔴 Xác suất trục trặc **45%** đã xảy ra!\n"
+                                    "• Chỉ **1 trong 2** Dị Thể bị tiêu diệt.\n"
+                                    "• **1 trong 2** Người Thử Nghiệm cũng ngã xuống theo."
+                                ),
+                                color=0xff6b00
+                            )
+                        )
+                except Exception:
+                    pass
+
+                # Giết Anomaly bị chọn ngẫu nhiên
+                await game.kill_player(dying_anomaly, reason="Trục trặc giao thức Pro Tester", bypass_protection=True)
+
+                # Giết 1 Pro Tester ngẫu nhiên (nếu chưa chết từ trước)
+                if dying_pt_id and game.is_alive(dying_pt_id):
+                    await game.kill_player(dying_pt_id, reason="Hi sinh vì trục trặc giao thức", bypass_protection=True)
+
+                # Pro Tester hiện tại không cần tự giết nữa (đã được xử lý ở trên)
+                # Trả về sớm để tránh chạy đoạn kill bên dưới
+                return True, game.players[dying_anomaly].display_name if dying_anomaly in game.players else "???"
+
         victim = game.players.get(victim_id)
         victim_name = victim.display_name if victim else "???"
 

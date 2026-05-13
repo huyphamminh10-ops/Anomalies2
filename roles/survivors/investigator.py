@@ -67,7 +67,12 @@ class InvestigatorSelect(disnake.ui.Select):
             await interaction.response.send_message("❌ Không thể xác định vai trò mục tiêu.", ephemeral=True)
             return
 
-        if target_role.team == "Anomalies":
+        # Nếu đang cải trang → hiển thị màu phe của role cải trang
+        effective_team = target_role.team
+        if hasattr(target_role, "disguise_team") and target_role.disguise_team:
+            effective_team = target_role.disguise_team
+
+        if effective_team == "Anomalies":
             result = "🔴 **ĐỎ** — Người này thuộc phe **Dị Thể**!"
             color  = 0xe74c3c
             # ── Cảnh báo Dị Thể (không nói tên ai bị điều tra) ──
@@ -75,7 +80,9 @@ class InvestigatorSelect(disnake.ui.Select):
             # Dedupe per-night: chỉ gửi 1 cảnh báo / đêm dù bao nhiêu Thám Tử trúng.
             already_warned = self.game.night_effects.get("investigator_warning_sent", False)
             if not already_warned and hasattr(self.game, "anomaly_chat_mgr"):
-                self.game.night_effects["investigator_warning_sent"] = True
+                # Chỉ cảnh báo nếu role thực sự là Anomaly (không phải chỉ cải trang thành Anomaly)
+                if target_role.team == "Anomalies":
+                    self.game.night_effects["investigator_warning_sent"] = True
                 await self.game.anomaly_chat_mgr.send(
                     embed=disnake.Embed(
                         title="🔎 CẢNH BÁO TRINH SÁT",
@@ -88,9 +95,12 @@ class InvestigatorSelect(disnake.ui.Select):
                         color=0xff6b35
                     )
                 )
-        elif target_role.team == "Survivors":
+        elif effective_team == "Survivors":
             result = "🟢 **XANH** — Người này thuộc phe **Người Sống Sót**."
             color  = 0x2ecc71
+        elif effective_team in ("Unknown Entities", "Unknown"):
+            result = "❓ **KHÔNG XÁC ĐỊNH** — Người này thuộc phe **Thực Thể Ẩn**."
+            color  = 0x95a5a6
         else:
             result = "❓ **Không xác định** — Không thể xác định phe của người này."
             color  = 0x95a5a6

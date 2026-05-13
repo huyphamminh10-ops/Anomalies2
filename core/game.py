@@ -1142,13 +1142,16 @@ class VotingSession:
         self._abuse        = game.abuse_tracker
 
     def record_vote(self, voter_id: int, target_id: int) -> bool:
-        """Returns False if rate-limited or invalid."""
+        """Returns False if rate-limited, invalid, or already voted."""
         if not self._abuse.is_allowed(voter_id):
             return False
         if not self.game.is_alive(voter_id):
             return False
         if voter_id == target_id:
             return False
+        # ── LOCK: chỉ được bỏ phiếu 1 lần duy nhất ──────────────
+        if voter_id in self.votes or voter_id in self.skip_votes:
+            return False   # đã chọn rồi → không đổi được
         self.votes[voter_id] = target_id
         return True
 
@@ -1157,6 +1160,9 @@ class VotingSession:
             return False
         if not self.game.is_alive(voter_id):
             return False
+        # ── LOCK: chỉ được bỏ phiếu 1 lần duy nhất ──────────────
+        if voter_id in self.votes or voter_id in self.skip_votes:
+            return False   # đã chọn rồi → không đổi được
         self.skip_votes.add(voter_id)
         return True
 
@@ -1273,6 +1279,14 @@ class VoteViewV2(disnake.ui.View):
                 )
                 return
 
+            # Kiểm tra đã bỏ phiếu chưa trước khi ghi nhận
+            if voter_id in self.session.votes or voter_id in self.session.skip_votes:
+                await interaction.response.send_message(
+                    "🔒 Bạn đã bỏ phiếu rồi — **không thể thay đổi**!",
+                    ephemeral=True
+                )
+                return
+
             recorded = self.session.record_vote(voter_id, target_id)
             if not recorded:
                 await interaction.response.send_message(
@@ -1310,6 +1324,14 @@ class VoteViewV2(disnake.ui.View):
             if not self.session.game.is_alive(voter_id):
                 await interaction.response.send_message(
                     "❌ Bạn đã chết và không thể bỏ phiếu.",
+                    ephemeral=True
+                )
+                return
+
+            # Kiểm tra đã bỏ phiếu chưa
+            if voter_id in self.session.votes or voter_id in self.session.skip_votes:
+                await interaction.response.send_message(
+                    "🔒 Bạn đã bỏ phiếu rồi — **không thể thay đổi**!",
                     ephemeral=True
                 )
                 return
@@ -3358,49 +3380,92 @@ class GameEngine:
 
         await self._fire_hooks("on_vote_start")
 
+        # ── Tính số phiếu tối thiểu: x = tổng_sống - 40% ────────
+        total_alive  = len(alive)
+        min_votes    = max(1, math.ceil(total_alive - total_alive * 0.4))
+
+        def _build_vote_board(session: "VotingSession", remaining: int) -> disnake.Embed:
+            """Tạo embed bỏ phiếu, cập nhật live."""
+            is_revote = session.revote
+            anon      = self.config.anonymous_vote
+            counts    = session.tally()
+
+            # Sắp xếp người bị vote giảm dần
+            ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+
+            board_lines = []
+            for rank_i, (tid, cnt) in enumerate(ranked[:10], 1):
+                member = self._players_dict.get(tid)
+                raw_name = getattr(member, "display_name", str(tid)) if member else str(tid)
+                # Cắt tên nếu quá dài
+                name_str = (raw_name[:14] + "…") if len(raw_name) > 15 else raw_name
+                board_lines.append(f"`{rank_i}.` **{name_str}** — {int(cnt)} phiếu")
+
+            board_text = "\n".join(board_lines) if board_lines else "*Chưa có phiếu nào.*"
+
+            desc = (
+                f"{'⚠️ REVOTE — ' if is_revote else ''}Chọn người muốn trục xuất."
+                + (" *(Ẩn danh)*" if anon else "")
+                + f"\n⏱️ Còn lại: **{remaining}s**"
+            )
+            embed = disnake.Embed(
+                title="🗳️ BỎ PHIẾU" + (" — REVOTE" if is_revote else ""),
+                description=desc,
+                color=0xe67e22
+            )
+            embed.add_field(
+                name="📊 Danh sách người đang bị vote:",
+                value=board_text,
+                inline=False
+            )
+            return embed
+
         for revote_round in range(self.config.max_revotes + 1):
             is_revote = revote_round > 0
             label     = f"🗳️ **{'REVOTE ' if is_revote else ''}BỎ PHIẾU TRỤC XUẤT**"
             await self.log(f"{label} — Chọn người bạn muốn loại!", color=0xe67e22)
 
-            session = VotingSession(self, alive, revote=is_revote)
+            session   = VotingSession(self, alive, revote=is_revote)
             vote_time = self.config.vote_time
-            view    = VoteViewV2(self, alive, vote_time, session)
-            vote_timer_embed = disnake.Embed(
-                title="🗳️ BỎ PHIẾU" + (" — REVOTE" if is_revote else ""),
-                description="Nhấn nút để chọn người bị trục xuất."
-                + (" *(Ẩn danh)*" if self.config.anonymous_vote else "")
-                + f"\n\n⏱️ Còn lại: **{vote_time}s**",
-                color=0xe67e22
-            )
+            view      = VoteViewV2(self, alive, vote_time, session)
+
             vote_timer_msg = None
             try:
                 vote_timer_msg = await self.text_channel.send(
-                    embed=vote_timer_embed, view=view
+                    embed=_build_vote_board(session, vote_time), view=view
                 )
             except Exception:
                 pass
+
+            # ── Gửi tin nhắn phụ: số phiếu tối thiểu ─────────────
+            try:
+                await self.text_channel.send(
+                    f"*__Số lượng phiếu tối thiểu là **{min_votes}**__*"
+                )
+            except Exception:
+                pass
+
             for elapsed in range(vote_time):
                 await asyncio.sleep(1)
                 remaining = vote_time - elapsed - 1
                 if vote_timer_msg:
                     try:
-                        new_desc = ("Nhấn nút để chọn người bị trục xuất."
-                            + (" *(Ẩn danh)*" if self.config.anonymous_vote else "")
-                            + f"\n\n⏱️ Còn lại: **{remaining}s**")
-                        vote_timer_embed.description = new_desc
-                        await vote_timer_msg.edit(embed=vote_timer_embed)
+                        await vote_timer_msg.edit(
+                            embed=_build_vote_board(session, remaining)
+                        )
                     except Exception:
                         pass
+
             if vote_timer_msg:
                 try:
-                    vote_timer_embed.description = "⏱️ Hết thời gian bỏ phiếu!"
-                    await vote_timer_msg.edit(embed=vote_timer_embed, view=None)
+                    final_embed = _build_vote_board(session, 0)
+                    final_embed.description = "⏱️ Hết thời gian bỏ phiếu!"
+                    await vote_timer_msg.edit(embed=final_embed, view=None)
                 except Exception:
                     pass
 
             target_id, reason = session.get_result()
-            self.puppeteer_controls.clear()  # xóa SAU get_result() để Puppeteer hoạt động
+            self.puppeteer_controls.clear()
 
             if reason == "skip":
                 await self.log("⏭️ Bỏ phiếu bị bỏ qua.", color=0x95a5a6)
@@ -3415,16 +3480,100 @@ class GameEngine:
                 await self.log("⚖️ Hòa phiếu! Không ai bị trục xuất.", color=0x95a5a6)
                 return
 
+            # ── Kiểm tra số phiếu tối thiểu ──────────────────────
+            counts    = session.tally()
+            top_votes = counts.get(target_id, 0)
+            if top_votes < min_votes:
+                await self.log(
+                    f"⚖️ **{self._players_dict.get(target_id, target_id).display_name if self._players_dict.get(target_id) else target_id}**"
+                    f" chỉ có **{int(top_votes)}** phiếu — chưa đủ **{min_votes}** phiếu tối thiểu. Không ai bị trục xuất.",
+                    color=0x95a5a6
+                )
+                return
+
             target = self._players_dict.get(target_id)
             if target:
                 role      = self.roles.get(target_id)
                 role_name = role.name if role and target_id not in self.cleaned_roles else "???"
-                # Notify Psychopath exile hook BEFORE kill (so win check can read state)
+
+                # ══ PHÁP TRƯỜNG — xác nhận cuối cùng ════════════
+                SCAFFOLD_TIME = 30
+                scaffold_view = _ScaffoldConfirmView(self, target, SCAFFOLD_TIME)
+
+                # Lấy tên Binh Lính từ Gemini host nếu có
+                binh_linh_name = "Người Thi Hành"
+                scaffold_embed = disnake.Embed(
+                    title="⚔️ PHÁP TRƯỜNG",
+                    description=(
+                        f"**{binh_linh_name}**: Các người dân có chắc là muốn"
+                        f" **{target.display_name}** bị trục xuất khỏi thế gian này không?\n"
+                        f"Các người có **{SCAFFOLD_TIME} giây**."
+                    ),
+                    color=0xe74c3c
+                )
+                scaffold_embed.add_field(
+                    name="\u200b",
+                    value=scaffold_view.render_counts(),
+                    inline=False
+                )
+                scaffold_msg = None
+                try:
+                    scaffold_msg = await self.text_channel.send(
+                        embed=scaffold_embed, view=scaffold_view
+                    )
+                    scaffold_view.message = scaffold_msg
+                except Exception:
+                    pass
+
+                # Đếm ngược pháp trường
+                for _t in range(SCAFFOLD_TIME):
+                    await asyncio.sleep(1)
+                    if scaffold_view.done_event.is_set():
+                        break
+                    if scaffold_msg:
+                        try:
+                            remaining_s = SCAFFOLD_TIME - _t - 1
+                            scaffold_embed.description = (
+                                f"**{binh_linh_name}**: Các người dân có chắc là muốn"
+                                f" **{target.display_name}** bị trục xuất khỏi thế gian này không?\n"
+                                f"Các người có **{remaining_s} giây**."
+                            )
+                            scaffold_embed.set_field_at(
+                                0, name="\u200b",
+                                value=scaffold_view.render_counts(), inline=False
+                            )
+                            await scaffold_msg.edit(embed=scaffold_embed)
+                        except Exception:
+                            pass
+
+                if scaffold_msg:
+                    try:
+                        await scaffold_msg.edit(view=None)
+                    except Exception:
+                        pass
+
+                # Đếm phiếu pháp trường
+                yes_count = scaffold_view.yes_voters.__len__()
+                no_count  = scaffold_view.no_voters.__len__()
+                # Không bỏ phiếu = chọn 🚫
+                total_alive_now = len(self.get_alive_players())
+                abstain = total_alive_now - yes_count - no_count
+                no_count += abstain
+
+                if no_count >= yes_count:
+                    await self.log(
+                        f"🏳️ Dân làng đã tha thứ cho **{target.display_name}**. Không ai bị trục xuất lần này.",
+                        color=0x2ecc71
+                    )
+                    return
+
+                # Notify Psychopath exile hook BEFORE kill
                 if role and hasattr(role, "on_exile_vote"):
                     try:
                         role.on_exile_vote(self, session.votes)
                     except Exception:
                         pass
+
                 exile_narration = await _ai_narrate("exile_death", name=target.display_name)
                 await self.log(
                     (f"> {exile_narration}\n" if exile_narration else "")
@@ -3435,7 +3584,7 @@ class GameEngine:
                     target,
                     reason     = "Bị trục xuất bởi dân làng",
                     bypass     = True,
-                    force_mute = True,   # Vote-out: LUÔN mute, bỏ qua config.mute_dead
+                    force_mute = True,
                 )
             break
 
@@ -3492,6 +3641,80 @@ class GameEngine:
 
 
 # ══════════════════════════════════════════════════════════════════════
+# §12.12b  SCAFFOLD CONFIRM VIEW — Xác nhận Pháp Trường
+# ══════════════════════════════════════════════════════════════════════
+
+class _ScaffoldConfirmView(disnake.ui.View):
+    """
+    Hiện ✅ / 🚫 sau khi bỏ phiếu xong, cho dân làng xác nhận trục xuất.
+    - Reaction-style: add/remove emoji = bỏ / rút phiếu
+    - Không bỏ phiếu = tính là 🚫
+    - Bên nào nhiều hơn → in đậm + phóng to (bold)
+    """
+
+    def __init__(self, game: "GameEngine", target: disnake.Member, timeout: int):
+        super().__init__(timeout=timeout + 5)
+        self.game        = game
+        self.target      = target
+        self.yes_voters: Set[int] = set()
+        self.no_voters:  Set[int] = set()
+        self.done_event  = asyncio.Event()
+        self.message: Optional[disnake.Message] = None
+
+    def render_counts(self) -> str:
+        yes = len(self.yes_voters)
+        no  = len(self.no_voters)
+        yes_str = f"**✅ {yes}**" if yes >= no else f"✅ {yes}"
+        no_str  = f"**🚫 {no}**" if no  >  yes else f"🚫 {no}"
+        # Canh giữa bằng space em
+        return f"\u3000{yes_str}\u3000|\u3000{no_str}\u3000"
+
+    @disnake.ui.button(emoji="✅", style=disnake.ButtonStyle.success, row=0)
+    async def btn_yes(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        uid = interaction.user.id
+        if not self.game.is_alive(uid):
+            await interaction.response.send_message("❌ Bạn đã chết, không thể bỏ phiếu.", ephemeral=True)
+            return
+        if uid in self.yes_voters:
+            # Rút phiếu ✅ = không bỏ phiếu
+            self.yes_voters.discard(uid)
+            await interaction.response.send_message("↩️ Đã rút phiếu ✅.", ephemeral=True)
+        else:
+            self.yes_voters.add(uid)
+            self.no_voters.discard(uid)
+            await interaction.response.send_message("✅ Bạn chọn **CÓ**.", ephemeral=True)
+        if self.message:
+            try:
+                embed = self.message.embeds[0]
+                embed.set_field_at(0, name="\u200b", value=self.render_counts(), inline=False)
+                await self.message.edit(embed=embed)
+            except Exception:
+                pass
+
+    @disnake.ui.button(emoji="🚫", style=disnake.ButtonStyle.danger, row=0)
+    async def btn_no(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        uid = interaction.user.id
+        if not self.game.is_alive(uid):
+            await interaction.response.send_message("❌ Bạn đã chết, không thể bỏ phiếu.", ephemeral=True)
+            return
+        if uid in self.no_voters:
+            # Rút phiếu 🚫 = không bỏ phiếu (vẫn tính là không)
+            self.no_voters.discard(uid)
+            await interaction.response.send_message("↩️ Đã rút phiếu 🚫.", ephemeral=True)
+        else:
+            self.no_voters.add(uid)
+            self.yes_voters.discard(uid)
+            await interaction.response.send_message("🚫 Bạn chọn **KHÔNG**.", ephemeral=True)
+        if self.message:
+            try:
+                embed = self.message.embeds[0]
+                embed.set_field_at(0, name="\u200b", value=self.render_counts(), inline=False)
+                await self.message.edit(embed=embed)
+            except Exception:
+                pass
+
+
+# ══════════════════════════════════════════════════════════════════════
 # §13  UI COMPONENTS
 # ══════════════════════════════════════════════════════════════════════
 
@@ -3524,3 +3747,4 @@ class SkipTracker(disnake.ui.View):
 
         if len(self.skippers) >= needed:
             self.skip_event.set()
+t.set()

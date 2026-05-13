@@ -191,6 +191,13 @@ class Retributionist(BaseRole):
     # ==============================
 
     async def send_ui(self, game):
+        # Kiểm tra có Neuro-Parasite đang ký sinh không
+        neuro_role = None
+        for pid, r in game.roles.items():
+            if r.__class__.__name__ == "TheNeuroParasite" and getattr(r, "host_id", None) and game.is_alive(pid):
+                neuro_role = r
+                break
+
         dead_survivors = [
             game.guild.get_member(pid)
             for pid, role in game.roles.items()
@@ -199,12 +206,12 @@ class Retributionist(BaseRole):
             and game.guild.get_member(pid)
         ]
 
-        if not dead_survivors or self.used:
-            status = "❌ Đã dùng lượt hồi sinh." if self.used else "💀 Chưa có Survivor nào tử vong."
+        if self.used and not neuro_role:
+            status = "❌ Đã dùng lượt hồi sinh."
             try:
                 await self.safe_send(
                     embed=disnake.Embed(
-                        title="🔮 ĐÊM — KẺ HỒI SINH",
+                        title="🔮 ĐÊM — KẺ BÁO OÁN",
                         description=status,
                         color=0x7f8c8d
                     )
@@ -213,19 +220,101 @@ class Retributionist(BaseRole):
                 pass
             return
 
-        view = ReviveView(self, game, is_day=False)
+        # Xây dựng view với cả 2 tùy chọn: hồi sinh + giải thoát vật chủ
+        view = RetributionistView(self, game, dead_survivors, neuro_role)
+        desc = ""
+        if not self.used and dead_survivors:
+            desc += f"Có **{len(dead_survivors)}** Survivor đã ngã xuống.\nBạn có thể **hồi sinh 1 người** đêm nay.\n\n"
+        if neuro_role:
+            host = game.players.get(neuro_role.host_id)
+            host_name = host.display_name if host else "???"
+            desc += f"🦠 **{host_name}** đang bị Ký Sinh Thần Kinh!\nBạn có thể **giải thoát** họ — Neuro sẽ chết.\n\n"
+        if not desc:
+            desc = "Không có hành động nào khả dụng đêm nay."
+
         try:
             await self.safe_send(
                 embed=disnake.Embed(
-                    title="🔮 ĐÊM — KẺ HỒI SINH",
-                    description=(
-                        f"Có **{len(dead_survivors)}** Survivor đã ngã xuống.\n\n"
-                        "Bạn có thể **hồi sinh 1 người** từ cõi chết đêm nay.\n"
-                        "⚠️ Chỉ có **1 lượt** trong cả trận — hãy chọn đúng thời điểm."
-                    ),
+                    title="🔮 ĐÊM — KẺ BÁO OÁN",
+                    description=desc.strip(),
                     color=0x1abc9c
                 ),
                 view=view
             )
         except Exception:
             pass
+
+
+# ==========================================
+# VIEW TỔNG HỢP: HỒI SINH + GIẢI THOÁT VẬT CHỦ
+# ==========================================
+
+class RetributionistView(disnake.ui.View):
+    def __init__(self, role, game, dead_survivors, neuro_role=None):
+        super().__init__(timeout=60)
+        self.role = role
+        self.game = game
+        self.neuro_role = neuro_role
+
+        # Select hồi sinh nếu còn lượt và có người chết
+        if not role.used and dead_survivors:
+            options = [
+                disnake.SelectOption(label=p.display_name, value=str(p.id))
+                for p in dead_survivors
+            ][:25]
+            select = disnake.ui.Select(
+                placeholder="⚰️ Chọn Survivor để hồi sinh...",
+                options=options,
+                custom_id="retrib_revive"
+            )
+            select.callback = self._on_revive
+            self.add_item(select)
+
+        # Nút giải thoát vật chủ Neuro
+        if neuro_role:
+            btn = disnake.ui.Button(
+                label="🦠 Giải Thoát Vật Chủ Neuro",
+                style=disnake.ButtonStyle.danger,
+                custom_id="retrib_free_host",
+                row=1
+            )
+            btn.callback = self._on_free_host
+            self.add_item(btn)
+
+    async def _on_revive(self, interaction: disnake.ApplicationCommandInteraction):
+        if interaction.user.id != self.role.player.id:
+            await interaction.response.send_message("❌ Đây không phải lựa chọn của bạn!", ephemeral=True)
+            return
+        selected_id = int(interaction.data["values"][0])
+        target = self.game.get_member(selected_id)
+        if not target:
+            await interaction.response.send_message("❌ Không tìm thấy người này.", ephemeral=True)
+            return
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self.role.revive(self.game, target, is_day=False)
+
+    async def _on_free_host(self, interaction: disnake.MessageInteraction):
+        if interaction.user.id != self.role.player.id:
+            await interaction.response.send_message("❌ Đây không phải lựa chọn của bạn!", ephemeral=True)
+            return
+        if not self.neuro_role:
+            await interaction.response.send_message("❌ Không tìm thấy Ký Sinh Thần Kinh.", ephemeral=True)
+            return
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+        success = await self.neuro_role.free_host(self.game)
+        if success:
+            host = self.game.players.get(self.neuro_role.host_id or 0)
+            await interaction.followup.send(
+                embed=disnake.Embed(
+                    title="🦠 GIẢI THOÁT THÀNH CÔNG",
+                    description="Vật chủ đã được trả về role gốc.\n**Ký Sinh Thần Kinh đã bị tiêu diệt!**",
+                    color=0x2ecc71
+                ),
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send("❌ Giải thoát thất bại.", ephemeral=True)

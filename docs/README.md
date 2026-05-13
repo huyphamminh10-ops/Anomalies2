@@ -2,7 +2,7 @@
 
 > **Anomalies** là bot Discord tự động hóa trò chơi nhập vai suy luận xã hội kiểu **Ma Sói**. Bot quản lý toàn bộ tiến trình từ phòng chờ, phân vai trò, điều khiển đêm – ngày, bỏ phiếu, di chúc, cho đến kênh chat riêng của phe Dị Thể và người chết.
 >
-> Hệ thống hỗ trợ **65+ vai trò**, nhiều chế độ chơi, và tùy chỉnh sâu qua lệnh `/setting`.  
+> Hệ thống hỗ trợ **65 NGƯỜI CHƠI**, nhiều chế độ chơi, và tùy chỉnh sâu qua lệnh `/setting`.  
 > Bot chạy ổn định trên Discord, hỗ trợ môi trường **Render**, **Hugging Face Spaces**, và máy chủ riêng.
 
 ---

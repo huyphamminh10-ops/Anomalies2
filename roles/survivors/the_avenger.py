@@ -5,26 +5,27 @@ from roles.base_role import BaseRole
 
 class TheAvenger(BaseRole):
     name = "Kẻ Báo Thù"
-    team = "Survivors"
-    faction = "Survivors"
+    team = "Unknown Entities"   # ← Đổi sang Thực Thể Ẩn
+    faction = "Unknown Entities"
     max_count = 1
 
     description = (
         "Bạn mang trong mình sự uất hận và sẽ kéo kẻ thù xuống mồ cùng mình tùy theo cách bạn bị tiêu diệt.\n\n"
-        "• Bị Trục xuất: Tiêu diệt Mayor và 1 Survivor tùy chọn.\n"
-        "• Bị Dị Thể tiêu diệt: Tiêu diệt Lãnh Chúa và 1 Anomaly tùy chọn.\n"
-        "• Bị Thực Thể Ẩn tiêu diệt: Tiêu diệt chính kẻ đã trực tiếp ra tay.\n\n"
+        "• Bị Trục xuất (ban ngày): Chọn 1 người để giết.\n"
+        "• Bị Dị Thể cắn: Chọn 1 người để giết.\n"
+        "• Bị Thực Thể Ẩn tiêu diệt: Tự động giết chính kẻ đã ra tay.\n\n"
+        "⚠ **Nerf:** Nếu bị trục xuất mà chọn nhầm Psychopath, Psychopath vẫn thắng với kết quả 'Bị Trục Xuất Ban Ngày'.\n"
         "Khi bạn chết, hệ thống sẽ dừng 30 giây để bạn chọn mục tiêu."
     )
 
     dm_message = (
         "⚔️ **KẺ BÁO THÙ**\n\n"
-        "Bạn thuộc phe **Người Sống Sót**.\n\n"
+        "Bạn thuộc phe **Thực Thể Ẩn**.\n\n"
         "Nếu bạn chết, bạn sẽ kéo kẻ thù xuống cùng mình.\n\n"
         "🔥 Cơ chế trả thù:\n"
-        "• Bị Trục xuất: Giết Mayor và 1 Survivor bạn chọn.\n"
-        "• Bị Dị Thể giết: Giết Lãnh Chúa và 1 Anomaly bạn chọn.\n"
-        "• Bị Unknown giết: Giết chính kẻ đã ra tay với bạn.\n\n"
+        "• Bị Trục xuất ban ngày: Chọn 1 người để giết.\n"
+        "• Bị Dị Thể cắn: Chọn 1 người để giết.\n"
+        "• Bị Unknown giết: Giết chính kẻ đã ra tay.\n\n"
         "⏳ Khi bạn chết, trận đấu sẽ tạm dừng 30 giây để bạn chọn mục tiêu."
     )
 
@@ -71,51 +72,47 @@ class TheAvenger(BaseRole):
             await self._revenge_unknown(game, killer)
 
     # ==============================
-    # BỊ VOTE → chọn 1 Survivor
+    # BỊ VOTE (BỊ TRỤC XUẤT BAN NGÀY) → chọn 1 người bất kỳ
     # ==============================
 
     async def _revenge_vote(self, game):
-        mayor = game.find_role("Mayor")
-        # BUG FIX #12: role.alive không được engine update → dùng game.is_alive()
-        if mayor and game.is_alive(mayor.player.id):
-            await game.kill_player(mayor, reason="revenge", bypass_protection=True)
-            await game.add_log("💀 Mayor đã bị Kẻ Báo Thù kéo xuống mồ!")
-
+        # Nerf: không tự động giết Mayor, chỉ chọn 1 người bất kỳ
         candidates = [
-            p for p in game.players
-            if getattr(p, "faction", None) == "Survivors"
-            and p.alive
-            and p.id != self.player.id
+            p for p in game.get_alive_players()
+            if p.id != self.player.id
         ]
         if not candidates:
             return
 
-        chosen = await self._ask_revenge_target(game, candidates, "Chọn 1 Survivor để kéo theo:")
-        if chosen and chosen.alive:
-            await game.kill_player(chosen, reason="revenge", bypass_protection=True)
-            await game.add_log(f"💀 {chosen.display_name} đã bị kéo theo trong cơn thịnh nộ của Kẻ Báo Thù!")
+        chosen = await self._ask_revenge_target(game, candidates, "Bị trục xuất — Chọn 1 người để kéo theo:")
+        if chosen and game.is_alive(chosen.id):
+            # Nerf: nếu chọn nhầm Psychopath → Psychopath vẫn thắng (không bypass win)
+            target_role = game.roles.get(chosen.id)
+            if target_role and getattr(target_role, "name", "") == "Kẻ Tâm Thần":
+                await game.add_log(
+                    f"⚔️ Kẻ Báo Thù chọn {chosen.display_name} — nhưng **Kẻ Tâm Thần** vẫn thắng theo luật Bị Trục Xuất Ban Ngày!"
+                )
+                # Vẫn giết nhưng Psychopath đã được coi là thắng vì bị trục xuất
+                await game.kill_player(chosen, reason="revenge", bypass_protection=True)
+            else:
+                await game.kill_player(chosen, reason="revenge", bypass_protection=True)
+                await game.add_log(f"💀 {chosen.display_name} đã bị Kẻ Báo Thù kéo theo khi bị trục xuất!")
 
     # ==============================
-    # BỊ ANOMALIES → chọn 1 Anomaly
+    # BỊ DỊ THỂ CẮN → chọn 1 người bất kỳ
     # ==============================
 
     async def _revenge_anomalies(self, game):
-        overlord = game.find_role("Lãnh Chúa")
-        # BUG FIX #12: role.alive không được engine update → dùng game.is_alive()
-        if overlord and game.is_alive(overlord.player.id):
-            await game.kill_player(overlord, reason="revenge", bypass_protection=True)
-            await game.add_log("💀 Lãnh Chúa đã bị Kẻ Báo Thù tiêu diệt!")
-
+        # Nerf: không tự động giết Lãnh Chúa, chỉ chọn 1 người bất kỳ
         candidates = [
-            p for p in game.players
-            if getattr(p, "faction", None) == "Anomalies"
-            and p.alive
+            p for p in game.get_alive_players()
+            if p.id != self.player.id
         ]
         if not candidates:
             return
 
-        chosen = await self._ask_revenge_target(game, candidates, "Chọn 1 Anomaly để kéo theo:")
-        if chosen and chosen.alive:
+        chosen = await self._ask_revenge_target(game, candidates, "Bị Dị Thể cắn — Chọn 1 người để kéo theo:")
+        if chosen and game.is_alive(chosen.id):
             await game.kill_player(chosen, reason="revenge", bypass_protection=True)
             await game.add_log(f"💀 {chosen.display_name} đã bị tiêu diệt bởi lời nguyền báo thù!")
 

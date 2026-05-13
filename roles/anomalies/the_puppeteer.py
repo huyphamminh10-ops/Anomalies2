@@ -11,7 +11,10 @@ class ThePuppeteer(BaseRole):
         "Bạn điều khiển tâm trí Người Sống Sót, ép họ bỏ phiếu theo ý muốn của mình vào ban ngày.\n\n"
         "• Mỗi đêm chọn 1 Survivor và 1 mục tiêu vote — sáng hôm sau họ bị ép vote đó.\n"
         "• Không thể điều khiển cùng 1 người 2 lần liên tiếp.\n"
-        "• Có **3 lượt** sử dụng trong suốt trận."
+        "• Có **3 lượt** sử dụng trong suốt trận.\n\n"
+        "⚠ **Nerf:**\n"
+        "• Bạn **không tham gia bỏ phiếu** cũng như không giết người.\n"
+        "• Nếu mục tiêu bị **Jailor giam**, bạn sẽ tự tay vote thay vì điều khiển họ."
     )
 
     dm_message = (
@@ -22,14 +25,37 @@ class ThePuppeteer(BaseRole):
         "• Chọn nạn nhân → chọn người họ sẽ bị ép vote.\n"
         "• Không điều khiển được cùng 1 người 2 đêm liên tiếp.\n"
         "• Bạn có **3 lượt** điều khiển trong cả trận.\n\n"
+        "⚠ **Giới hạn (Nerf):**\n"
+        "• Bạn **không được tham gia bỏ phiếu** ban ngày.\n"
+        "• Nếu mục tiêu bị Jailor giam → bạn sẽ tự vote thay cho họ.\n\n"
         "💡 Hãy dùng để loại bỏ Người Sống Sót quan trọng hoặc bảo vệ đồng đội khỏi bị vote."
     )
 
     def __init__(self, player):
         super().__init__(player)
-        self.uses_left = 3            # FIX: khởi tạo uses_left
-        self.last_controlled = None   # FIX: khởi tạo last_controlled
-        self.control_data = None      # FIX: khởi tạo control_data
+        self.uses_left = 3
+        self.last_controlled = None
+        self.control_data = None
+        self.can_vote = False  # Nerf: Puppeteer không được tham gia bỏ phiếu
+
+    def apply_control(self, game):
+        """
+        Gọi vào đầu phase ban ngày để áp dụng điều khiển.
+        Nếu nạn nhân đang bị Jailor giam → Puppeteer tự vote thay.
+        """
+        if not self.control_data:
+            return
+        victim_id, forced_vote_id = self.control_data
+        self.control_data = None
+
+        # Kiểm tra nếu nạn nhân bị Jailor giam
+        jailed_ids = getattr(game, "jailed_player_ids", set())
+        if victim_id in jailed_ids:
+            # Puppeteer tự vote thay
+            game.force_vote(self.player.id, forced_vote_id)
+        else:
+            # Điều khiển bình thường
+            game.force_vote(victim_id, forced_vote_id)
 
     async def on_game_start(self, game):
         """Thông báo danh sách đồng đội khi game bắt đầu."""

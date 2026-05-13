@@ -12,7 +12,8 @@ class Sheriff(BaseRole):
         "• Kết quả trả về tên vai trò cụ thể.\n"
         "• Nếu mục tiêu đang dùng khả năng giả mạo (fake_good), bạn sẽ thấy kết quả không đáng ngờ.\n"
         "• Nếu phát hiện Anomaly, cảnh báo ẩn danh sẽ gửi vào kênh Dị Thể.\n"
-        "• Đây là nguồn thông tin mạnh nhất của Người Sống Sót — hãy sử dụng khôn ngoan."
+        "• **Chỉ có 2 lượt kiểm tra trong toàn bộ trận** — hãy sử dụng khôn ngoan!\n"
+        "• Bạn có thể bỏ qua đêm để tiết kiệm lượt."
     )
 
     dm_message = (
@@ -20,17 +21,23 @@ class Sheriff(BaseRole):
         "Bạn thuộc phe **Người Sống Sót**.\n\n"
         "🌙 Mỗi đêm bạn chọn 1 người để kiểm tra danh tính.\n"
         "Kết quả cho biết chính xác vai trò của họ.\n\n"
-        "⚠ Chú ý: Một số Dị Thể có thể dùng khả năng đánh lừa kết quả điều tra.\n"
-        "💡 Thông tin của bạn rất quý giá — hãy cân nhắc khi nào nên tiết lộ với thị trấn."
+        "⚠ **Giới hạn: 2 lượt trong toàn bộ trận.**\n"
+        "💡 Bạn có thể bỏ qua đêm để tiết kiệm lượt cho lúc quan trọng hơn."
     )
 
+    def __init__(self, player):
+        super().__init__(player)
+        self.uses_left = 2  # Tổng 2 lần cả trận
+
     async def send_ui(self, game):
-        self.used_tonight = False  # reset mỗi đêm
         view = SheriffView(game, self)
         await self.safe_send(
             embed=disnake.Embed(
-                title="👮 ĐÊM — CẢNH SÁT TRƯỞNG",
-                description="Chọn 1 người để kiểm tra danh tính chính xác:",
+                title="👮 ĐÊM — THÁM TRƯỞNG",
+                description=(
+                    f"🔍 Bạn còn **{self.uses_left}/2 lượt** kiểm tra.\n\n"
+                    "Chọn 1 người để kiểm tra danh tính chính xác, hoặc bỏ qua đêm nay:"
+                ),
                 color=0x2ecc71
             ),
             view=view
@@ -56,14 +63,19 @@ class SheriffSelect(disnake.ui.Select):
         )
 
     async def callback(self, interaction: disnake.ApplicationCommandInteraction):
-        # Chặn dùng lại trong cùng một đêm
-        if getattr(self.role, "used_tonight", False):
+        if interaction.user.id != self.role.player.id:
             await interaction.response.send_message(
-                "⚠️ Bạn đã kiểm tra người chơi đêm nay rồi.", ephemeral=True
+                "Đây không phải lượt của bạn.", ephemeral=True
             )
             return
 
-        self.role.used_tonight = True
+        if self.role.uses_left <= 0:
+            await interaction.response.send_message(
+                "⚠️ Bạn đã hết **2 lượt** kiểm tra rồi.", ephemeral=True
+            )
+            return
+
+        self.role.uses_left -= 1
 
         target      = self.game.get_member(int(self.values[0]))
         target_role = self.game.get_role(target)
@@ -71,8 +83,12 @@ class SheriffSelect(disnake.ui.Select):
             await interaction.response.send_message("❌ Không thể xác định vai trò mục tiêu.", ephemeral=True)
             return
 
+        # Nếu đang Cải Trang → trả về role cải trang
+        if hasattr(target_role, "disguise_role") and target_role.disguise_role:
+            result = f"Người này đang là: **{target_role.disguise_role}**"
+            color  = 0xf39c12
         # Nếu là Mimic giả tốt
-        if hasattr(target_role, "fake_good") and target_role.fake_good:
+        elif hasattr(target_role, "fake_good") and target_role.fake_good:
             result = "🟢 Không phát hiện điều gì đáng ngờ."
             color  = 0x2ecc71
         else:
@@ -84,9 +100,9 @@ class SheriffSelect(disnake.ui.Select):
                 if hasattr(self.game, "anomaly_chat_mgr"):
                     await self.game.anomaly_chat_mgr.send(
                         embed=disnake.Embed(
-                            title="👮 CẢNH BÁO CẢNH SÁT",
+                            title="👮 CẢNH BÁO THÁM TRƯỞNG",
                             description=(
-                                "**CẢNH SÁT TRƯỞNG** đã điều tra và xác định được "
+                                "**THÁM TRƯỞNG** đã điều tra và xác định được "
                                 "danh tính của một thành viên phe Dị Thể!\n\n"
                                 "🚨 Nguy hiểm — danh tính chính xác của **một người trong phe** "
                                 "đã bị lộ!\n"
@@ -96,14 +112,13 @@ class SheriffSelect(disnake.ui.Select):
                         )
                     )
 
-        # Vô hiệu hóa Select sau khi dùng
-        self.disabled = True
-        self.placeholder = "✅ Đã kiểm tra đêm nay"
-
+        # Vô hiệu hóa View sau khi dùng
+        for item in self.view.children:
+            item.disabled = True
         await interaction.response.edit_message(view=self.view)
         await interaction.followup.send(
             embed=disnake.Embed(
-                title="👮 KẾT QUẢ KIỂM TRA",
+                title=f"👮 KẾT QUẢ KIỂM TRA (còn {self.role.uses_left} lượt)",
                 description=result,
                 color=color
             ),
@@ -114,4 +129,32 @@ class SheriffSelect(disnake.ui.Select):
 class SheriffView(disnake.ui.View):
     def __init__(self, game, role):
         super().__init__(timeout=60)
-        self.add_item(SheriffSelect(game, role))
+        self.game = game
+        self.role = role
+
+        if role.uses_left > 0:
+            self.add_item(SheriffSelect(game, role))
+
+        self.add_item(SheriffSkipButton(role))
+
+
+class SheriffSkipButton(disnake.ui.Button):
+    def __init__(self, role):
+        self.role = role
+        super().__init__(
+            label="💤 Bỏ qua đêm nay",
+            style=disnake.ButtonStyle.secondary,
+            row=1
+        )
+
+    async def callback(self, interaction: disnake.MessageInteraction):
+        if interaction.user.id != self.role.player.id:
+            await interaction.response.send_message("Đây không phải lượt của bạn.", ephemeral=True)
+            return
+        for item in self.view.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self.view)
+        await interaction.followup.send(
+            f"💤 Bạn bỏ qua đêm nay. Còn **{self.role.uses_left}/2** lượt.",
+            ephemeral=True
+        )
