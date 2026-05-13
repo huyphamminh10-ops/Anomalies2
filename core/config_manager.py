@@ -223,6 +223,8 @@ def default_config() -> dict:
         "vote_time":                30,
         "skip_discussion_delay":    30,
         "status":                   None,
+        # Super Gamemodes (mặc định tắt)
+        "super_gamemodes_enabled":  False,
     }
 
 

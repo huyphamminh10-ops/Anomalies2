@@ -461,6 +461,17 @@ def paginate_players(players, page):
 
 def build_embed(gs, guild_id=None):
     cfg           = get_cached_config(str(guild_id)) if guild_id else {}
+
+    # ── Super Gamemodes: thay toàn bộ lobby embed khi bật ─────────────────
+    if cfg.get("super_gamemodes_enabled", False) and gs.get("state") != GameState.IN_GAME:
+        try:
+            from super_gamemodes import build_super_gamemode_embed
+            player_count = len(gs.get("players_join_order", []))
+            return build_super_gamemode_embed(guild_id=guild_id, player_count=player_count)
+        except Exception as _sgm_err:
+            print(f"[SuperGamemodes] build_embed lỗi (fallback): {_sgm_err}")
+    # ── Lobby embed bình thường ────────────────────────────────────────────
+
     min_p         = cfg_min_players(cfg)
     max_p         = cfg_max_players(cfg)
     countdown_max = cfg_countdown(cfg)
@@ -993,7 +1004,20 @@ async def launch_game(guild_id: str, gs: dict):
             await update_lobby(gs, guild_id=gid)
             return
 
+        # ── Super Gamemodes: patch config trước khi build ──────────────────
+        try:
+            from super_gamemodes import patch_config_for_gamemode
+            raw_config = patch_config_for_gamemode(raw_config)
+        except Exception as _sgm_err:
+            print(f"[SuperGamemodes] patch lỗi (bỏ qua): {_sgm_err}")
+
         game_config = build_game_config(raw_config)
+
+        # ── Super Gamemodes: gắn metadata vào GameConfig ────────────────────
+        game_config.super_gamemode_id           = raw_config.get("super_gamemode_id")
+        game_config.super_gamemode_win_override = raw_config.get("super_gamemode_win_override")
+        game_config.super_gamemode_force_roles  = raw_config.get("super_gamemode_force_roles")
+        game_config.game_language               = raw_config.get("game_language", "vi")
 
         engine = GameEngine(
             guild         = bot.get_guild(int(gid)),

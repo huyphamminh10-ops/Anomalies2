@@ -85,6 +85,20 @@ _check = check_command_permission
 # DANH SÁCH SETTINGS
 # ══════════════════════════════════════════════════════════════════
 
+def _build_super_gamemodes_value(config: dict) -> str:
+    """Hiển thị trạng thái + chế độ đang hoạt động cho setting embed."""
+    enabled = config.get("super_gamemodes_enabled", False)
+    if not enabled:
+        return "❌ Tắt"
+    try:
+        from super_gamemodes import get_current_gamemode, get_time_remaining_in_slot, format_time_remaining
+        gm  = get_current_gamemode()
+        rem = get_time_remaining_in_slot()
+        return f"✅ Bật  |  🎮 Đang hoạt động: `{gm.id}`  |  ⏳ {format_time_remaining(rem)} còn lại"
+    except Exception:
+        return "✅ Bật"
+
+
 def _get_settings_list(config: dict, bot) -> list[dict]:
     max_p   = config.get("max_players", 65)
     min_p   = config.get("min_players_to_start", 5)
@@ -225,6 +239,21 @@ def _get_settings_list(config: dict, bot) -> list[dict]:
             "desc":        "Khi khởi tạo trận đấu, bot sẽ giữ nguyên toàn bộ role server sẵn có của người chơi như Member/Admin/Owner/role màu. Bot cũng không cấp hoặc gỡ Alive/Dead role. An toàn tuyệt đối cho server nhiều role; Mute Khi Chết sẽ bị tắt khi bật mục này.",
             "type":        "toggle",
             "toggle_key":  "no_remove_roles",
+            "toggle_def":  False,
+        },
+        # ── Super Gamemodes ────────────────────────────────────────────────
+        {
+            "key":         "toggle_super_gamemodes",
+            "label":       "⚡ Super Gamemodes",
+            "emoji":       "⚡",
+            "value":       _build_super_gamemodes_value(config),
+            "desc":        (
+                "Bật chế độ Super Gamemodes — thay thế gameplay chính và Lobby Embed mỗi 72 giờ.\n"
+                "Các chế độ: HE RETURNED!!! · KING!!! · I TRIED! · FRANCE MODE 🇫🇷\n"
+                "⚠️ Mặc định tắt. Khi bật, lobby sẽ hiển thị chế độ đang hoạt động."
+            ),
+            "type":        "toggle",
+            "toggle_key":  "super_gamemodes_enabled",
             "toggle_def":  False,
         },
     ]

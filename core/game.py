@@ -2202,6 +2202,14 @@ class GameEngine:
             await self.log("🎮 **TRẬN ĐẤU BẮT ĐẦU!** Đang phát vai trò...", color=0x9b59b6)
             await self.phase_distribute_roles()
 
+            # ── Super Gamemodes: King Mode setup ──────────────────────────
+            if getattr(self.config, "super_gamemode_id", None) == "king":
+                try:
+                    from super_gamemodes import setup_king_mode
+                    await setup_king_mode(self)
+                except Exception as _km_err:
+                    self.logger.warn(f"[KingMode] setup lỗi: {_km_err}")
+
             # on_game_start hooks for roles
             for pid, role in self.roles.items():
                 if hasattr(role, "on_game_start"):
@@ -2990,6 +2998,22 @@ class GameEngine:
     def _check_win(self):
         if self.ended:
             return
+
+        # ── Super Gamemodes: kiểm tra win override trước ─────────────────
+        _sgm_override = getattr(self.config, "super_gamemode_win_override", None)
+        if _sgm_override:
+            try:
+                from super_gamemodes import check_win_override
+                _result = check_win_override(self, _sgm_override)
+                if _result:
+                    self.ended  = True
+                    self.winner = _result
+                    self.logger.info(f"[SuperGamemodes] Win override: {_result}")
+                    return
+            except Exception as _e:
+                self.logger.warn(f"[SuperGamemodes] check_win_override lỗi: {_e}")
+        # ── Kiểm tra win condition bình thường ───────────────────────────
+
         result = WinConditionManager.check(self)
         if result:
             self.ended  = True
