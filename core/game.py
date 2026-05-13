@@ -2389,6 +2389,13 @@ class GameEngine:
     async def phase_night(self):
         self.phase         = "night"
         self.night_count  += 1
+        # ── Super Gamemodes: King Mode — nhắc nhở KING mỗi đêm ───────────
+        if getattr(self.config, "super_gamemode_id", None) == "king":
+            try:
+                from super_gamemodes import king_night_reminder
+                await king_night_reminder(self)
+            except Exception:
+                pass
         # ── Nhạc đêm ─────────────────────────────────────────────
         if self.music_player:
             await self.music_player.play_night()

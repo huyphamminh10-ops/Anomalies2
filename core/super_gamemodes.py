@@ -5,7 +5,7 @@
 #
 # Các chế độ:
 #  1. HE RETURNED!!!   — Serial Killer 1v All (giết 1 người/đêm, Survivors phải tiêu diệt)
-#  2. KING!!!          — Cả 3 phe hợp tác tìm KING; miễn KING còn sống = tất cả thắng
+#  2. KING!!!          — Cả 3 phe hợp tác để GIẾT KING; KING chết = tất cả thắng
 #  3. I TRIED!         — Game tốc độ x3
 #  4. FRANCE MODE 🇫🇷  — Đổi ngôn ngữ sang Tiếng Pháp
 # ==============================
@@ -59,7 +59,7 @@ def _apply_he_returned(raw: dict) -> dict:
 
 
 def _apply_king(raw: dict) -> dict:
-    """Chọn 1 người bí mật làm KING. Cả 3 phe thắng nếu KING sống đến cuối."""
+    """Chọn 1 người bí mật làm KING. Cả 3 phe hợp tác để GIẾT KING — KING chết = tất cả thắng."""
     cfg = dict(raw)
     cfg["super_gamemode_active"]       = True
     cfg["super_gamemode_id"]           = "king"
@@ -105,8 +105,9 @@ ALL_GAMEMODES: list[SuperGamemode] = [
         name        = "⚡️𝙎𝙐𝙋𝙀𝙍 𝙂𝘼𝙈𝙀𝙈𝙊𝘿𝙀𝙎 \n🅺🅸🅽🅶!!!",
         description = (
             "Một người bí mật được chọn làm **KING**.\n"
-            "Cả 3 phe — Survivors, Anomalies, Unknown — đều hợp tác để bảo vệ KING.\n"
-            "👑 **Mục tiêu:** Miễn KING còn sống → ba phe đều chiến thắng."
+            "Cả 3 phe — Survivors, Anomalies, Unknown — đều hợp tác để **GIẾT** KING.\n"
+            "💀 KING chết → ba phe đều chiến thắng.\n"
+            "👑 KING sống sót qua **5 đêm** → KING thắng một mình!"
         ),
         apply_fn    = _apply_king,
     ),
@@ -262,25 +263,27 @@ def _check_win_he_returned(game) -> Optional[str]:
     return None
 
 
+_KING_SURVIVE_NIGHTS = 5   # KING thắng nếu sống đủ số đêm này
+
 def _check_win_king(game) -> Optional[str]:
     """
-    Mọi người thắng nếu KING (được lưu trong game.super_king_id) còn sống.
-    Nếu KING chết → tất cả thua (không ai thắng → game tiếp tục cho đến hết,
-    hoặc trigger "No Winner" nếu chỉ còn 1 người).
+    - KING chết (bất kỳ lúc nào)  → cả 3 phe thắng.
+    - KING sống qua đủ 5 đêm      → KING thắng (solo).
     """
     king_id = getattr(game, "super_king_id", None)
     if king_id is None:
-        return None   # KING chưa được chọn
+        return None
 
     alive_ids = {p.id for p in game.get_alive_players()}
 
+    # KING đã chết → tất cả thắng
     if king_id not in alive_ids:
-        # KING chết → không ai thắng, kết thúc bất thường
-        return "No Winner — KING đã chết"
+        return "Tất Cả — KING đã bị tiêu diệt!"
 
-    # Chỉ còn 1 người sống (chính là KING) → KING + tất cả thắng
-    if len(alive_ids) == 1 and king_id in alive_ids:
-        return "Tất Cả — KING còn sống!"
+    # KING sống đủ 5 đêm → KING thắng
+    nights_passed = getattr(game, "night_count", 0)
+    if nights_passed >= _KING_SURVIVE_NIGHTS:
+        return "👑 KING — Sống Sót 5 Đêm!"
 
     return None
 
@@ -289,7 +292,41 @@ def _check_win_king(game) -> Optional[str]:
 # §6  KING MODE SETUP
 # ══════════════════════════════════════════════════════════════════════
 
-async def setup_king_mode(game):
+async def king_night_reminder(game):
+    """
+    Gửi DM nhắc nhở cho KING vào đầu mỗi đêm: còn bao nhiêu đêm cần sống sót.
+    Gọi từ phase_night() trong game.py khi super_gamemode_id == "king".
+    """
+    import disnake
+    king_id = getattr(game, "super_king_id", None)
+    if king_id is None:
+        return
+
+    alive_ids = {p.id for p in game.get_alive_players()}
+    if king_id not in alive_ids:
+        return   # KING đã chết, không cần nhắc
+
+    nights_passed   = getattr(game, "night_count", 0)
+    nights_remaining = max(0, _KING_SURVIVE_NIGHTS - nights_passed)
+
+    king_member = game._players_dict.get(king_id)
+    if not king_member:
+        return
+
+    try:
+        if nights_remaining <= 0:
+            return  # _check_win_king sẽ xử lý
+        embed = disnake.Embed(
+            title       = f"👑 ĐÊM {nights_passed} — CÒN {nights_remaining} ĐÊM!",
+            description = (
+                f"Bạn đã sống sót qua **{nights_passed}/{_KING_SURVIVE_NIGHTS} đêm**.\n"
+                f"Hãy tiếp tục — chỉ còn **{nights_remaining} đêm** nữa để chiến thắng!"
+            ),
+            color = 0xe74c3c,
+        )
+        await king_member.send(embed=embed)
+    except Exception:
+        pass
     """
     Được gọi sau phase_distribute_roles() khi chế độ KING bật.
     Chọn ngẫu nhiên 1 người làm KING và DM thông báo cho họ.
@@ -310,28 +347,28 @@ async def setup_king_mode(game):
             title       = "👑 BẠN LÀ KING!",
             description = (
                 "Bạn được bí mật chọn làm **KING** trong trận đấu này.\n\n"
-                "Cả ba phe — Survivors, Anomalies, và Unknown — đều sẽ hợp tác\n"
-                "để bảo vệ bạn khỏi bị loại.\n\n"
-                "⚠️ **Đừng tiết lộ danh tính của bạn.**\n"
-                "Miễn bạn còn sống → tất cả cùng chiến thắng.\n"
-                "Nếu bạn chết → không ai thắng."
+                "Cả ba phe đều biết có một KING tồn tại — và họ sẽ hợp tác\n"
+                "để **tìm ra và tiêu diệt** bạn.\n\n"
+                "⚔️ **Hãy sống sót đủ 5 đêm → bạn thắng!**\n"
+                "💀 Nếu bạn chết trước đó → tất cả mọi người thắng."
             ),
-            color = 0xf1c40f,
+            color = 0xe74c3c,
         )
         await king.send(embed=embed)
     except Exception:
         pass
 
-    # Thông báo công khai (ẩn tên)
+    # Thông báo công khai
     await game.text_channel.send(
         embed=disnake.Embed(
             title       = "👑 KING MODE — BẮT ĐẦU!",
             description = (
                 "Một **KING** bí ẩn đã được chọn trong số các người chơi.\n\n"
-                "🤝 Cả ba phe hợp tác — bảo vệ KING sống sót đến cùng.\n"
-                "💀 Nếu KING chết → **không ai chiến thắng**."
+                "⚔️ Cả ba phe hợp tác — tìm ra và **giết** KING.\n"
+                "🏆 KING chết → **tất cả cùng chiến thắng**.\n"
+                "👑 KING sống sót qua **5 đêm** → **KING thắng một mình**."
             ),
-            color = 0xf1c40f,
+            color = 0xe74c3c,
         )
     )
 
