@@ -3151,36 +3151,92 @@ class GameEngine:
             # Compact format: Tên · Vai Trò · emoji — mỗi người 1 hàng, ngắn gọn
             lines.append(f"`{member.display_name}` · {role_name} · {status}")
 
-        embed.add_field(name="📋 Danh sách vai trò", value="\n".join(lines) or "—", inline=False)
-        result_msg = await self.text_channel.send(embed=embed)
+        # ── Chia field thành chunks ≤ 1000 chars (Discord limit = 1024) ──
+        FIELD_LIMIT = 1000
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for line in lines:
+            line_len = len(line) + 1  # +1 cho newline
+            if current_len + line_len > FIELD_LIMIT and current:
+                chunks.append("\n".join(current))
+                current = [line]
+                current_len = line_len
+            else:
+                current.append(line)
+                current_len += line_len
+        if current:
+            chunks.append("\n".join(current))
+
+        for i, chunk in enumerate(chunks or ["—"]):
+            field_name = "📋 Danh sách vai trò" if i == 0 else "\u200b"
+            embed.add_field(name=field_name, value=chunk, inline=False)
+
+        # ── Gửi embed — bọc try/except để crash ở đây không chặn cleanup ─
+        result_msg = None
+        try:
+            result_msg = await self.text_channel.send(embed=embed)
+        except Exception as _se:
+            self.logger.warn(f"[end_game] Gửi embed kết thúc lỗi: {_se}")
+            try:
+                result_msg = await self.text_channel.send(
+                    f"🏁 **TRẬN ĐẤU KẾT THÚC** — Người chiến thắng: **{winner}**"
+                )
+            except Exception:
+                pass
 
         # Xóa tất cả tin nhắn game, giữ bảng kết quả
-        await self._purge_text_channel(keep_id=result_msg.id, reason="Kết Thúc Trận")
+        try:
+            await self._purge_text_channel(
+                keep_id=result_msg.id if result_msg else None,
+                reason="Kết Thúc Trận"
+            )
+        except Exception as _pe:
+            self.logger.warn(f"[end_game] purge lỗi: {_pe}")
 
-        await self._cleanup_temp_channels()
-        await self.dead_chat_mgr.delete()
-        await self.anomaly_chat_mgr.delete()
+        try:
+            await self._cleanup_temp_channels()
+        except Exception as _ce:
+            self.logger.warn(f"[end_game] cleanup temp channels lỗi: {_ce}")
+
+        try:
+            await self.dead_chat_mgr.delete()
+        except Exception:
+            pass
+        try:
+            await self.anomaly_chat_mgr.delete()
+        except Exception:
+            pass
 
         # Tắt muting TRƯỚC — ngăn race condition với kill_player còn đang chạy
         self._muting_enabled = False
         await asyncio.sleep(0.3)
 
         # Trả lại nick gốc cho tất cả người đã đổi tên trong game
-        await self.restore_all_nicks()
+        try:
+            await self.restore_all_nicks()
+        except Exception as _ne:
+            self.logger.warn(f"[end_game] restore_all_nicks lỗi: {_ne}")
 
         # Unmute tất cả người chơi + gỡ Dead/Alive role
         all_members = list(self._players_dict.values())
         for member in all_members:
-            await self._cleanup_discord_roles(member)
+            try:
+                await self._cleanup_discord_roles(member)
+            except Exception:
+                pass
             await asyncio.sleep(0.1)
 
         # Unmute voice — gọi 2 lần để chắc chắn
         # FIX Bug 1: bỏ điều kiện self.voice_channel (có thể None do cache stale)
         if self.config.allow_voice:
-            await self.voice_ctrl.set_mute(all_members, False)
-            await asyncio.sleep(2)
-            await self.voice_ctrl.set_mute(all_members, False)
-            self.logger.info(f"Unmuted {len(all_members)} players at game end")
+            try:
+                await self.voice_ctrl.set_mute(all_members, False)
+                await asyncio.sleep(2)
+                await self.voice_ctrl.set_mute(all_members, False)
+                self.logger.info(f"Unmuted {len(all_members)} players at game end")
+            except Exception as _ve:
+                self.logger.warn(f"[end_game] unmute lỗi: {_ve}")
 
         if self.config.debug_mode:
             self.logger.dump_to_file()
