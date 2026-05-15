@@ -1742,7 +1742,8 @@ class GameEngine:
         # ── Game state ────────────────────────────────────────────
         self.day_count   = 0
         self.night_count = 0
-        self.ended       = False
+        self.ended        = False
+        self._cleanup_done = False   # True sau khi end_game hoàn tất cleanup
         self.winner: Optional[str] = None
         self.phase: str  = "waiting"  # waiting/night/day/vote/ended
 
@@ -3125,7 +3126,10 @@ class GameEngine:
                 eliminated=eliminated,
                 winner_name=winner,
             )
-            _narrator_text = await _ai_narrate_ending(_ending_type, **_narrator_kwargs)
+            _narrator_text = await asyncio.wait_for(
+                _ai_narrate_ending(_ending_type, **_narrator_kwargs),
+                timeout=12.0
+            )
         except Exception as _ne:
             self.logger.warn(f"[NarratorEnding] Lỗi gọi AI: {_ne}")
 
@@ -3250,6 +3254,9 @@ class GameEngine:
             clear_active_players(self.guild_id)
         except Exception as _e:
             self.logger.warn(f"[GameEngine] clear status lỗi: {_e}")
+
+        # Đánh dấu cleanup hoàn tất — lobby_loop mới được phép reset
+        self._cleanup_done = True
 
     # ══════════════════════════════════════════════════
     # §12.11  PHASE: DAY

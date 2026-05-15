@@ -1256,10 +1256,16 @@ async def _lobby_loop(guild_id: str):
                 # Tránh trường hợp is_active=True nhưng engine đã bị pop (race condition)
                 _live_engine = active_games.get(gid)
                 if _live_engine is None or _live_engine.ended:
-                    # Engine không còn tồn tại → reset trạng thái lobby
+                    # Engine ended — chờ cleanup xong trước khi reset lobby
+                    # Tránh race: end_game set ended=True ở dòng đầu, cleanup chạy sau
+                    if _live_engine is not None and not getattr(_live_engine, "_cleanup_done", False):
+                        # Cleanup chưa xong — chờ tick tiếp theo
+                        await asyncio.sleep(_TICK)
+                        continue
+                    # Engine không còn tồn tại hoặc cleanup đã xong → reset lobby
                     gs["is_active"] = False
                     gs["state"]     = GameState.WAITING
-                    print(f"[lobby_loop] [{gid}] Phát hiện engine chết nhưng is_active=True — tự reset.")
+                    print(f"[lobby_loop] [{gid}] Engine đã xong cleanup — reset lobby.")
                 else:
                     purge_counter = 0   # reset khi vào game
                     await asyncio.sleep(_TICK)
