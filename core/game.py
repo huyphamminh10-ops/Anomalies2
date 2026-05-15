@@ -3778,4 +3778,3 @@ class SkipTracker(disnake.ui.View):
 
         if len(self.skippers) >= needed:
             self.skip_event.set()
-t.set()
