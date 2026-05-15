@@ -1900,6 +1900,14 @@ class GameEngine:
 
     async def _cleanup_discord_roles(self, member: disnake.Member):
         """Hết trận: tháo Dead/Alive role, unmute."""
+        # FIX Bug 7: luôn unmute voice dù no_remove_roles=True
+        if self.config.allow_voice:
+            try:
+                if member.voice:
+                    await self.voice_ctrl._try_mute(member, False)
+                self._force_muted.discard(member.id)
+            except Exception:
+                pass
         if self.config.no_remove_roles:
             return
         dead_role  = self._get_dead_role()
@@ -1969,11 +1977,16 @@ class GameEngine:
             return
         for pid, original in list(self.nick_registry.items()):
             member = self.guild.get_member(pid)
-            if member:
+            # FIX Bug 2: fallback sang fetch_member nếu cache stale (server lớn / thiếu intent)
+            if not member:
                 try:
-                    await member.edit(nick=original)
+                    member = await self.guild.fetch_member(pid)
                 except Exception:
-                    pass
+                    continue
+            try:
+                await member.edit(nick=original)
+            except Exception:
+                pass
         self.nick_registry.clear()
 
     def add_night_event(self, faction: str, text: str):
@@ -2280,6 +2293,11 @@ class GameEngine:
                     pass
                 # Unmute + gỡ Alive/Dead role cho tất cả người chơi
                 self._muting_enabled = False
+                # FIX Bug 5: restore nick trước khi cleanup
+                try:
+                    await self.restore_all_nicks()
+                except Exception:
+                    pass
                 for _member in self._players_dict.values():
                     try:
                         await self._cleanup_discord_roles(_member)
@@ -3157,7 +3175,8 @@ class GameEngine:
             await asyncio.sleep(0.1)
 
         # Unmute voice — gọi 2 lần để chắc chắn
-        if self.config.allow_voice and self.voice_channel:
+        # FIX Bug 1: bỏ điều kiện self.voice_channel (có thể None do cache stale)
+        if self.config.allow_voice:
             await self.voice_ctrl.set_mute(all_members, False)
             await asyncio.sleep(2)
             await self.voice_ctrl.set_mute(all_members, False)
@@ -3224,8 +3243,11 @@ class GameEngine:
                 pass
             await asyncio.sleep(0.05)
 
-        if self.config.allow_voice and self.voice_channel:
+        # FIX Bug 1: bỏ điều kiện self.voice_channel (có thể None do cache stale)
+        if self.config.allow_voice:
             try:
+                await self.voice_ctrl.set_mute(all_members, False)
+                await asyncio.sleep(1)
                 await self.voice_ctrl.set_mute(all_members, False)
             except Exception:
                 pass

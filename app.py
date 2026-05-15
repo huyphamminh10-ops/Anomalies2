@@ -1066,10 +1066,13 @@ async def launch_game(guild_id: str, gs: dict):
                 _engine._muting_enabled = False
                 await asyncio.wait_for(
                     _engine.end_game("Trận bị huỷ do lỗi hệ thống"),
-                    timeout=10.0
+                    timeout=15.0  # FIX Bug 3: tăng timeout để đảm bảo unmute xong
                 )
             except Exception as _fe:
                 print(f"[launch_game] [{gid}] end_game cleanup lỗi: {_fe}")
+
+        # FIX Bug 3: chờ thêm để Discord xử lý unmute xong trước khi scan voice
+        await asyncio.sleep(2.0)
         _reset_lobby(gs, guild_id=gid)
 
         # Rescan voice channel: người chơi vẫn còn trong VC sau khi game kết thúc
@@ -1249,9 +1252,18 @@ async def _lobby_loop(guild_id: str):
             gs = get_guild_state(gid)
 
             if gs.get("is_active") or gs["state"] == GameState.IN_GAME:
-                purge_counter = 0   # reset khi vào game
-                await asyncio.sleep(_TICK)
-                continue
+                # FIX Bug 6: kiểm tra engine có thực sự còn sống không
+                # Tránh trường hợp is_active=True nhưng engine đã bị pop (race condition)
+                _live_engine = active_games.get(gid)
+                if _live_engine is None or _live_engine.ended:
+                    # Engine không còn tồn tại → reset trạng thái lobby
+                    gs["is_active"] = False
+                    gs["state"]     = GameState.WAITING
+                    print(f"[lobby_loop] [{gid}] Phát hiện engine chết nhưng is_active=True — tự reset.")
+                else:
+                    purge_counter = 0   # reset khi vào game
+                    await asyncio.sleep(_TICK)
+                    continue
 
             if gs["state"] in (GameState.COUNTDOWN, GameState.FULL_FAST):
                 gs["countdown_time"] -= 1
