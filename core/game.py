@@ -2264,48 +2264,20 @@ class GameEngine:
                 self.logger.dump_to_file()
             # Thông báo lỗi ra kênh
             try:
-                err_msg = await self.text_channel.send(
+                await self.text_channel.send(
                     embed=disnake.Embed(
                         title="❌ TRẬN BỊ HUỶ — LỖI HỆ THỐNG",
                         description=f"```{tb[-500:]}```",
                         color=0xe74c3c
                     )
                 )
-                await self._purge_text_channel(keep_id=err_msg.id, reason="Lỗi Hệ Thống")
             except Exception:
                 pass
-            # Dọn dẹp Discord: xóa kênh, gỡ roles, unmute — chỉ khi chưa ended
-            if not self.ended:
-                self.ended = True
-                try:
-                    await self.dead_chat_mgr.delete()
-                except Exception:
-                    pass
-                try:
-                    await self.anomaly_chat_mgr.delete()
-                except Exception:
-                    pass
-                try:
-                    await self._cleanup_temp_channels()
-                except Exception:
-                    pass
-                # Unmute + gỡ Alive/Dead role cho tất cả người chơi
-                self._muting_enabled = False
-                # FIX Bug 5: restore nick trước khi cleanup
-                try:
-                    await self.restore_all_nicks()
-                except Exception:
-                    pass
-                for _member in self._players_dict.values():
-                    try:
-                        await self._cleanup_discord_roles(_member)
-                    except Exception:
-                        pass
-                    try:
-                        if _member.voice:
-                            await self.voice_ctrl._try_mute(_member, False)
-                    except Exception:
-                        pass
+            # Dọn dẹp đầy đủ qua end_game — unmute, xóa kênh, purge, restore nick
+            try:
+                await self.end_game(self.winner or "Trận bị huỷ do lỗi hệ thống", force=True)
+            except Exception as _cleanup_err:
+                self.logger.warn(f"[game_loop] end_game cleanup sau crash lỗi: {_cleanup_err}")
 
     # ══════════════════════════════════════════════════
     # §12.6  PHASE: DISTRIBUTE ROLES
@@ -3083,9 +3055,9 @@ class GameEngine:
         except Exception as e:
             self.logger.warn(f"[purge_text_channel] {e}")
 
-    async def end_game(self, winner: str):
+    async def end_game(self, winner: str, force: bool = False):
         # ── Guard: không chạy 2 lần ───────────────────────────────────
-        if getattr(self, "_end_game_running", False):
+        if not force and getattr(self, "_end_game_running", False):
             self.logger.warn("[end_game] Đã có end_game đang chạy — bỏ qua gọi trùng")
             return
         self._end_game_running = True
@@ -3583,9 +3555,9 @@ class GameEngine:
 
         await self._fire_hooks("on_vote_start")
 
-        # ── Tính số phiếu tối thiểu: x = tổng_sống - 60% (làm tròn xuống) ─
+        # ── Tính số phiếu tối thiểu: x = tổng_sống - 55% (làm tròn xuống) ─
         total_alive  = len(alive)
-        min_votes    = max(1, math.floor(total_alive - total_alive * 0.6))
+        min_votes    = max(1, math.floor(total_alive - total_alive * 0.55))
 
         def _build_vote_board(session: "VotingSession", remaining: int) -> disnake.Embed:
             """Tạo embed bỏ phiếu, cập nhật live."""
