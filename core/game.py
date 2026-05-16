@@ -3203,9 +3203,47 @@ class GameEngine:
         except Exception as _ne:
             self.logger.warn(f"[end_game] AI narrator lỗi: {_ne}")
 
-        _description = _narrator_text if _narrator_text else f"**Người chiến thắng: {winner}**"
-        if _narrator_text:
-            _description += f"\n\n**🏆 Người chiến thắng: {winner}**"
+        # Fallback dẫn truyện tĩnh nếu AI không phản hồi
+        _FALLBACK_NARRATION = {
+            "survivor_win": (
+                "Bình minh ló dạng sau đêm dài kinh hoàng. Những người sống sót đứng giữa đống đổ nát, "
+                "nhìn nhau bằng ánh mắt mệt mỏi nhưng vẫn còn le lói hy vọng. "
+                "Thị trấn Anomalies còn thở — dù vết thương vẫn còn đó, chưa lành."
+            ),
+            "anomaly_win": (
+                "Màn đêm không còn rút lui nữa. Tiếng thì thầm kỳ dị lan khắp các con phố vắng, "
+                "và những kẻ cuối cùng còn lại chỉ có thể nhìn bóng tối nuốt chửng mọi thứ. "
+                "Anomalies đã rơi — không còn ai để cứu vãn."
+            ),
+            "unknown_win": (
+                "Cả hai phe đứng giữa đống tro tàn, nhận ra mình đã bị thao túng từ đầu. "
+                "Một thế lực thứ ba vô hình đã giật dây mọi nước cờ trong bóng tối. "
+                "Ván cờ kết thúc — không theo cách ai ngờ tới."
+            ),
+        }
+
+        if not _narrator_text:
+            _narrator_text = _FALLBACK_NARRATION.get(_ending_type, "Trận đấu đã kết thúc trong im lặng.")
+
+        # Build dòng thông báo chiến thắng theo loại
+        if winner in (TEAM_SURVIVOR, TEAM_ANOMALY):
+            # Thắng theo phe
+            _winner_line = f"**🏆 Phe chiến thắng là {winner}**"
+        else:
+            # Solo win — tìm tên người chơi có vai trò khớp với winner
+            _solo_player_name = None
+            for _pid, _role in self.roles.items():
+                if getattr(_role, "name", "") == winner:
+                    _member = self._players_dict.get(_pid)
+                    if _member:
+                        _solo_player_name = _member.display_name
+                    break
+            if _solo_player_name:
+                _winner_line = f"**🏆 {_solo_player_name} đã chiến thắng với vai trò {winner}**"
+            else:
+                _winner_line = f"**🏆 {winner} đã chiến thắng**"
+
+        _description = f"{_narrator_text}\n\n{_winner_line}"
 
         embed = disnake.Embed(
             title="🏁 TRẬN ĐẤU KẾT THÚC",
@@ -3253,7 +3291,7 @@ class GameEngine:
             self.logger.warn(f"[end_game] Gửi embed kết thúc lỗi: {_se}")
             try:
                 result_msg = await self.text_channel.send(
-                    f"🏁 **TRẬN ĐẤU KẾT THÚC** — Người chiến thắng: **{winner}**"
+                    f"🏁 **TRẬN ĐẤU KẾT THÚC** — {_winner_line}"
                 )
             except Exception:
                 pass
@@ -3545,9 +3583,9 @@ class GameEngine:
 
         await self._fire_hooks("on_vote_start")
 
-        # ── Tính số phiếu tối thiểu: x = tổng_sống - 40% ────────
+        # ── Tính số phiếu tối thiểu: x = tổng_sống - 60% (làm tròn xuống) ─
         total_alive  = len(alive)
-        min_votes    = max(1, math.ceil(total_alive - total_alive * 0.4))
+        min_votes    = max(1, math.floor(total_alive - total_alive * 0.6))
 
         def _build_vote_board(session: "VotingSession", remaining: int) -> disnake.Embed:
             """Tạo embed bỏ phiếu, cập nhật live."""
