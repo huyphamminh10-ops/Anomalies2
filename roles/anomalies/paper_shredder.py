@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class ThePaperShredder(BaseRole):
     name = "Máy Hủy Tài Liệu"
     team = "Anomalies"
+    dif = 6
 
     description = (
         "Bạn phá hủy di chúc của người chơi trước khi nó được công bố.\n\n"

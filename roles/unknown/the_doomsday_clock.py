@@ -7,6 +7,7 @@ class TheDoomsdayClock(BaseRole):
     team = "Unknown"
     win_type = "solo"
     max_count = 1
+    dif = 11
 
     def __init__(self, player):
         super().__init__(player)

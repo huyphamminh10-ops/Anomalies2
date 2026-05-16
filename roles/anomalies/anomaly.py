@@ -6,6 +6,7 @@ class Anomaly(BaseRole):
     name = "Dị Thể"
     team = "Anomalies"
     max_count = 10
+    dif = 3
 
     description = (
         "Bạn là một Dị Thể — thành viên chiến đấu cốt lõi của phe Dị Thể.\n\n"

@@ -7,6 +7,7 @@ class TheOverseer(BaseRole):
     name = "Người Giám Sát"
     team = "Survivors"
     max_count = 1
+    dif = 8
 
     def __init__(self, player):
         super().__init__(player)

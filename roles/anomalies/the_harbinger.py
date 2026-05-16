@@ -6,6 +6,7 @@ class TheHarbinger(BaseRole):
     name = "Sứ Giả Tận Thế"
     team = "Anomalies"
     max_count = 1
+    dif = 11
 
     description = """
     Mỗi đêm đánh dấu một mục tiêu. 

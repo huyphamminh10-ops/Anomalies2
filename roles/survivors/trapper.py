@@ -7,6 +7,7 @@ class Trapper(BaseRole):
     name = "Thợ Đặt Bẫy"
     team = "Survivors"
     max_count = 1
+    dif = 5
     rarity = "rare"
 
     description = (

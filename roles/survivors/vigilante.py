@@ -6,6 +6,7 @@ class Vigilante(BaseRole):
     name = "Kẻ Trừng Phạt"
     team = "Survivors"
     max_count = 2
+    dif = 6
     rarity = "rare"
 
     description = (

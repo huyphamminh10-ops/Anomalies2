@@ -9,6 +9,7 @@ class TheCorruptedAI(BaseRole):
     team        = "Unknown Entities"
     win_type    = "solo"
     max_count   = 1
+    dif = 11
     min_players = 32
 
     def __init__(self, player):

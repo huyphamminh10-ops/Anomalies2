@@ -11,6 +11,7 @@ class ProTester(BaseRole):
     team        = "Survivors"
     faction     = "Survivors"
     max_count   = 2
+    dif = 6
     min_players = 7
 
     # ── Theo dõi mục tiêu đã bị Người Thử Nghiệm khác chọn trong cùng đêm ──

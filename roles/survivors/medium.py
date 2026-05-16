@@ -6,6 +6,7 @@ class Medium(BaseRole):
     name = "Nhà Ngoại Cảm"
     team = "Survivors"
     max_count = 1
+    dif = 4
     rarity = "rare"
 
     description = (

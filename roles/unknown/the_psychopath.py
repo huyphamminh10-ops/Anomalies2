@@ -7,6 +7,7 @@ class ThePsychopath(BaseRole):
     team = "Unknown"
     faction = "Unknown"
     max_count = 1
+    dif = 9
     win_type  = "solo"
 
     description = (

@@ -6,6 +6,7 @@ class TheGlitchWorm(BaseRole):
     name = "Sâu Lỗi"
     team = "Anomalies"
     max_count = 1
+    dif = 10
 
     description = (
         "Bạn là sâu mã độc — xâm nhập và phá hủy di chúc của người chơi.\n\n"

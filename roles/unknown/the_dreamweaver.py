@@ -7,6 +7,7 @@ class TheDreamweaver(BaseRole):
     team = "Unknown"
     win_type = "solo"
     max_count = 1
+    dif = 10
 
     def __init__(self, player):
         super().__init__(player)

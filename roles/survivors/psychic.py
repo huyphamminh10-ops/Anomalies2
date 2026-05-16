@@ -31,6 +31,7 @@ class Psychic(BaseRole):
     name      = "Người Tiên Tri"
     team      = "Survivors"
     max_count = 1
+    dif = 7
 
     description = (
         "Sở hữu 3 kỹ năng siêu nhiên, mỗi kỹ năng chỉ dùng được số lần giới hạn.\n\n"

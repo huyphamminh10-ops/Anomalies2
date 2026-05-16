@@ -6,6 +6,7 @@ class Sheriff(BaseRole):
     name      = "Thám Trưởng"
     team      = "Survivors"
     max_count = 1
+    dif = 3
 
     description = (
         "Mỗi đêm bạn có thể kiểm tra 1 người chơi và biết chính xác vai trò của họ.\n\n"

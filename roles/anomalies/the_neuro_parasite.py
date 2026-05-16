@@ -19,6 +19,7 @@ class TheNeuroParasite(BaseRole):
     name = "Ký Sinh Thần Kinh"
     team = "Anomalies"
     max_count = 1
+    dif = 12
 
     description = (
         "Bạn là Ký Sinh Trùng — một thực thể có khả năng tha hóa tâm trí người khác.\n\n"

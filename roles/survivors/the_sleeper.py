@@ -7,6 +7,7 @@ class TheSleeper(BaseRole):
     team = "Survivors"
     faction = "Survivors"
     max_count = 1
+    dif = 6
 
     description = (
         "Bạn bị cách ly khỏi thế giới bên ngoài.\n\n"

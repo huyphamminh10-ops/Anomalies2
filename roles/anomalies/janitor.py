@@ -6,6 +6,7 @@ class Janitor(BaseRole):
     name = "Lao Công"
     team = "Anomalies"
     max_count = 1
+    dif = 6
 
     description = "Xóa vai trò của nạn nhân nếu họ chết trong đêm."
 

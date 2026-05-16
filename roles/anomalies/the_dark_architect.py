@@ -6,6 +6,7 @@ class TheDarkArchitect(BaseRole):
     name = "Kiến Trúc Sư Bóng Tối"
     team = "Anomalies"
     max_count = 1
+    dif = 9
 
     description = (
         "Bạn kiến trúc bóng tối — mỗi đêm phong tỏa hành động của 3 người chơi.\n\n"

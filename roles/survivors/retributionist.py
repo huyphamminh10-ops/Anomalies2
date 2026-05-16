@@ -67,6 +67,7 @@ class Retributionist(BaseRole):
     name = "Kẻ Báo Oán"
     team = "Survivors"
     max_count = 1
+    dif = 7
     rarity = "epic"
 
     description = (

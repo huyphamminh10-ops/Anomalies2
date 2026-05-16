@@ -7,6 +7,7 @@ class TheGhostShip(BaseRole):
     team = "Unknown"
     win_type = "solo"
     max_count = 1
+    dif = 9
 
     def __init__(self, player):
         super().__init__(player)

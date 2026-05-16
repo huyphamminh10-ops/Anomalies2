@@ -6,6 +6,7 @@ class Overlord(BaseRole):
     name = "Lãnh Chúa"
     team = "Anomalies"
     max_count = 1
+    dif = 9
     rarity = "legendary"
 
     description = (

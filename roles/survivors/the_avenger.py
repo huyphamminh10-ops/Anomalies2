@@ -9,6 +9,7 @@ class TheAvenger(BaseRole):
     faction = "Unknown Entities"
     win_type = "solo"
     max_count = 1
+    dif = 10
 
     description = (
         "Bạn mang trong mình sự uất hận và sẽ kéo kẻ thù xuống mồ cùng mình tùy theo cách bạn bị tiêu diệt.\n\n"

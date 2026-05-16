@@ -6,6 +6,7 @@ class MadPharmacist(BaseRole):
     name        = "Nhà Dược Học Điên"
     team        = "Survivors"
     max_count   = 1
+    dif = 8
     min_players = 16
 
     # ══════════════════════════════════════════════════

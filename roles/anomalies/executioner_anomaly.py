@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class TheExecutionerAnomaly(BaseRole):
     name = "Dị Thể Hành Quyết"
     team = "Anomalies"
+    dif = 6
 
     description = (
         "Bạn là một Dị Thể hành quyết lạnh lùng — có thể xử tử mục tiêu dù họ được bảo vệ.\n\n"

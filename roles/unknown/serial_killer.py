@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class SerialKiller(BaseRole):
     name = "KẺ GIẾT NGƯỜI HÀNG LOẠT"
     team = "Unknown Entities"
+    dif = 8
     win_type = "solo"
 
     description = (

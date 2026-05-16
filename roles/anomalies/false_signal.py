@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class TheFalseSignal(BaseRole):
     name = "Tín Hiệu Giả"
     team = "Anomalies"
+    dif = 7
 
     description = (
         "Bạn giả mạo tín hiệu để đánh lừa kết quả điều tra của Người Sống Sót.\n\n"

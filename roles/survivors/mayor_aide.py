@@ -6,6 +6,7 @@ class MayorAide(BaseRole):
     name = "Phụ Tá Thị Trưởng"
     team = "Survivors"
     max_count = 1
+    dif = 4
     rarity = "common"
 
     description = (

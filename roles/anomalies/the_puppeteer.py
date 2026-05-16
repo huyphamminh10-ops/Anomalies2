@@ -6,6 +6,7 @@ class ThePuppeteer(BaseRole):
     name = "Kẻ Điều Khiển"
     team = "Anomalies"
     max_count = 1
+    dif = 12
 
     description = (
         "Bạn điều khiển tâm trí Người Sống Sót, ép họ bỏ phiếu theo ý muốn của mình vào ban ngày.\n\n"

@@ -162,6 +162,7 @@ class CipherBreaker(BaseRole):
     faction     = "Unknown Entities"
     win_type    = "solo"
     max_count   = 1
+    dif = 9
     min_players = 16
 
     description = (

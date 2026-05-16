@@ -6,6 +6,7 @@ class Civilian(BaseRole):
     name = "Dân Thường"
     team = "Survivors"
     max_count = 12
+    dif = 2
 
     description = (
         "Bạn là một Dân Thường bình thường của thị trấn.\n\n"

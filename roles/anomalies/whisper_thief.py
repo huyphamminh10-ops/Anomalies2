@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class TheWhisperThief(BaseRole):
     name = "Kẻ Đánh Cắp Lời Thì Thầm"
     team = "Anomalies"
+    dif = 8
 
     description = (
         "Bạn nghe lén bí mật — nếu 2 người bạn chọn có tương tác bí mật trong đêm, bạn đọc được di chúc của cả hai.\n\n"

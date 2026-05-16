@@ -6,6 +6,7 @@ class Investigator(BaseRole):
     name      = "Thám Tử"
     team      = "Survivors"
     max_count = 2
+    dif = 4
 
     description = (
         "Mỗi đêm bạn có thể điều tra 1 người chơi.\n\n"

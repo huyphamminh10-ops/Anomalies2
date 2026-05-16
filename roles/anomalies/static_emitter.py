@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class TheStaticEmitter(BaseRole):
     name = "Nguồn Tĩnh Điện"
     team = "Anomalies"
+    dif = 7
 
     description = (
         "Bạn phát nhiễu hệ thống — làm méo mó tin nhắn mà người chơi nhận được.\n\n"

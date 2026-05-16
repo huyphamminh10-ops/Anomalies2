@@ -6,6 +6,7 @@ class TheGlitchStalker(BaseRole):
     name = "Kẻ Rình Rập"
     team = "Anomalies"
     max_count = 1
+    dif = 8
 
     description = (
         "Bạn theo dõi bí mật để khai thác lỗ hổng trong hệ thống của Người Sống Sót.\n\n"

@@ -8,6 +8,7 @@ class TheTimeWeaver(BaseRole):
     team = "Unknown"
     win_type = "solo"
     max_count = 1
+    dif = 12
 
     def check_win_condition(self, game) -> bool:
         # TimeWeaver thắng khi tự sống sót đến khi không còn Anomaly

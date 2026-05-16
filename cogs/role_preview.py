@@ -817,7 +817,7 @@ def _build_role_catalogue(roles_base_dir: Optional[str] = None) -> dict[str, dic
                         continue
                     for target in item.targets:
                         if isinstance(target, ast.Name) and target.id in (
-                            "name", "team", "faction", "description", "dm_message"
+                            "name", "team", "faction", "description", "dm_message", "dif"
                         ):
                             try:
                                 attrs[target.id] = ast.literal_eval(item.value)
@@ -853,6 +853,11 @@ def _build_role_catalogue(roles_base_dir: Optional[str] = None) -> dict[str, dic
                 meta   = all_meta.get(role_name, {})
                 ability = description or "Thông tin đang được cập nhật."
                 tips    = _derive_tips(role_name, faction, description, meta)
+                dif_raw = attrs.get("dif", 5)
+                try:
+                    dif = int(dif_raw)
+                except Exception:
+                    dif = 5
 
                 # First-encountered class wins for each role name
                 if role_name not in catalogue:
@@ -860,6 +865,7 @@ def _build_role_catalogue(roles_base_dir: Optional[str] = None) -> dict[str, dic
                         "faction": faction,
                         "ability": ability,
                         "tips":    tips,
+                        "dif":     dif,
                     }
 
     print(f"[role_preview] ✔ Hệ Thống Role : {len(catalogue)} vai trò được tải trong thư mục roles/ .")
@@ -1022,6 +1028,27 @@ def _build_preview_embed(role_names: list[str], player_count: int) -> disnake.Em
     return embed
 
 
+def _build_difficulty_display(dif: int) -> str:
+    """Trả về chuỗi hiển thị độ khó với mô tả phù hợp."""
+    dif = max(1, min(dif, 12))
+    if dif >= 12:
+        label = f"12+/12 ⚡️"
+        desc  = "Cực kỳ khó, có thể lên tới Imposible nếu dùng không đúng cách"
+    elif dif >= 9:
+        label = f"{dif}/12 ⚡️"
+        desc  = "Rất khó, cần luyện tập rất nhiều"
+    elif dif >= 7:
+        label = f"{dif}/12 ⚡️"
+        desc  = "Khó để thành thạo và chơi"
+    elif dif >= 4:
+        label = f"{dif}/12 ⚡️"
+        desc  = "Cũng dễ, nhưng khó trúng hơn"
+    else:
+        label = f"{dif}/12 ⚡️"
+        desc  = "Dễ chơi, dễ trúng thưởng"
+    return f"-# Độ Khó : {label}\n-# {desc}"
+
+
 def _build_role_info_embed(faction: str, page: int, roles: list[str]) -> disnake.Embed:
     """Build the role info embed for Button 3 — one role per page."""
     if not roles:
@@ -1031,6 +1058,7 @@ def _build_role_info_embed(faction: str, page: int, roles: list[str]) -> disnake
     cat       = _ROLE_CATALOGUE.get(role_name, {})
     ability   = cat.get("ability") or "Thông tin đang được cập nhật."
     tips      = cat.get("tips")    or "Thông tin đang được cập nhật."
+    dif       = cat.get("dif", 5)
 
     meta_table = {
         "Survivors":        SURVIVORS_META,
@@ -1047,6 +1075,7 @@ def _build_role_info_embed(faction: str, page: int, roles: list[str]) -> disnake
     emoji = _FACTION_EMOJI.get(faction, "❓")
 
     embed = disnake.Embed(title=f"{emoji} {role_name}", color=color)
+    embed.description = _build_difficulty_display(dif)
     embed.add_field(name="🏳️ Phe",     value=faction,                                          inline=True)
     embed.add_field(name="🎖️ Loại",    value="⭐ Cốt lõi" if meta.get("core") else "💎 Đặc biệt", inline=True)
     embed.add_field(name="👤 Tối thiểu", value=f"{meta.get('min_players', '?')} người",          inline=True)

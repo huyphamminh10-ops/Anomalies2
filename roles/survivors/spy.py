@@ -6,6 +6,7 @@ class Spy(BaseRole):
     name = "Điệp Viên"
     team = "Survivors"
     max_count = 1
+    dif = 5
     rarity = "rare"
 
     description = (

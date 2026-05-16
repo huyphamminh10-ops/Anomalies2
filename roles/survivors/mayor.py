@@ -6,6 +6,7 @@ class Mayor:
     name = "Thị Trưởng"
     team = "Survivors"
     max_count = 1
+    dif = 5
     description = (
         "Bạn là Thị Trưởng – người được dân thị trấn tin tưởng nhất.\n"
         "Bạn có thể lộ diện để phiếu bầu có hệ số x3.\n"

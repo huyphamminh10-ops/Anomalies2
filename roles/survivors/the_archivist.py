@@ -6,6 +6,7 @@ class TheArchivist(BaseRole):
     name = "Nhà Lưu Trữ"
     team = "Survivors"
     max_count = 1
+    dif = 7
 
     def __init__(self, player):
         super().__init__(player)
