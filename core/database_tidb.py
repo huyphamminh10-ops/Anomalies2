@@ -40,13 +40,11 @@ import string
 import time
 import traceback
 from datetime import datetime, timezone
-from typing import Optional
 
 # ── mysql-connector-python ─────────────────────────────────────────
 # pip install mysql-connector-python
 try:
     import mysql.connector
-    from mysql.connector import Error as MySQLError
     _HAS_CONNECTOR = True
 except ImportError:
     _HAS_CONNECTOR = False

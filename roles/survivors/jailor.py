@@ -1,5 +1,5 @@
 import disnake
-from disnake.ui import View, Select, Button
+from disnake.ui import View, Select
 from roles.base_role import BaseRole
 
 

@@ -11,7 +11,6 @@ import disnake
 import traceback
 import os
 import re
-import asyncio
 from disnake.ext import commands
 from config_manager import load_guild_config, save_guild_config
 from updater import greet_owner_on_setup

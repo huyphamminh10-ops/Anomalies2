@@ -32,7 +32,6 @@ del _os, _sys, _BASE_DIR, _candidate, _core
 
 
 import asyncio
-import copy
 import inspect
 import math
 import os
@@ -44,9 +43,6 @@ from config_manager import load_guild_config, save_guild_config, clear_active_pl
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
-# ── Performance: functools cache cho các hàm tính toán thuần ──────
-from functools import lru_cache
-import weakref
 
 import disnake
 
@@ -1743,7 +1739,8 @@ class GameEngine:
         self.day_count   = 0
         self.night_count = 0
         self.ended        = False
-        self._cleanup_done = False   # True sau khi end_game hoàn tất cleanup
+        self._cleanup_done    = False   # True sau khi end_game hoàn tất cleanup
+        self._end_game_running = False  # Guard: tránh gọi end_game 2 lần đồng thời
         self.winner: Optional[str] = None
         self.phase: str  = "waiting"  # waiting/night/day/vote/ended
 
@@ -3087,53 +3084,125 @@ class GameEngine:
             self.logger.warn(f"[purge_text_channel] {e}")
 
     async def end_game(self, winner: str):
+        # ── Guard: không chạy 2 lần ───────────────────────────────────
+        if getattr(self, "_end_game_running", False):
+            self.logger.warn("[end_game] Đã có end_game đang chạy — bỏ qua gọi trùng")
+            return
+        self._end_game_running = True
+
         self.ended  = True
         self.winner = winner
         self.phase  = "ended"
 
-        await self._fire_hooks("on_game_end")
-        # Quản trò Gemini: dừng tất cả vòng chat
+        # ── BƯỚC 0: Tắt muting NGAY LẬP TỨC ─────────────────────────
+        # Phải làm đầu tiên để tránh race condition với kill_player/phase_night
+        # còn đang giữ lock hoặc đang gọi _try_mute sau khi game đã kết thúc
+        self._muting_enabled = False
+        self.logger.info(f"[end_game] Game {self.game_id} kết thúc. Người thắng: {winner}")
+
+        # ── BƯỚC 1: Hooks + Gemini shutdown (không chặn cleanup nếu lỗi) ─
+        try:
+            await asyncio.wait_for(self._fire_hooks("on_game_end"), timeout=5.0)
+        except Exception as _e:
+            self.logger.warn(f"[end_game] _fire_hooks lỗi: {_e}")
+
         if getattr(self, "gemini_host", None):
             try:
-                await self.gemini_host.on_game_end()
+                await asyncio.wait_for(self.gemini_host.on_game_end(), timeout=5.0)
             except Exception as _e:
-                self.logger.warn(f"GeminiHost on_game_end lỗi: {_e}")
+                self.logger.warn(f"[end_game] GeminiHost on_game_end lỗi: {_e}")
 
+        # ── BƯỚC 2: Dừng Parliament nếu đang chạy ─────────────────────
+        try:
+            self.voice_ctrl.stop_parliament()
+        except Exception:
+            pass
+
+        # ── BƯỚC 3: UNMUTE TẤT CẢ VOICE NGAY ────────────────────────
+        # Làm TRƯỚC khi xóa kênh/tin nhắn — người chơi phải được bỏ mute sớm nhất có thể
+        all_members = list(self._players_dict.values())
+        if self.config.allow_voice and all_members:
+            try:
+                await asyncio.wait_for(
+                    self.voice_ctrl.set_mute(all_members, False),
+                    timeout=15.0
+                )
+                self.logger.info(f"[end_game] Unmuted {len(all_members)} players (lần 1)")
+            except Exception as _ve:
+                self.logger.warn(f"[end_game] Unmute lần 1 lỗi: {_ve}")
+
+        # ── BƯỚC 4: RESTORE NICK ──────────────────────────────────────
+        # Làm ngay sau unmute — trả tên về trước khi purge channel
+        try:
+            await asyncio.wait_for(self.restore_all_nicks(), timeout=20.0)
+            self.logger.info("[end_game] Đã trả lại nick cho tất cả người chơi")
+        except Exception as _ne:
+            self.logger.warn(f"[end_game] restore_all_nicks lỗi: {_ne}")
+
+        # ── BƯỚC 5: GỠ DEAD/ALIVE ROLE ───────────────────────────────
+        # Chạy song song để nhanh hơn
+        async def _safe_cleanup_role(member: disnake.Member):
+            try:
+                await self._cleanup_discord_roles(member)
+            except Exception as _e:
+                self.logger.warn(f"[end_game] cleanup role {member.display_name}: {_e}")
+
+        role_tasks = [_safe_cleanup_role(m) for m in all_members]
+        if role_tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*role_tasks, return_exceptions=True),
+                    timeout=30.0
+                )
+                self.logger.info(f"[end_game] Đã gỡ role cho {len(all_members)} người chơi")
+            except Exception as _re:
+                self.logger.warn(f"[end_game] Gỡ role lỗi: {_re}")
+
+        # ── BƯỚC 6: UNMUTE LẦN 2 (Discord cache có thể cũ) ──────────
+        if self.config.allow_voice and all_members:
+            await asyncio.sleep(1.5)
+            try:
+                await asyncio.wait_for(
+                    self.voice_ctrl.set_mute(all_members, False),
+                    timeout=15.0
+                )
+                self.logger.info(f"[end_game] Unmuted {len(all_members)} players (lần 2 — xác nhận)")
+            except Exception as _ve2:
+                self.logger.warn(f"[end_game] Unmute lần 2 lỗi: {_ve2}")
+
+        # ── BƯỚC 7: Build và gửi embed kết thúc ──────────────────────
         colors = {TEAM_SURVIVOR: 0x2ecc71, TEAM_ANOMALY: 0xe74c3c, "Draw": 0x95a5a6}
         color  = colors.get(winner, 0x9b59b6)
 
-        # ── Xác định loại kết thúc + ảnh ──────────────────────────────
-        total_players   = len(self._players_dict)
-        alive_count     = len(self.alive_players)
-        eliminated      = total_players - alive_count
+        total_players = len(self._players_dict)
+        alive_count   = len(self.alive_players)
+        eliminated    = total_players - alive_count
 
         if winner == TEAM_SURVIVOR:
             _ending_type = "survivor_win"
         elif winner == TEAM_ANOMALY:
             _ending_type = "anomaly_win"
         else:
-            # Solo win (unknown entity) hoặc draw
             _ending_type = "unknown_win"
 
         _ending_image = _ENDING_IMAGES.get(_ending_type, "")
 
-        # ── Gọi Gemini 2.5 Flash sinh câu dẫn chuyện kết thúc ─────────
+        # Gọi AI narrator — timeout ngắn, không chặn cleanup nếu chậm
         _narrator_text = ""
         try:
-            _narrator_kwargs = dict(
-                total=total_players,
-                survivors=alive_count,
-                eliminated=eliminated,
-                winner_name=winner,
-            )
             _narrator_text = await asyncio.wait_for(
-                _ai_narrate_ending(_ending_type, **_narrator_kwargs),
+                _ai_narrate_ending(
+                    _ending_type,
+                    total=total_players,
+                    survivors=alive_count,
+                    eliminated=eliminated,
+                    winner_name=winner,
+                ),
                 timeout=12.0
             )
         except Exception as _ne:
-            self.logger.warn(f"[NarratorEnding] Lỗi gọi AI: {_ne}")
+            self.logger.warn(f"[end_game] AI narrator lỗi: {_ne}")
 
-        # ── Build embed kết thúc ───────────────────────────────────────
         _description = _narrator_text if _narrator_text else f"**Người chiến thắng: {winner}**"
         if _narrator_text:
             _description += f"\n\n**🏆 Người chiến thắng: {winner}**"
@@ -3143,28 +3212,26 @@ class GameEngine:
             description=_description,
             color=color
         )
-
         if _ending_image:
             embed.set_image(url=_ending_image)
 
+        # Danh sách vai trò — chia chunks tránh vượt giới hạn Discord 1024 ký tự/field
         lines = []
         for pid, member in self._players_dict.items():
             role      = self.roles.get(pid)
             role_name = role.name if role else "???"
             status    = "✅" if self.is_alive(pid) else "💀"
-            # Compact format: Tên · Vai Trò · emoji — mỗi người 1 hàng, ngắn gọn
             lines.append(f"`{member.display_name}` · {role_name} · {status}")
 
-        # ── Chia field thành chunks ≤ 1000 chars (Discord limit = 1024) ──
-        FIELD_LIMIT = 1000
+        FIELD_LIMIT  = 1000
         chunks: list[str] = []
         current: list[str] = []
-        current_len = 0
+        current_len  = 0
         for line in lines:
-            line_len = len(line) + 1  # +1 cho newline
+            line_len = len(line) + 1
             if current_len + line_len > FIELD_LIMIT and current:
                 chunks.append("\n".join(current))
-                current = [line]
+                current     = [line]
                 current_len = line_len
             else:
                 current.append(line)
@@ -3173,10 +3240,12 @@ class GameEngine:
             chunks.append("\n".join(current))
 
         for i, chunk in enumerate(chunks or ["—"]):
-            field_name = "📋 Danh sách vai trò" if i == 0 else "\u200b"
-            embed.add_field(name=field_name, value=chunk, inline=False)
+            embed.add_field(
+                name="📋 Danh sách vai trò" if i == 0 else "\u200b",
+                value=chunk,
+                inline=False
+            )
 
-        # ── Gửi embed — bọc try/except để crash ở đây không chặn cleanup ─
         result_msg = None
         try:
             result_msg = await self.text_channel.send(embed=embed)
@@ -3189,71 +3258,51 @@ class GameEngine:
             except Exception:
                 pass
 
-        # Xóa tất cả tin nhắn game, giữ bảng kết quả
+        # ── BƯỚC 8: XÓA KÊNH CHỦ ĐỀ (Dead Chat + Anomaly Chat + temp) ──
+        # Xóa đồng thời để nhanh hơn
+        async def _safe_delete_channel(label: str, coro):
+            try:
+                await asyncio.wait_for(coro, timeout=10.0)
+                self.logger.info(f"[end_game] Đã xóa kênh: {label}")
+            except Exception as _e:
+                self.logger.warn(f"[end_game] Xóa kênh {label} lỗi: {_e}")
+
+        delete_tasks = [
+            _safe_delete_channel("Dead Chat",    self.dead_chat_mgr.delete()),
+            _safe_delete_channel("Anomaly Chat", self.anomaly_chat_mgr.delete()),
+            _safe_delete_channel("Temp Channels", self._cleanup_temp_channels()),
+        ]
         try:
-            await self._purge_text_channel(
-                keep_id=result_msg.id if result_msg else None,
-                reason="Kết Thúc Trận"
+            await asyncio.gather(*delete_tasks, return_exceptions=True)
+        except Exception as _de:
+            self.logger.warn(f"[end_game] Xóa kênh lỗi tổng hợp: {_de}")
+
+        # ── BƯỚC 9: PURGE TIN NHẮN TRONG TEXT CHANNEL ────────────────
+        # Làm SAU khi gửi embed kết quả — giữ lại bảng kết quả
+        try:
+            await asyncio.wait_for(
+                self._purge_text_channel(
+                    keep_id=result_msg.id if result_msg else None,
+                    reason="Kết Thúc Trận"
+                ),
+                timeout=30.0
             )
         except Exception as _pe:
-            self.logger.warn(f"[end_game] purge lỗi: {_pe}")
+            self.logger.warn(f"[end_game] Purge tin nhắn lỗi: {_pe}")
 
-        try:
-            await self._cleanup_temp_channels()
-        except Exception as _ce:
-            self.logger.warn(f"[end_game] cleanup temp channels lỗi: {_ce}")
-
-        try:
-            await self.dead_chat_mgr.delete()
-        except Exception:
-            pass
-        try:
-            await self.anomaly_chat_mgr.delete()
-        except Exception:
-            pass
-
-        # Tắt muting TRƯỚC — ngăn race condition với kill_player còn đang chạy
-        self._muting_enabled = False
-        await asyncio.sleep(0.3)
-
-        # Trả lại nick gốc cho tất cả người đã đổi tên trong game
-        try:
-            await self.restore_all_nicks()
-        except Exception as _ne:
-            self.logger.warn(f"[end_game] restore_all_nicks lỗi: {_ne}")
-
-        # Unmute tất cả người chơi + gỡ Dead/Alive role
-        all_members = list(self._players_dict.values())
-        for member in all_members:
-            try:
-                await self._cleanup_discord_roles(member)
-            except Exception:
-                pass
-            await asyncio.sleep(0.1)
-
-        # Unmute voice — gọi 2 lần để chắc chắn
-        # FIX Bug 1: bỏ điều kiện self.voice_channel (có thể None do cache stale)
-        if self.config.allow_voice:
-            try:
-                await self.voice_ctrl.set_mute(all_members, False)
-                await asyncio.sleep(2)
-                await self.voice_ctrl.set_mute(all_members, False)
-                self.logger.info(f"Unmuted {len(all_members)} players at game end")
-            except Exception as _ve:
-                self.logger.warn(f"[end_game] unmute lỗi: {_ve}")
-
-        if self.config.debug_mode:
-            self.logger.dump_to_file()
-
-        self.logger.info(f"Game {self.game_id} ended. Winner: {winner}")
-        # ── FIX: xóa persistent ingame status khi trận kết thúc ──
+        # ── BƯỚC 10: Xóa persistent status + clear active players ────
         try:
             _cfg = load_guild_config(self.guild_id)
             _cfg.pop("status", None)
             save_guild_config(self.guild_id, _cfg)
             clear_active_players(self.guild_id)
         except Exception as _e:
-            self.logger.warn(f"[GameEngine] clear status lỗi: {_e}")
+            self.logger.warn(f"[end_game] Clear status lỗi: {_e}")
+
+        if self.config.debug_mode:
+            self.logger.dump_to_file()
+
+        self.logger.info(f"[end_game] Game {self.game_id} cleanup hoàn tất.")
 
         # Đánh dấu cleanup hoàn tất — lobby_loop mới được phép reset
         self._cleanup_done = True

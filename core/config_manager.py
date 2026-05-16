@@ -16,10 +16,8 @@
 
 import os
 import re
-import ssl
 import time
 import traceback
-import certifi
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError, ConnectionFailure, ServerSelectionTimeoutError, OperationFailure
 

@@ -1211,11 +1211,10 @@ async def api_admin_room_config(guild_id: str, request: Request):
 # ══════════════════════════════════════════════════════════════════
 
 try:
-    from core.dlc_loader  import get_all_dlcs_summary, scan_dlcs
+    from core.dlc_loader  import get_all_dlcs_summary
     from core.dlc_economy import (
         get_player_wallet, get_player_dlcs, purchase_dlc,
         generate_serial_key, list_serials_for_mod,
-        ensure_economy_tables,
     )
     _DLC_OK = True
 except Exception as _dlc_e:

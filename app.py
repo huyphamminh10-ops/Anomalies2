@@ -18,7 +18,6 @@ except ImportError:
 import aiohttp
 import disnake
 import asyncio
-import certifi
 import os
 import glob
 import sys
@@ -143,12 +142,10 @@ from config_manager import (
     ensure_indexes,
     save_active_players, load_active_players, clear_active_players,
 )
-from event_roles_loader import get_loader as get_event_loader
 from updater import (
     handle_owner_dm,
     greet_owner_on_setup,
     send_post_update_embeds,
-    BOT_OWNER_ID,
     register_emergency_callback,
 )
 

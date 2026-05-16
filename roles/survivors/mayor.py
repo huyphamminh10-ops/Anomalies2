@@ -1,5 +1,5 @@
 import disnake
-from disnake.ui import View, Button
+from disnake.ui import View
 from disnake import Embed
 
 class Mayor:
@@ -44,8 +44,8 @@ class Mayor:
 
         try:
             await self.safe_send(embed=embed, view=view)
-        except:
-            print(f"[ERROR] Không thể gửi DM cho {self.player}")
+        except Exception as e:
+            print(f"[ERROR] Không thể gửi DM cho {self.player}: {e}")
 
     # ==============================
     # KHI BỊ TẤN CÔNG BAN ĐÊM
@@ -110,8 +110,8 @@ class RevealView(View):
 
         try:
             await member.edit(nick="THỊ TRƯỞNG")
-        except:
-            print("[ERROR] Không thể đổi nickname Thị Trưởng")
+        except Exception as e:
+            print(f"[ERROR] Không thể đổi nickname Thị Trưởng: {e}")
 
         await interaction.response.send_message(
             "Bạn đã lộ diện trước toàn thị trấn!",

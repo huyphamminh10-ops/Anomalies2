@@ -44,7 +44,7 @@ import sys
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 DLC_ROOT       = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "DLCs"
 VALID_ICONS    = {".jpg", ".jpeg", ".png", ".webp"}

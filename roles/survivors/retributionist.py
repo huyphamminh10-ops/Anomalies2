@@ -167,7 +167,7 @@ class Retributionist(BaseRole):
                 game.save_nick(member)
             try:
                 await member.edit(nick="NGƯỜI PHỤC HẬN")
-            except:
+            except Exception:
                 pass
 
             await game.log_channel.send(

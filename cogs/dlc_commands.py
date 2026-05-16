@@ -20,9 +20,8 @@ try:
         redeem_serial,
         get_player_wallet,
         get_player_dlcs,
-        validate_serial_format,
     )
-    from core.dlc_loader import get_all_dlcs_summary, get_dlc_by_folder
+    from core.dlc_loader import get_all_dlcs_summary
     _ECONOMY_OK = True
 except ImportError:
     _ECONOMY_OK = False

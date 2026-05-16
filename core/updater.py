@@ -18,7 +18,6 @@ import asyncio
 import os
 import sys
 import time
-import traceback
 from typing import Optional, Callable, Awaitable
 
 try:

@@ -38,15 +38,14 @@ import hmac
 import os
 import secrets
 import sys
-import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncIterator, Deque, Optional
 
 import disnake
 import httpx
-from fastapi import APIRouter, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # ── Thêm thư mục gốc vào sys.path ─────────────────────────────────

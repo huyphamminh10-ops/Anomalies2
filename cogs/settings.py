@@ -11,7 +11,6 @@ import disnake
 from disnake.ext import commands
 from disnake.ui import View, Select, Modal, TextInput
 import asyncio
-import traceback
 import sys
 from config_manager import load_guild_config, save_guild_config
 

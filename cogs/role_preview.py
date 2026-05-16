@@ -32,7 +32,6 @@ from role_distributor import (
     SURVIVORS_META,
     UNKNOWN_META,
     RoleDistributor,
-    validate_balance,
 )
 
 
