@@ -7,6 +7,7 @@ class TheAvenger(BaseRole):
     name = "Kẻ Báo Thù"
     team = "Unknown Entities"   # ← Đổi sang Thực Thể Ẩn
     faction = "Unknown Entities"
+    win_type = "solo"
     max_count = 1
 
     description = (
@@ -28,6 +29,15 @@ class TheAvenger(BaseRole):
         "• Bị Unknown giết: Giết chính kẻ đã ra tay.\n\n"
         "⏳ Khi bạn chết, trận đấu sẽ tạm dừng 30 giây để bạn chọn mục tiêu."
     )
+
+    def check_win_condition(self, game) -> bool:
+        # Avenger thắng khi không còn Anomaly nào (cùng điều kiện với Survivor)
+        alive_ids = game.alive_players - game.temporarily_removed
+        for pid in alive_ids:
+            r = game.roles.get(pid)
+            if r and getattr(r, "team", "") == "Anomalies":
+                return False
+        return True
 
     def __init__(self, player):
         super().__init__(player)

@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class TheGhostShip(BaseRole):
     name = "Con Tàu Ma"
     team = "Unknown"
+    win_type = "solo"
     max_count = 1
 
     def __init__(self, player):

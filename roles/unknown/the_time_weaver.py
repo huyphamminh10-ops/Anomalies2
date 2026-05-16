@@ -6,7 +6,18 @@ import copy
 class TheTimeWeaver(BaseRole):
     name = "Kẻ Dệt Thời Gian"
     team = "Unknown"
+    win_type = "solo"
     max_count = 1
+
+    def check_win_condition(self, game) -> bool:
+        # TimeWeaver thắng khi tự sống sót đến khi không còn Anomaly
+        # (neutral survivalist — thắng khi mối đe dọa chính bị loại)
+        alive_ids = game.alive_players - game.temporarily_removed
+        for pid in alive_ids:
+            r = game.roles.get(pid)
+            if r and getattr(r, "team", "") == "Anomalies":
+                return False
+        return True
 
     def __init__(self, player):
         super().__init__(player)

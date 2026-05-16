@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class TheDreamweaver(BaseRole):
     name = "Kẻ Dệt Mộng"
     team = "Unknown"
+    win_type = "solo"
     max_count = 1
 
     def __init__(self, player):

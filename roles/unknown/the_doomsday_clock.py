@@ -5,6 +5,7 @@ from roles.base_role import BaseRole
 class TheDoomsdayClock(BaseRole):
     name = "ĐỒNG HỒ TẬN THẾ"
     team = "Unknown"
+    win_type = "solo"
     max_count = 1
 
     def __init__(self, player):

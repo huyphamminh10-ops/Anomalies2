@@ -2247,9 +2247,11 @@ class GameEngine:
                         pass
 
                 await self.phase_night()
+                self._check_win()
                 if self.ended:
                     break
                 await self.phase_day()
+                self._check_win()
                 if self.ended:
                     break
                 await self.phase_voting()
@@ -3316,10 +3318,6 @@ class GameEngine:
 
         # Đánh dấu cleanup hoàn tất — lobby_loop mới được phép reset
         self._cleanup_done = True
-
-    # ══════════════════════════════════════════════════
-    # §12.11  PHASE: DAY
-    # ══════════════════════════════════════════════════
 
     async def emergency_force_end(self, reason: str = "Cập nhật hệ thống"):
         """
